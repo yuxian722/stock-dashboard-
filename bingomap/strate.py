@@ -1,0 +1,161 @@
+"""Read/write .strate substrate-map files (SUBSTRATE MAP format used by EAS/BINGO MAP).
+
+File layout (verified byte-for-byte against a real sample):
+- CRLF line endings throughout
+- 16 header `KEY=VALUE` lines
+- `[DIE_INFO_BEG]` / `[DIE_INFO_END]` bracketing one CSV line per die
+- two trailing blank lines after `[DIE_INFO_END]`
+
+Each DIE_INFO line has 9 comma-separated fields:
+    index, wafer_ring, wafer_xy, sub_pos, bin, f6, f7, timestamp, f9
+
+wafer_xy and sub_pos are themselves "A:B" pairs (wafer pickup X:Y, and
+substrate column:row placement respectively).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+HEADER_FIELDS = [
+    ("ASSY_LOT", "assy_lot"),
+    ("MAPPING_LOT", "mapping_lot"),
+    ("EQPID", "eqpid"),
+    ("OPER", "oper"),
+    ("SUBSTRATE_ID", "substrate_id"),
+    ("SUBSTRATE_ROW", "substrate_row"),
+    ("SUBSTRATE_COLUMN", "substrate_column"),
+    ("SUBSTRATE_BLOCK", "substrate_block"),
+    ("OUT_MGZ_SLOT_NO", "out_mgz_slot_no"),
+    ("TOTAL_BOND_DIE_QTY", "total_bond_die_qty"),
+    ("GOOD_DIE", "good_die"),
+    ("RUN_TIME", "run_time"),
+    ("NOTCH", "notch"),
+    ("Ref", "ref"),
+    ("T2_POINT", "t2_point"),
+    ("T2_Flat", "t2_flat"),
+]
+
+DIE_INFO_BEG = "[DIE_INFO_BEG]"
+DIE_INFO_END = "[DIE_INFO_END]"
+
+
+class StrateFormatError(ValueError):
+    """Raised when a .strate file/line does not match the expected format."""
+
+
+@dataclass
+class DieInfo:
+    index: int
+    wafer_ring: str = ""
+    wafer_xy: str = ""
+    sub_pos: str = ""
+    bin: str = "1"
+    f6: str = "0"
+    f7: str = "0"
+    timestamp: str = "0"
+    f9: str = "1"
+
+    def to_line(self) -> str:
+        return ",".join(
+            [
+                str(self.index),
+                self.wafer_ring,
+                self.wafer_xy,
+                self.sub_pos,
+                self.bin,
+                self.f6,
+                self.f7,
+                self.timestamp,
+                self.f9,
+            ]
+        )
+
+    @classmethod
+    def from_line(cls, line: str) -> "DieInfo":
+        parts = line.split(",")
+        if len(parts) != 9:
+            raise StrateFormatError(
+                f"DIE_INFO line must have 9 comma-separated fields, got {len(parts)}: {line!r}"
+            )
+        idx, wafer_ring, wafer_xy, sub_pos, bin_, f6, f7, ts, f9 = parts
+        try:
+            index = int(idx)
+        except ValueError as exc:
+            raise StrateFormatError(f"DIE_INFO index is not an integer: {line!r}") from exc
+        return cls(index, wafer_ring, wafer_xy, sub_pos, bin_, f6, f7, ts, f9)
+
+
+@dataclass
+class StrateFile:
+    assy_lot: str
+    mapping_lot: str
+    eqpid: str
+    oper: str
+    substrate_id: str
+    substrate_row: int
+    substrate_column: int
+    substrate_block: int
+    out_mgz_slot_no: str = ""
+    total_bond_die_qty: int = 0
+    good_die: int = 0
+    run_time: str = ""
+    notch: str = ""
+    ref: str = ""
+    t2_point: str = "NA"
+    t2_flat: str = "NA"
+    die_info: list[DieInfo] = field(default_factory=list)
+
+    def filename(self, timestamp: str) -> str:
+        """站別_批號_基板流水號碼_時間.strate"""
+        return f"{self.oper}_{self.assy_lot}_{self.substrate_id}_{timestamp}.strate"
+
+    def to_text(self) -> str:
+        lines: list[str] = []
+        for key, attr in HEADER_FIELDS:
+            lines.append(f"{key}={getattr(self, attr)}")
+        lines.append(DIE_INFO_BEG)
+        lines.extend(d.to_line() for d in self.die_info)
+        lines.append(DIE_INFO_END)
+        lines.append("")
+        lines.append("")
+        return "".join(line + "\r\n" for line in lines)
+
+    @classmethod
+    def parse(cls, text: str) -> "StrateFile":
+        lines = text.split("\r\n")
+        header: dict[str, str] = {}
+        i = 0
+        while i < len(lines) and lines[i] != DIE_INFO_BEG:
+            line = lines[i]
+            if line:
+                if "=" not in line:
+                    raise StrateFormatError(f"Malformed header line (no '='): {line!r}")
+                k, _, v = line.partition("=")
+                header[k] = v
+            i += 1
+        if i >= len(lines):
+            raise StrateFormatError(f"Missing {DIE_INFO_BEG} marker")
+        i += 1  # skip DIE_INFO_BEG
+
+        die_info: list[DieInfo] = []
+        while i < len(lines) and lines[i] != DIE_INFO_END:
+            die_info.append(DieInfo.from_line(lines[i]))
+            i += 1
+        if i >= len(lines):
+            raise StrateFormatError(f"Missing {DIE_INFO_END} marker")
+
+        missing = [key for key, _ in HEADER_FIELDS if key not in header]
+        if missing:
+            raise StrateFormatError(f"Missing header field(s): {', '.join(missing)}")
+
+        kwargs = {}
+        for key, attr in HEADER_FIELDS:
+            value = header[key]
+            if attr in ("substrate_row", "substrate_column", "substrate_block", "total_bond_die_qty", "good_die"):
+                try:
+                    value = int(value)
+                except ValueError as exc:
+                    raise StrateFormatError(f"{key} must be an integer, got {value!r}") from exc
+            kwargs[attr] = value
+
+        return cls(die_info=die_info, **kwargs)
