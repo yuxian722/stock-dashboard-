@@ -47,6 +47,13 @@ class DiePick:
     wafer_xy: str
     bin: str = "1"
 
+    @classmethod
+    def from_xy(cls, sub_pos: str, wafer_ring: str, x: int, y: int, bin: str = "1") -> "DiePick":
+        """Convenience for the shape wafer-picking UIs actually produce —
+        an X/Y/Bin table (see WaferCoordinate.exe's dgvSelectedCoord grid)
+        — rather than the pre-joined "x:y" string the .strate format wants."""
+        return cls(sub_pos=sub_pos, wafer_ring=wafer_ring, wafer_xy=f"{x}:{y}", bin=bin)
+
 
 def assign_dies(
     blank: StrateFile,

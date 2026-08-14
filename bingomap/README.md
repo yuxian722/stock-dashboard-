@@ -19,10 +19,15 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 - **關鍵眉角（已用真實環境驗證）**：查詢要用**去掉子批次尾碼的母批號**（例如`V32AWCW`，不是`V32AWCW01`或`V32AWCW02`）——用子批次全碼查詢，即使該子批當下確實在產線RUNNING，也會查無資料
 - 同一份SOAP服務裡的`GetAOIBinData`原本以為是wafer逐顆bin資料的來源，但用正確格式的母批號實測仍回`STATUS=NG`，判斷不是我們要的API，已停損，不再追
 
+**Phase 1d：框選揀選**
+- `wafer_map.py`：`WaferBinMap`存wafer上每個座標的bin值，`scan_rectangle()`模擬框選矩形時的自動掃描（依序取bin1、跳過bin7跟沒資料的格子），`build_picks_from_scan()`把掃描結果跟要填入的基板位置清單依序配對成`DiePick`
+- `DiePick.from_xy()`：貼合實際介面的X/Y/Bin表格輸入形狀（分開的X、Y欄位），不用自己拼"x:y"字串
+- 掃描順序（column-major，X由小到大、每欄內Y由小到大）目前是合理預設，還沒有完整真實範例逐格驗證跟原軟體是否一致——但這不影響輸出正確性，因為`assign_dies()`是照給定順序配對，掃描順序只影響清單好不好讀
+
 ## 尚未實作
 
-- **wafer die mapping圖的真正資料來源**：綠色(bin1)/粉紅(bin7)逐顆die的資料，目前唯一確認可行的方式是操作員手動開現場的「目視檢查」或`P_map_image.exe`查詢、再匯出/讀取——這步驟先保留手動，不強求自動化
-- 讀取/渲染上述mapping圖，讓使用者實際「點選」座標（目前`assignment.py`只接受已經決定好的`DiePick`清單，還沒有UI幫你產生這份清單）
+- **wafer die mapping圖的真正資料來源**：綠色(bin1)/粉紅(bin7)逐顆die的資料從哪裡自動抓進來，目前確定沿用現有軟體(WaferCoordinate.exe / 目視檢查 / P_map_image.exe)的下載/查詢方式，這步驟先保留人工操作，不強求自動化——只要有一份「座標→bin值」的資料餵進`WaferBinMap`，後面全部都已經串好了
+- UI本身（讓使用者輸入資訊、把bin資料餵進`WaferBinMap`、用滑鼠框選/點選）
 - 「複製既有.strate為範本」模式
 - 桌面/網頁介面本身
 
