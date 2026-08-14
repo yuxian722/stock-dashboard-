@@ -58,8 +58,10 @@
   </section>
 
   <section class="panel" id="pick-panel">
-    <h2><span class="step-badge">3</span>已選座標</h2>
+    <h2><span class="step-badge">3</span>已選座標 / 基板對應圖</h2>
     <p id="qty-status">已選擇 0 / 目標 ?</p>
+    <p class="hint">深藍色＝已經對應到wafer座標的基板位置（依點選順序，第N顆wafer座標對應第N個基板位置）；橘色框＝下一顆會填入的位置。</p>
+    <div id="substrate-grid"></div>
     <table id="pick-table">
       <thead><tr><th>#</th><th>X</th><th>Y</th><th>Bin</th><th></th></tr></thead>
       <tbody></tbody>

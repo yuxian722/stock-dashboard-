@@ -3,6 +3,8 @@ let picks = []; // {x, y, bin}
 let waferCells = new Map(); // "x,y" -> bin
 let waferBounds = null;
 let dragStart = null;
+let substratePositions = []; // ["col:row", ...] in blank_generator's own machine-type order
+let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 
 function headerPayload() {
   return {
@@ -32,11 +34,53 @@ async function loadBlank() {
   if (!res.ok) {
     status.textContent = "錯誤：" + data.error;
     targetQty = null;
+    substratePositions = [];
+    substrateBounds = null;
   } else {
     targetQty = data.total_qty;
+    substratePositions = data.positions;
+    substrateBounds = computeSubstrateBounds(substratePositions);
     status.textContent = `空白骨架已產生，共 ${data.positions.length} 格，目標DIE數量 = ${targetQty}`;
   }
-  renderQtyStatus();
+  renderAll();
+}
+
+function computeSubstrateBounds(positions) {
+  if (!positions.length) return null;
+  let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
+  for (const pos of positions) {
+    const [col, row] = pos.split(":").map(Number);
+    minCol = Math.min(minCol, col); maxCol = Math.max(maxCol, col);
+    minRow = Math.min(minRow, row); maxRow = Math.max(maxRow, row);
+  }
+  return { minCol, maxCol, minRow, maxRow };
+}
+
+function renderSubstrateGrid() {
+  const container = document.getElementById("substrate-grid");
+  container.innerHTML = "";
+  if (!substrateBounds) return;
+  // First N picks (in click/scan order) fill the first N positions of the
+  // blank skeleton's own order — this mirrors exactly what assign_dies()
+  // does at generate time (zips picks with blank.die_info positionally),
+  // so this preview is never out of sync with the real output.
+  const filled = new Set(substratePositions.slice(0, picks.length));
+  const nextPos = substratePositions[picks.length];
+  const { minCol, maxCol, minRow, maxRow } = substrateBounds;
+  for (let row = minRow; row <= maxRow; row++) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "wafer-row";
+    for (let col = minCol; col <= maxCol; col++) {
+      const pos = `${col}:${row}`;
+      const cell = document.createElement("div");
+      cell.className = "substrate-cell";
+      if (filled.has(pos)) cell.classList.add("filled");
+      if (pos === nextPos) cell.classList.add("next");
+      cell.title = pos;
+      rowEl.appendChild(cell);
+    }
+    container.appendChild(rowEl);
+  }
 }
 
 function parseWaferInput(text) {
@@ -154,6 +198,7 @@ function renderQtyStatus() {
 
 function renderAll() {
   renderWaferGrid();
+  renderSubstrateGrid();
   renderPickTable();
   renderQtyStatus();
 }

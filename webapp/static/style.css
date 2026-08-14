@@ -108,6 +108,14 @@ button.secondary:hover { background: #e2e6ec; }
 .wafer-cell.bin-other { background: var(--bin-other); border-color: rgba(0,0,0,0.06); }
 .wafer-cell.picked { outline: 2px solid #1a3fd6; outline-offset: -2px; }
 
+#substrate-grid { display: inline-block; margin: 0.4rem 0 0.8rem; user-select: none; }
+.substrate-cell {
+  width: 13px; height: 13px; box-sizing: border-box;
+  border: 1px solid #eef1f6; background: #f3f5f8;
+}
+.substrate-cell.filled { background: #1a3fd6; border-color: #14319e; }
+.substrate-cell.next { outline: 2px solid #f5900f; outline-offset: -2px; }
+
 table#pick-table { border-collapse: collapse; width: 100%; margin-top: 0.6rem; font-size: 0.82rem; }
 table#pick-table th {
   background: #f7f8fb; color: var(--muted); font-weight: 600;
