@@ -3,8 +3,10 @@
 包著`bingomap` core的一個最小網頁介面，流程對應原始需求：開網頁 → 輸入資訊 → 產生空白骨架 →
 點選/框選wafer座標 → 下載`.strate`。所有業務邏輯都留在`bingomap`裡，這裡只是HTTP+前端。
 
-wafer bin資料（綠/粉紅那張圖）目前還沒有自動來源，先用「貼上`x,y,bin`文字」代替——之後要換成
-真實資料來源，只需要換掉這一步的輸入方式，後面`/api/generate`完全不用動。
+wafer bin資料（綠/粉紅那張圖）**已經可以自動讀取**：輸入LotNo+Barcode ID，`/api/frm`會用
+`frm_reader.py`直接讀真實FRM二進位檔案（`{FRM_PATH}\{LotNo}\{barcode前2碼}\{barcode第3~6碼}`），
+只有這個Flask process本身跑在連得到`F:\SMAP\FRM\`網路磁碟機的電腦上才會成功。連不到的話還是可以
+用「貼上`x,y,bin`文字」手動輸入當備援，兩種方式最後都是同一份`waferCells`，後面流程完全一樣。
 
 ## 執行
 
@@ -23,8 +25,8 @@ python3 -m flask --app webapp.app run --port 5000
 ## 操作方式
 
 1. 填基本資訊，按「產生空白骨架」
-2. 貼上wafer bin資料（每行`x,y,bin`），按「載入Wafer地圖」
-3. 在網格上**點一下**加選單一顆，或**拖曳出一個矩形**自動依序選取範圍內所有綠色(bin1)的格子（跳過其他顏色跟已選過的）
+2. **Wafer Bin資料**：填LotNo+Barcode ID按「自動讀取FRM檔案」（能連F槽時）；連不到就改貼`x,y,bin`文字按「載入Wafer地圖(文字)」
+3. 在網格上**點一下**加選單一顆，或**拖曳出一個矩形**自動依序選取範圍內所有綠色(bin1)的格子（跳過其他顏色跟已選過的），下方會即時顯示對應到基板的哪個位置
 4. 已選數量會即時跟目標數量比對，不符合時是紅字
 5. 數量對了之後按「產生檔案」，會直接下載`.strate`；數量不符會跳出跟WaferCoordinate.exe同樣文字的錯誤訊息
 
@@ -45,7 +47,5 @@ Hero橫幅、步驟流程徽章(依操作進度顯示done/active)、卡片分區
 
 ## 尚未做的
 
-- 真實wafer bin資料來源——**格式已經解出來了**（見主README的`frm_reader.py`，已用真實檔案驗證），
-  還沒接進這個網頁，目前還是手動貼文字
 - 「複製既有.strate為範本」模式
 - 疊層(`DIE_INFO_OTHER_LAYER_*`)在UI上還沒有對應介面，`bingomap`核心也還沒串（見主README）
