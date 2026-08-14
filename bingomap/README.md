@@ -49,6 +49,7 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 - 跟參考工具的差異（刻意改進）：有處理疊層(`DIE_INFO_OTHER_LAYER_*`)第二層資料，參考工具原本完全沒讀這段
 - 原始wafer MAP讀的檔案格式已跟使用者確認**就是`frm_reader.py`已經byte-exact驗證過的FRM格式**，不是參考工具裡那段用「猜測」寫的heuristic binary scanner（那段掃描器完全沒有固定header、用85%機率門檻硬猜，已確認不採用）
 - **尚未用真實已知誤吸案例驗證過端對端結果**——座標轉換公式本身是照參考工具忠實搬過來的，但這個分析流程還沒拿bingomap這邊的真實誤吸案例資料核對過，操作前務必先用已知案例試跑確認
+- **2026/08/14使用者明確告知：他實際上片strip規則跟wafer mapping座標規則是DB機型，不是ESEC**——目前這個模組的座標轉換公式(`_strate_wafer_to_raw_map_270`的X反轉、`_raw_to_machine_270`/`_machine_to_raw_270`的NOTCH=270旋轉)全部照抄自ESEC 2100參考工具，**還沒有用DB機型的真實資料驗證過，暫時不保證正確**，正在等使用者提供DB機台的真實案例(STRATE+wafer MAP+已知正確結果)來修正/重新推導公式，修正前不要假設現有公式適用DB
 
 **Phase 5：Crack位置回推（移植自ESEC 2100參考工具）**
 - `crack_recovery.py`：只用已上片STRATE(不用wafer MAP、不套偏移)，讓操作員在基板圖上點選實物Crack格子，回推這些位置在原始wafer上的**相對**分布——跨多份STRATE、只要`wafer_ring`(完整Wafer ID)相同就會自動匯總在一起(一片wafer可能對應多片基板)
@@ -56,6 +57,7 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 - **all-or-nothing**：任何一份STRATE缺NOTCH或幾何無效，整個操作直接失敗，不會像誤吸點除模式那樣個別跳過那份檔案——因為Crack模式的核心就是把多份STRATE匯總在一起，悄悄漏掉一份會讓局部分布看起來不完整卻沒有任何警示
 - 局部分布座標(`local_view()`)**明確不是完整wafer絕對座標**，只是已匯入資料彼此的相對位置正規化——這是參考工具自己在說明文字裡講的限制，這裡原樣保留這個警語，不誇大輸出的意義
 - wafer ID比對用`normalize_wafer_id()`(去頭尾空白+轉大寫)，這其實也是誤吸點除模式原本該有但漏掉的規則——移植Crack模式時往回讀v78原始碼才發現參考工具兩個模式都有做這個正規化，已經回頭把`mispick_analysis.py`也修正成一致的比對方式（原本是exact match，比參考工具本身還嚴格）
+- **同樣受Phase 4那則2026/08/14筆記影響**：`output_position()`(基板顯示TX反轉，跟誤吸模式共用)跟`local_view()`(NOTCH旋轉)都是照ESEC參考工具搬的，暫時不保證適用DB機型，等使用者提供DB真實案例
 
 ## 尚未實作
 

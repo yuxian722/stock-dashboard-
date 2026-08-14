@@ -15,6 +15,11 @@
   <p>在已上片STRATE的格子上點選實物Crack位置 → 回推在原始wafer上的相對分布（跨多份STRATE、同一個完整Wafer ID自動匯總）</p>
 </div>
 
+<div class="notice error">
+  <b>⚠ 這一頁的基板顯示方向(TX反轉)跟局部分布旋轉公式，也是照ESEC 2100參考工具搬過來的，還沒有用DB機型
+  的真實案例核對過——如果你的實際上片/wafer mapping規則是DB機型，畫面上的方向/座標暫時不保證正確，
+  正在等你提供DB真實案例來修正。</b>
+</div>
 <div class="notice">
   只需要STRATE檔案，不用wafer MAP、不套偏移。任何NOTCH都接受（跟「誤吸偏移／BIN點除」頁不同，那頁鎖定只支援NOTCH=270）。
   <b>局部分布只代表已匯入資料彼此的相對位置，不是完整wafer的絕對座標</b>——空白格只代表沒有匯入STRATE上片紀錄，不代表空Die或NG。
