@@ -1,6 +1,12 @@
+from pathlib import Path
+
 import pytest
 
 from webapp.app import app
+
+REAL_FRM_FIXTURE = (
+    Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "8P065800A1_T3_DA62.frm"
+)
 
 BASE_HEADER = dict(
     assy_lot="V27NVJH",
@@ -106,4 +112,44 @@ def test_api_generate_bad_start_time_returns_400(client):
         "selections": [],
     }
     res = client.post("/api/generate", json=payload)
+    assert res.status_code == 400
+
+
+def _fake_frm_root(tmp_path, lot_no, barcode_id):
+    # Mirrors WaferCoordinate.exe's own layout: {root}\{LotNo}\{barcode[0:2]}\{barcode[2:6]}
+    d = tmp_path / lot_no / barcode_id[0:2]
+    d.mkdir(parents=True)
+    (d / barcode_id[2:6]).write_bytes(REAL_FRM_FIXTURE.read_bytes())
+    return str(tmp_path)
+
+
+def test_api_frm_loads_real_file_end_to_end(client, tmp_path):
+    root = _fake_frm_root(tmp_path, "8P065800A1", "T3DA62")
+    res = client.post(
+        "/api/frm",
+        json={"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": root},
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["columns"] == 46
+    assert data["rows"] == 56
+    assert data["lot_no"] == "8P065800A1"
+    assert data["wafer_id"] == "8P0658"
+    assert data["wafer_type"] == "AW191"
+    bins = [c["bin"] for c in data["cells"]]
+    assert bins.count("1") == 1635
+    assert bins.count("7") == 379
+
+
+def test_api_frm_missing_file_returns_404_with_helpful_message(client, tmp_path):
+    res = client.post(
+        "/api/frm",
+        json={"lot_no": "NOPE123", "barcode_id": "T3DA62", "frm_path": str(tmp_path)},
+    )
+    assert res.status_code == 404
+    assert "找不到檔案" in res.get_json()["error"]
+
+
+def test_api_frm_requires_lot_no_and_barcode(client):
+    res = client.post("/api/frm", json={"lot_no": "", "barcode_id": ""})
     assert res.status_code == 400

@@ -107,6 +107,43 @@ function parseWaferInput(text) {
   waferBounds = waferCells.size ? { minX, maxX, minY, maxY } : null;
 }
 
+function loadWaferCellsFromCells(cells) {
+  waferCells = new Map();
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const c of cells) {
+    waferCells.set(`${c.x},${c.y}`, c.bin);
+    minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x);
+    minY = Math.min(minY, c.y); maxY = Math.max(maxY, c.y);
+  }
+  waferBounds = waferCells.size ? { minX, maxX, minY, maxY } : null;
+}
+
+async function loadFrm() {
+  const status = document.getElementById("frm-status");
+  status.className = "";
+  status.textContent = "讀取中...";
+  const payload = {
+    lot_no: document.getElementById("frm_lot_no").value,
+    barcode_id: document.getElementById("frm_barcode_id").value,
+    frm_path: document.getElementById("frm_path").value,
+  };
+  const res = await fetch("/api/frm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    status.className = "error";
+    status.textContent = data.error;
+    return;
+  }
+  loadWaferCellsFromCells(data.cells);
+  status.className = "ok";
+  status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
+  renderAll();
+}
+
 function cellClass(bin) {
   if (bin === "1") return "bin-1";
   if (bin === undefined) return "";
@@ -283,6 +320,7 @@ async function generateStrate() {
 }
 
 document.getElementById("btn-blank").addEventListener("click", loadBlank);
+document.getElementById("btn-load-frm").addEventListener("click", loadFrm);
 document.getElementById("btn-load-wafer").addEventListener("click", () => {
   parseWaferInput(document.getElementById("wafer-input").value);
   renderAll();

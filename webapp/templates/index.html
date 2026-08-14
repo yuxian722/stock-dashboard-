@@ -56,9 +56,19 @@
 
   <section class="panel" id="wafer-panel">
     <h2><span class="step-badge">2</span>Wafer Bin 資料</h2>
-    <div class="notice">先手動用現場的查詢工具查出wafer bin資料，貼在下面（每行 <code>x,y,bin</code>）。之後這步可以換成別的資料來源，不影響後面流程。</div>
+
+    <div class="notice">自動讀取FRM檔案（只有這台電腦連得到<code>F:\SMAP\FRM\</code>網路磁碟機時才會成功；否則用下面手動貼文字）。</div>
+    <div class="grid2">
+      <label>FRM Lot No <input id="frm_lot_no" value="8P065800A1"></label>
+      <label>Barcode ID <input id="frm_barcode_id" value="T3DA62"></label>
+    </div>
+    <label style="margin-bottom:0.6rem">FRM根路徑 <input id="frm_path" value="F:\SMAP\FRM\"></label>
+    <button id="btn-load-frm">自動讀取FRM檔案</button>
+    <p id="frm-status"></p>
+
+    <div class="notice" style="margin-top:1rem">或手動貼上wafer bin資料（每行 <code>x,y,bin</code>）——之後這步可以換成別的資料來源，不影響後面流程。</div>
     <textarea id="wafer-input" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
-    <button class="secondary" id="btn-load-wafer">載入Wafer地圖</button>
+    <button class="secondary" id="btn-load-wafer">載入Wafer地圖(文字)</button>
     <div class="legend">
       <span><i style="background:#4fb84a"></i>Bin 1（可選）</span>
       <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>

@@ -110,9 +110,9 @@ table#pick-table tbody tr:hover{background:#fafbfd}
 #qty-status.ok{color:var(--green);background:var(--green-bg)}
 #qty-status.bad{color:var(--red);background:var(--red-bg)}
 
-#generate-status{font-size:0.85rem;margin-top:0.5rem}
-#generate-status.error{color:var(--red);white-space:pre-wrap}
-#generate-status.ok{color:var(--green)}
+#generate-status,#frm-status{font-size:0.85rem;margin-top:0.5rem}
+#generate-status.error,#frm-status.error{color:var(--red);white-space:pre-wrap}
+#generate-status.ok,#frm-status.ok{color:var(--green)}
 #blank-status{font-size:0.85rem;color:var(--muted);margin-top:0.5rem}
 
 @media(max-width:900px){
