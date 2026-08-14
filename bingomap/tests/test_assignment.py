@@ -81,7 +81,7 @@ def test_timestamps_increment_by_interval():
     assert filled.die_info[1].timestamp == "20260101000005"
 
 
-def test_quantity_mismatch_matches_wafercoordinate_dialog_wording():
+def test_quantity_mismatch_over_selection_matches_dialog_wording():
     big_blank = generate_blank(**{**BASE_KWARGS, "substrate_row": 20, "substrate_column": 20}, convention="EPOXY")
     picks = [DiePick(sub_pos=d.sub_pos, wafer_ring="W1", wafer_xy="0:0") for d in big_blank.die_info[:108]]
     with pytest.raises(DieCountMismatch) as exc_info:
@@ -89,6 +89,17 @@ def test_quantity_mismatch_matches_wafercoordinate_dialog_wording():
     assert "需要 Die 數量80" in str(exc_info.value)
     assert "已選擇數量108" in str(exc_info.value)
     assert "需減少28顆" in str(exc_info.value)
+
+
+def test_quantity_mismatch_under_selection_matches_dialog_wording():
+    # Verified against a live screenshot of the real dialog: undershooting
+    # says "還需選擇N顆", not "需增加N顆".
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
+    with pytest.raises(DieCountMismatch) as exc_info:
+        assign_dies(blank, [], start_time=datetime(2026, 1, 1), expected_qty=299)
+    assert "需要 Die 數量299" in str(exc_info.value)
+    assert "已選擇數量0" in str(exc_info.value)
+    assert "還需選擇299顆" in str(exc_info.value)
 
 
 def test_rejects_pick_at_invalid_substrate_position():

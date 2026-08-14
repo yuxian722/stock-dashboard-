@@ -12,7 +12,9 @@ assumed:
 
 The "決不能選錯數量" (quantity must match exactly) rule from the SOP is
 enforced as DieCountMismatch, reproducing the same wording WaferCoordinate.exe
-shows in its confirmation dialog ("需要 Die 數量N，已選擇數量M，需減少/增加…顆").
+shows in its confirmation dialog ("需要 Die 數量N，已選擇數量M，需減少…顆" when
+over, "…還需選擇…顆" when under — verified against a live screenshot of the
+real dialog for both directions).
 """
 from __future__ import annotations
 
@@ -30,7 +32,7 @@ class DieCountMismatch(ValueError):
         if diff > 0:
             detail = f"需減少{diff}顆"
         elif diff < 0:
-            detail = f"需增加{-diff}顆"
+            detail = f"還需選擇{-diff}顆"
         else:
             detail = ""
         super().__init__(f"需要 Die 數量{expected}，已選擇數量{actual}，{detail}")
