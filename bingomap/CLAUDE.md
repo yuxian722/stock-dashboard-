@@ -29,6 +29,10 @@ commit history），改動格式相關邏輯前，先確認有沒有真實資料
 `other_layer_die_info`還沒有對應的空白產生/填入邏輯——真的要補疊層資料
 時要記得擴充這兩個檔案，不是只有`strate.py`的parse/write支援了就沒事。
 
+（2026/08/14後續更新：`assignment.py`的`assign_two_layers()`跟webapp的
+UI(疊層checkbox+主層/次層切換按鈕)都已經補齊，兩層各自獨立計數、各自
+補滿才能產生檔案，已用真實雙層範例資料+Playwright端對端測試驗證過。）
+
 ## Mapping SOAP服務(`mapping_service.py`)：母批號要去掉子批次尾碼
 
 `http://tneas.tn.chipmos.com.tw:10000/Mapping/Service.asmx`的

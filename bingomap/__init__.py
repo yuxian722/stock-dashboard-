@@ -1,4 +1,4 @@
-from .assignment import DieCountMismatch, DiePick, assign_dies
+from .assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layers
 from .blank_generator import generate_blank, timestamp_now
 from .frm_reader import FrmFormatError, FrmMap, frm_file_path, frm_to_wafer_bin_map, parse_frm
 from .mapping_service import fetch_mapping_lots, strip_sub_lot_suffix
@@ -15,6 +15,7 @@ __all__ = [
     "StrateFormatError",
     "WaferBinMap",
     "assign_dies",
+    "assign_two_layers",
     "build_picks_from_scan",
     "fetch_mapping_lots",
     "frm_file_path",

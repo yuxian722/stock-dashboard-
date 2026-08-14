@@ -71,6 +71,8 @@ button{
 button:hover{background:#1257ab}
 button.secondary{background:#475569;box-shadow:none}
 button.secondary:hover{background:#334155}
+button.secondary.active-layer{background:var(--green);color:#fff;box-shadow:0 6px 14px rgba(15,143,95,.25)}
+button.secondary.active-layer:hover{background:#0c7550}
 .remove-btn{background:var(--red-bg);color:var(--red);padding:0.15rem 0.5rem;margin:0;font-weight:700;box-shadow:none}
 .remove-btn:hover{background:#fde2e2}
 

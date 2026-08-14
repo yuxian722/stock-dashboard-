@@ -18,7 +18,7 @@ from datetime import datetime
 
 from flask import Flask, Response, jsonify, render_template, request
 
-from bingomap.assignment import DieCountMismatch, DiePick, assign_dies
+from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layers
 from bingomap.blank_generator import generate_blank
 from bingomap.frm_reader import FrmFormatError, frm_file_path, parse_frm
 
@@ -128,24 +128,14 @@ def api_frm():
     )
 
 
-@app.post("/api/generate")
-def api_generate():
-    data = request.get_json(force=True)
-    try:
-        blank = _blank_from_header(data)
-    except (KeyError, ValueError) as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    selections = data.get("selections", [])
-    wafer_ring = data.get("wafer_ring", "")
-    sub_positions = [d.sub_pos for d in blank.die_info]
-
-    # assign_dies() checks len(picks) against expected_qty before it ever
-    # looks at an individual pick's sub_pos, so when counts don't match we
-    # only need `picks` to have the right *length* to get the correct
-    # DieCountMismatch message — the "" placeholder below is never read on
-    # that path. On the matching-count path every index is a real position.
-    picks = [
+def _build_picks(selections: list[dict], sub_positions: list[str], wafer_ring: str) -> list[DiePick]:
+    # assign_dies()/assign_two_layers() check len(picks) against
+    # expected_qty before ever looking at an individual pick's sub_pos, so
+    # when counts don't match we only need the right *length* to get a
+    # correct DieCountMismatch message — the "" placeholder is never read
+    # on that path. On the matching-count path every index is a real
+    # position.
+    return [
         DiePick.from_xy(
             sub_positions[i] if i < len(sub_positions) else "",
             wafer_ring,
@@ -156,6 +146,18 @@ def api_generate():
         for i, sel in enumerate(selections)
     ]
 
+
+@app.post("/api/generate")
+def api_generate():
+    data = request.get_json(force=True)
+    try:
+        blank = _blank_from_header(data)
+    except (KeyError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    wafer_ring = data.get("wafer_ring", "")
+    sub_positions = [d.sub_pos for d in blank.die_info]
+
     try:
         start_time = datetime.fromisoformat(data.get("start_time"))
     except (TypeError, ValueError):
@@ -163,13 +165,28 @@ def api_generate():
     interval_seconds = int(data.get("interval_seconds", 2))
 
     try:
-        filled = assign_dies(
-            blank,
-            picks,
-            start_time=start_time,
-            interval_seconds=interval_seconds,
-            expected_qty=blank.total_bond_die_qty,
-        )
+        if data.get("two_layer"):
+            primary_picks = _build_picks(data.get("primary_selections", []), sub_positions, wafer_ring)
+            other_picks = _build_picks(data.get("other_selections", []), sub_positions, wafer_ring)
+            filled = assign_two_layers(
+                blank,
+                primary_picks,
+                other_picks,
+                start_time=start_time,
+                interval_seconds=interval_seconds,
+                expected_qty=blank.total_bond_die_qty,
+                primary_layer=str(data.get("primary_layer", "2")),
+                other_layer=str(data.get("other_layer", "1")),
+            )
+        else:
+            picks = _build_picks(data.get("selections", []), sub_positions, wafer_ring)
+            filled = assign_dies(
+                blank,
+                picks,
+                start_time=start_time,
+                interval_seconds=interval_seconds,
+                expected_qty=blank.total_bond_die_qty,
+            )
     except DieCountMismatch as exc:
         return jsonify({"error": str(exc)}), 409
     except ValueError as exc:

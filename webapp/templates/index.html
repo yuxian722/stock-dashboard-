@@ -50,6 +50,15 @@
       <label>開始時間 <input id="start_time" type="datetime-local" value="2026-08-12T22:16:33"></label>
       <label>間隔(秒) <input id="interval_seconds" type="number" value="2"></label>
     </div>
+    <div class="notice" style="margin-top:0.8rem">
+      <label style="flex-direction:row;align-items:center;gap:0.5rem;font-weight:700">
+        <input type="checkbox" id="two_layer_enabled" style="width:auto"> 疊層(一次上兩顆) — 需要同時補DIE_INFO跟DIE_INFO_OTHER_LAYER兩段
+      </label>
+      <div class="grid2" id="two-layer-fields" style="margin-top:0.5rem;display:none">
+        <label>主層 f9 <input id="primary_layer" value="2"></label>
+        <label>次層(OTHER_LAYER) f9 <input id="other_layer" value="1"></label>
+      </div>
+    </div>
     <button id="btn-blank">產生空白骨架</button>
     <p id="blank-status"></p>
   </section>
@@ -83,6 +92,11 @@
 
   <section class="panel" id="pick-panel">
     <h2><span class="step-badge">3</span>已選座標 / 基板對應圖</h2>
+    <div id="layer-switch" style="display:none;margin-bottom:0.6rem">
+      <button type="button" id="btn-layer-primary" class="secondary">主層 (f9=<span id="layer-primary-label">2</span>)</button>
+      <button type="button" id="btn-layer-other" class="secondary">次層 OTHER_LAYER (f9=<span id="layer-other-label">1</span>)</button>
+      <span id="layer-status" style="margin-left:0.5rem;font-size:0.82rem;color:var(--muted)"></span>
+    </div>
     <p id="qty-status">已選擇 0 / 目標 ?</p>
     <div class="legend">
       <span><i style="background:#1769d1"></i>已對應到wafer座標的基板位置</span>

@@ -153,3 +153,48 @@ def test_api_frm_missing_file_returns_404_with_helpful_message(client, tmp_path)
 def test_api_frm_requires_lot_no_and_barcode(client):
     res = client.post("/api/frm", json={"lot_no": "", "barcode_id": ""})
     assert res.status_code == 400
+
+
+def test_api_generate_two_layer_success(client):
+    res = client.post("/api/blank", json=BASE_HEADER)
+    total_qty = res.get_json()["total_qty"]  # 80 for BASE_HEADER's 4x20
+
+    primary = [{"x": 21 - i, "y": 24, "bin": "1"} for i in range(total_qty)]
+    other = [{"x": 22 - i, "y": 24, "bin": "1"} for i in range(total_qty)]
+    payload = {
+        **BASE_HEADER,
+        "wafer_ring": "I4F247",
+        "start_time": "2026-08-12T16:15:21",
+        "interval_seconds": 3,
+        "two_layer": True,
+        "primary_selections": primary,
+        "other_selections": other,
+        "primary_layer": "2",
+        "other_layer": "1",
+    }
+    res = client.post("/api/generate", json=payload)
+    assert res.status_code == 200
+    text = res.get_data(as_text=True)
+    assert "[DIE_INFO_OTHER_LAYER_BEG]" in text
+    assert "[DIE_INFO_OTHER_LAYER_END]" in text
+    assert text.count(",2\r\n") == total_qty
+    assert text.count(",1\r\n") == total_qty
+
+
+def test_api_generate_two_layer_mismatch_reports_which_side(client):
+    res = client.post("/api/blank", json=BASE_HEADER)
+    total_qty = res.get_json()["total_qty"]
+
+    payload = {
+        **BASE_HEADER,
+        "wafer_ring": "I4F247",
+        "start_time": "2026-08-12T16:15:21",
+        "two_layer": True,
+        "primary_selections": [{"x": 1, "y": 1, "bin": "1"}],  # short
+        "other_selections": [{"x": 2, "y": 2, "bin": "1"}] * total_qty,
+    }
+    res = client.post("/api/generate", json=payload)
+    assert res.status_code == 409
+    data = res.get_json()
+    assert f"需要 Die 數量{total_qty}" in data["error"]
+    assert "已選擇數量1" in data["error"]

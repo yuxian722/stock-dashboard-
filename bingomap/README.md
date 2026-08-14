@@ -38,8 +38,6 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 
 ## 尚未實作
 
-- **把FRM檔案讀取接進webapp**：現在網頁還是手動貼`x,y,bin`文字，`frm_reader.py`格式已驗證正確，等網頁部署到能連F槽的內網電腦上執行，可以改成真的輸入LotNo+BarcodeID就自動讀取，不用再貼文字——這是下一個實作重點
-- 疊層(`other_layer_die_info`)在`blank_generator.py`/`assignment.py`還沒有對應的產生/填入邏輯，`strate.py`的讀寫格式支援了但還不能真的補疊層資料
 - ESEC以外、DB以外的其他機型(CM700等)排列規則尚未驗證
 - 「複製既有.strate為範本」模式
 

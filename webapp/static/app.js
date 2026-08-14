@@ -1,5 +1,9 @@
 let targetQty = null;
-let picks = []; // {x, y, bin}
+let picksPrimary = []; // {x, y, bin}[] — layer f9=primary_layer (or the only layer, single-layer mode)
+let picksOther = []; // layer f9=other_layer, only used when twoLayerEnabled
+let picks = picksPrimary; // alias to whichever layer is currently active; reassigned by setActiveLayer()
+let twoLayerEnabled = false;
+let currentLayerKey = "primary"; // "primary" | "other"
 let waferCells = new Map(); // "x,y" -> bin
 let waferBounds = null;
 let dragStart = null;
@@ -7,6 +11,14 @@ let substratePositions = []; // ["col:row", ...] in blank_generator's own machin
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 let focusedSubstratePos = null; // "col:row" clicked in the substrate grid, for reverse lookup
 let focusedWaferXY = null; // {x, y} the focused substrate position maps to, if filled
+
+function setActiveLayer(key) {
+  currentLayerKey = key;
+  picks = key === "primary" ? picksPrimary : picksOther;
+  document.getElementById("btn-layer-primary").classList.toggle("active-layer", key === "primary");
+  document.getElementById("btn-layer-other").classList.toggle("active-layer", key === "other");
+  renderAll();
+}
 
 function setStepFlow(step, { done = [] } = {}) {
   for (let i = 1; i <= 4; i++) {
@@ -281,6 +293,21 @@ function renderPickTable() {
 function renderQtyStatus() {
   const el = document.getElementById("qty-status");
   const target = targetQty === null ? "?" : targetQty;
+
+  if (twoLayerEnabled) {
+    const primaryDone = targetQty !== null && picksPrimary.length === targetQty;
+    const otherDone = targetQty !== null && picksOther.length === targetQty;
+    el.textContent = `主層已選擇 ${picksPrimary.length} / 目標 ${target}　次層已選擇 ${picksOther.length} / 目標 ${target}`;
+    el.className = primaryDone && otherDone ? "ok" : "bad";
+    if (targetQty === null) return;
+    if (primaryDone && otherDone) {
+      setStepFlow(4, { done: [1, 2, 3] });
+    } else if (picksPrimary.length > 0 || picksOther.length > 0 || waferBounds) {
+      setStepFlow(3, { done: [1, 2] });
+    }
+    return;
+  }
+
   el.textContent = `已選擇 ${picks.length} / 目標 ${target}`;
   const matched = targetQty !== null && picks.length === targetQty;
   el.className = matched ? "ok" : "bad";
@@ -292,11 +319,20 @@ function renderQtyStatus() {
   }
 }
 
+function renderLayerStatus() {
+  if (!twoLayerEnabled) return;
+  const status = document.getElementById("layer-status");
+  const target = targetQty === null ? "?" : targetQty;
+  const layerName = currentLayerKey === "primary" ? "主層" : "次層";
+  status.textContent = `目前編輯：${layerName}（主層 ${picksPrimary.length}/${target}，次層 ${picksOther.length}/${target}）`;
+}
+
 function renderAll() {
   renderWaferGrid();
   renderSubstrateGrid();
   renderPickTable();
   renderQtyStatus();
+  renderLayerStatus();
 }
 
 function wireWaferGridEvents() {
@@ -336,8 +372,16 @@ async function generateStrate() {
     wafer_ring: document.getElementById("wafer_ring").value,
     start_time: startTimeRaw.length === 16 ? startTimeRaw + ":00" : startTimeRaw,
     interval_seconds: document.getElementById("interval_seconds").value,
-    selections: picks,
   };
+  if (twoLayerEnabled) {
+    payload.two_layer = true;
+    payload.primary_selections = picksPrimary;
+    payload.other_selections = picksOther;
+    payload.primary_layer = document.getElementById("primary_layer").value;
+    payload.other_layer = document.getElementById("other_layer").value;
+  } else {
+    payload.selections = picks;
+  }
 
   const res = await fetch("/api/generate", {
     method: "POST",
@@ -376,13 +420,28 @@ document.getElementById("btn-load-wafer").addEventListener("click", () => {
   renderAll();
 });
 document.getElementById("btn-clear").addEventListener("click", () => {
-  picks = [];
+  picksPrimary.length = 0;
+  picksOther.length = 0;
   focusedSubstratePos = null;
   focusedWaferXY = null;
   document.getElementById("lookup-status").textContent = "";
   renderAll();
 });
 document.getElementById("btn-generate").addEventListener("click", generateStrate);
+document.getElementById("two_layer_enabled").addEventListener("change", (e) => {
+  twoLayerEnabled = e.target.checked;
+  document.getElementById("two-layer-fields").style.display = twoLayerEnabled ? "" : "none";
+  document.getElementById("layer-switch").style.display = twoLayerEnabled ? "" : "none";
+  setActiveLayer("primary");
+});
+document.getElementById("primary_layer").addEventListener("input", (e) => {
+  document.getElementById("layer-primary-label").textContent = e.target.value;
+});
+document.getElementById("other_layer").addEventListener("input", (e) => {
+  document.getElementById("layer-other-label").textContent = e.target.value;
+});
+document.getElementById("btn-layer-primary").addEventListener("click", () => setActiveLayer("primary"));
+document.getElementById("btn-layer-other").addEventListener("click", () => setActiveLayer("other"));
 wireWaferGridEvents();
 wireSubstrateGridEvents();
 renderQtyStatus();

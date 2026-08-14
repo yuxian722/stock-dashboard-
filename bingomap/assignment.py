@@ -55,20 +55,15 @@ class DiePick:
         return cls(sub_pos=sub_pos, wafer_ring=wafer_ring, wafer_xy=f"{x}:{y}", bin=bin)
 
 
-def assign_dies(
+def _build_die_info_list(
     blank: StrateFile,
     picks: list[DiePick],
     *,
+    layer: str,
     start_time: datetime,
-    interval_seconds: int = 2,
-    expected_qty: int | None = None,
-) -> StrateFile:
-    """Return a new StrateFile with `picks` written into `blank`'s skeleton.
-
-    `picks` need not cover every substrate position — unmatched positions
-    are dropped, matching real production files where unbonded sites are
-    simply absent from DIE_INFO rather than kept with bin=0.
-    """
+    interval_seconds: int,
+    expected_qty: int | None,
+) -> list[DieInfo]:
     if expected_qty is not None and len(picks) != expected_qty:
         raise DieCountMismatch(expected_qty, len(picks))
 
@@ -101,10 +96,75 @@ def assign_dies(
                 f6="0",
                 f7="0",
                 timestamp=ts.strftime("%Y%m%d%H%M%S"),
-                f9="1",
+                f9=layer,
             )
         )
         index += 1
         ts += timedelta(seconds=interval_seconds)
+    return filled
 
+
+def assign_dies(
+    blank: StrateFile,
+    picks: list[DiePick],
+    *,
+    start_time: datetime,
+    interval_seconds: int = 2,
+    expected_qty: int | None = None,
+    layer: str = "1",
+) -> StrateFile:
+    """Return a new StrateFile with `picks` written into `blank`'s skeleton.
+
+    `picks` need not cover every substrate position — unmatched positions
+    are dropped, matching real production files where unbonded sites are
+    simply absent from DIE_INFO rather than kept with bin=0.
+
+    `layer` is each surviving row's f9 value. Every single-layer sample we
+    verified against had f9="1" throughout, hence the default — but f9 is
+    not a constant in general, see assign_two_layers() below and
+    bingomap/CLAUDE.md's note on 疊層(一次上兩顆).
+    """
+    filled = _build_die_info_list(
+        blank, picks, layer=layer, start_time=start_time,
+        interval_seconds=interval_seconds, expected_qty=expected_qty,
+    )
     return replace(blank, die_info=filled, total_bond_die_qty=len(filled), good_die=len(filled))
+
+
+def assign_two_layers(
+    blank: StrateFile,
+    primary_picks: list[DiePick],
+    other_picks: list[DiePick],
+    *,
+    start_time: datetime,
+    interval_seconds: int = 2,
+    expected_qty: int | None = None,
+    primary_layer: str = "2",
+    other_layer: str = "1",
+) -> StrateFile:
+    """Stacked-die ("一次上兩顆") variant of assign_dies(): fills both
+    DIE_INFO sections of a StrateFile from the SAME substrate-position
+    skeleton — confirmed against a real 2-layer sample where both layers'
+    substrate position sequences were identical, just with different wafer
+    picks and a different trailing f9 per section (see
+    bingomap/CLAUDE.md). `expected_qty` is checked against both pick lists
+    independently, matching that sample (55 dies each side, same target).
+
+    Both DieCountMismatch and the plain ValueError cases are raised as-is
+    from whichever side fails first (primary checked before other).
+    """
+    primary_filled = _build_die_info_list(
+        blank, primary_picks, layer=primary_layer, start_time=start_time,
+        interval_seconds=interval_seconds, expected_qty=expected_qty,
+    )
+    other_filled = _build_die_info_list(
+        blank, other_picks, layer=other_layer, start_time=start_time,
+        interval_seconds=interval_seconds, expected_qty=expected_qty,
+    )
+    return replace(
+        blank,
+        die_info=primary_filled,
+        other_layer_die_info=other_filled,
+        total_bond_die_qty=len(primary_filled),
+        good_die=len(primary_filled),
+    )

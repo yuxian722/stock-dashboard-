@@ -45,7 +45,13 @@ python3 -m pytest webapp/tests/ -v
 Hero橫幅、步驟流程徽章(依操作進度顯示done/active)、卡片分區、notice提示框、色塊圖例。CSS變數
 (`--blue`/`--green`等)照抄那套工具的配色。
 
+## 疊層(一次上兩顆)
+
+基本資訊區勾選「疊層(一次上兩顆)」後，會多出主層/次層f9欄位輸入框，選座標區也會出現主層/次層切換
+按鈕；切換按鈕決定目前點wafer座標是加到哪一層，兩層各自獨立計數、各自要選滿目標數量才能產生檔案。
+產生時會呼叫`assign_two_layers()`，輸出檔案會有`[DIE_INFO_BEG]`(主層)跟`[DIE_INFO_OTHER_LAYER_BEG]`
+(次層)兩段。
+
 ## 尚未做的
 
 - 「複製既有.strate為範本」模式
-- 疊層(`DIE_INFO_OTHER_LAYER_*`)在UI上還沒有對應介面，`bingomap`核心也還沒串（見主README）
