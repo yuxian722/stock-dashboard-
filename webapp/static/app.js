@@ -6,6 +6,14 @@ let dragStart = null;
 let substratePositions = []; // ["col:row", ...] in blank_generator's own machine-type order
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 
+function setStepFlow(step, { done = [] } = {}) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`step-flow-${i}`);
+    el.classList.toggle("active", i === step);
+    el.classList.toggle("done", done.includes(i));
+  }
+}
+
 function headerPayload() {
   return {
     assy_lot: document.getElementById("assy_lot").value,
@@ -41,6 +49,7 @@ async function loadBlank() {
     substratePositions = data.positions;
     substrateBounds = computeSubstrateBounds(substratePositions);
     status.textContent = `空白骨架已產生，共 ${data.positions.length} 格，目標DIE數量 = ${targetQty}`;
+    setStepFlow(2, { done: [1] });
   }
   renderAll();
 }
@@ -193,7 +202,14 @@ function renderQtyStatus() {
   const el = document.getElementById("qty-status");
   const target = targetQty === null ? "?" : targetQty;
   el.textContent = `已選擇 ${picks.length} / 目標 ${target}`;
-  el.className = targetQty !== null && picks.length === targetQty ? "ok" : "bad";
+  const matched = targetQty !== null && picks.length === targetQty;
+  el.className = matched ? "ok" : "bad";
+  if (targetQty === null) return;
+  if (matched) {
+    setStepFlow(4, { done: [1, 2, 3] });
+  } else if (picks.length > 0 || waferBounds) {
+    setStepFlow(3, { done: [1, 2] });
+  }
 }
 
 function renderAll() {
@@ -263,6 +279,7 @@ async function generateStrate() {
   URL.revokeObjectURL(url);
   status.className = "ok";
   status.textContent = `已產生並下載：${filename}`;
+  setStepFlow(4, { done: [1, 2, 3, 4] });
 }
 
 document.getElementById("btn-blank").addEventListener("click", loadBlank);

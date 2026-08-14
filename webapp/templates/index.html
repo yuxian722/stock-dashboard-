@@ -2,14 +2,23 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BINGO MAP 補資料工具</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<header class="app-header">
+<div class="wrap">
+
+<div class="hero">
   <h1>BINGO MAP 補資料工具</h1>
   <p>開軟體 → 輸入資訊 → 產生mapping骨架 → 點選座標 → 產生 .strate</p>
-</header>
+  <div class="stepFlow" id="step-flow">
+    <span id="step-flow-1" class="active">① 基本資訊</span>
+    <span id="step-flow-2">② Wafer Bin資料</span>
+    <span id="step-flow-3">③ 選座標</span>
+    <span id="step-flow-4">④ 產生檔案</span>
+  </div>
+</div>
 
 <div class="layout">
   <section class="panel" id="header-panel">
@@ -47,20 +56,28 @@
 
   <section class="panel" id="wafer-panel">
     <h2><span class="step-badge">2</span>Wafer Bin 資料</h2>
-    <p class="hint">先手動用現場的查詢工具查出wafer bin資料，貼在下面（每行 <code>x,y,bin</code>）。之後這步可以換成別的資料來源，不影響後面流程。</p>
+    <div class="notice">先手動用現場的查詢工具查出wafer bin資料，貼在下面（每行 <code>x,y,bin</code>）。之後這步可以換成別的資料來源，不影響後面流程。</div>
     <textarea id="wafer-input" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
     <button class="secondary" id="btn-load-wafer">載入Wafer地圖</button>
+    <div class="legend">
+      <span><i style="background:#4fb84a"></i>Bin 1（可選）</span>
+      <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
+      <span><i style="background:#fff;border-color:#1a3fd6"></i>已點選</span>
+    </div>
     <div id="wafer-wrap">
       <div id="wafer-grid"></div>
       <svg id="wafer-overlay"></svg>
     </div>
-    <p class="hint">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。</p>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。</p>
   </section>
 
   <section class="panel" id="pick-panel">
     <h2><span class="step-badge">3</span>已選座標 / 基板對應圖</h2>
     <p id="qty-status">已選擇 0 / 目標 ?</p>
-    <p class="hint">深藍色＝已經對應到wafer座標的基板位置（依點選順序，第N顆wafer座標對應第N個基板位置）；橘色框＝下一顆會填入的位置。</p>
+    <div class="legend">
+      <span><i style="background:#1769d1"></i>已對應到wafer座標的基板位置</span>
+      <span><i style="background:#fff;border-color:#f5900f"></i>下一顆會填入的位置</span>
+    </div>
     <div id="substrate-grid"></div>
     <table id="pick-table">
       <thead><tr><th>#</th><th>X</th><th>Y</th><th>Bin</th><th></th></tr></thead>
@@ -76,6 +93,7 @@
   </section>
 </div>
 
+</div>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
