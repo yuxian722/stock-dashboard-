@@ -76,6 +76,37 @@ DIE_INFO裡基板位置(第4欄)的排列順序完全不同：
 邏輯**——這兩套本身就已經證明「聽起來合理」不代表是對的(一開始设計時
 完全没想到会有反向+蛇形这种排法)。
 
+## wafer bin地圖的真正資料來源：反編譯.exe直接找到答案，不用猜
+
+前面繞了很多路想找wafer bin地圖(WaferCoordinate.exe左邊那張綠/粉紅圖)的
+資料來源——先猜過SOAP API(`GetAOIBinData`，已證實是死路)，後來使用者
+一路找到`F:\SMAP\FRM\`這個資料夾，但一直卡在「不知道裡面檔案格式」。
+
+2026/08/14換了個方法直接解決：**用`ilspycmd`反編譯`WaferCoordinate.exe`**
+（`dotnet tool install -g ilspycmd --version 8.2.0.7535`，注意最新版
+`ilspycmd`在這個環境裝不起來，要指定這個版本；另外執行時要
+`export DOTNET_ROLL_FORWARD=LatestMajor`，因為這個版本的ilspycmd是針對
+.NET 6打包的，這台機器只裝得了.NET 8 SDK，要讓它roll forward才跑得動）。
+反編譯出來的`.cs`檔案裡，`DieAttachFmtRW.ReadMap()`跟`CMAP_I_HEADER`/
+`CMAP_II_HEADER`/`CMAPBIN_I`/`CMAPBIN_II`這幾個class把FRM檔案的二進位
+格式寫得一清二楚——欄位、byte數、大小端序都在裡面，不用再猜或等使用者
+找範例檔案。詳細規格見`frm_reader.py`的docstring，這裡記重點教訓：
+
+**遇到「不知道某個檔案格式」的問題，如果那個格式是由一支.exe寫出來/
+讀進去的，且那支.exe是.NET程式（用`file`指令看到"Mono/.Net assembly"字樣），
+第一步應該是嘗試反編譯，而不是先猜格式或一直伸手跟使用者要範例檔案。**
+反編譯拿到的是100%正確的規格（除非程式本身有bug），比對照少量範例檔案
+逆向猜測可靠得多，而且不需要使用者一直在現場翻檔案、來回傳截圖。
+
+反編譯路上的坑：
+- `ilspycmd`最新版(11.x)在這個環境`dotnet tool install`會失敗
+  （"Settings file 'DotnetToolSettings.xml' was not found"），指定舊版
+  `8.2.0.7535`才裝得起來
+- 裝起來的`8.2.0.7535`是針對.NET 6打包的，這個環境只裝了.NET 8 SDK
+  （apt套件庫沒有6.0/7.0 runtime），要設環境變數
+  `DOTNET_ROLL_FORWARD=LatestMajor`讓.NET 8 runtime代跑.NET 6目標的程式，
+  不然會報「You must install or update .NET to run this application」
+
 ## WaferCoordinate.exe對話框文字不對稱，不要自己腦補
 
 數量不符時的提示文字，選多跟選少用的字不一樣：

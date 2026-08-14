@@ -27,11 +27,19 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 - 掃描順序（column-major，X由小到大、每欄內Y由小到大）目前是合理預設，還沒有完整真實範例逐格驗證跟原軟體是否一致——但這不影響輸出正確性，因為`assign_dies()`是照給定順序配對，掃描順序只影響清單好不好讀
 
 **Phase 2：網頁UI雛形**
-- 見`../webapp/`——用Flask把上面這些邏輯包成能實際操作的網頁，流程：填資訊→產生空白骨架→貼wafer bin資料→點選/框選座標→產生並下載`.strate`。已用Playwright實際跑過瀏覽器驗證。
+- 見`../webapp/`——用Flask把上面這些邏輯包成能實際操作的網頁，流程：填資訊→產生空白骨架→貼wafer bin資料→點選/框選座標(即時顯示對應到基板的哪個位置)→產生並下載`.strate`。已用Playwright實際跑過瀏覽器驗證。
+
+**Phase 3：wafer bin地圖真正資料來源(FRM檔案) — 已解出格式，還沒接上真實檔案**
+- `frm_reader.py`：`WaferCoordinate.exe`畫的那張綠色(bin1)/粉紅(bin7)wafer網格圖，真正的資料來源是一個**二進位FRM檔案**，2026/08/14用`ilspycmd`反編譯`WaferCoordinate.exe`直接讀原始碼(`DieAttachFmtRW.ReadMap()`)才挖出來的完整格式規格，不是猜的也不是靠SOAP API——那條路已確認是死路（見下方Phase 1c）
+- 檔案位置也是反編譯得出的：`{FRM_PATH}\{LotNo}\{barcode前2碼}\{barcode第3~6碼}`，`frm_file_path()`照這個規則組路徑
+- 支援兩種二進位格式(第一個byte兼做格式判斷碼跟`reverse_fixed`欄位本身)：格式0(較窄的row/col/qty欄位)、格式2(較寬)，欄位精確bytes offset都在`frm_reader.py`docstring裡
+- **目前用手動組出的binary資料做單元測試驗證（byte layout照抄反編譯結果），還沒有真實FRM檔案可以byte-for-byte比對**——這是下一步最需要的東西：只要拿到一份`F:\SMAP\FRM\...`底下真實的檔案，就能100%確認這個parser是對的
+- `frm_to_wafer_bin_map()`把解析結果轉成`wafer_map.py`用的`WaferBinMap`，串上後面的框選/填入邏輯完全不用改
 
 ## 尚未實作
 
-- **wafer die mapping圖的真正資料來源**：綠色(bin1)/粉紅(bin7)逐顆die的資料從哪裡自動抓進來，目前確定沿用現有軟體(WaferCoordinate.exe / 目視檢查 / P_map_image.exe)的下載/查詢方式，這步驟先保留人工操作，不強求自動化——只要有一份「座標→bin值」的資料餵進`WaferBinMap`，後面全部都已經串好了
+- **用真實FRM檔案驗證`frm_reader.py`**：格式邏輯是從反編譯結果來的，可信度高，但還沒有真實檔案做byte-for-byte確認
+- **把FRM檔案讀取接進webapp**：現在網頁還是手動貼`x,y,bin`文字，`frm_reader.py`寫好之後，等網頁部署到能連F槽的內網電腦上執行，可以改成真的輸入LotNo+BarcodeID就自動讀取，不用再貼文字
 - 疊層(`other_layer_die_info`)在`blank_generator.py`/`assignment.py`還沒有對應的產生/填入邏輯，`strate.py`的讀寫格式支援了但還不能真的補疊層資料
 - ESEC以外、DB以外的其他機型(CM700等)排列規則尚未驗證
 - 「複製既有.strate為範本」模式
