@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>BINGO MAP 補資料工具</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<h1>BINGO MAP 補資料工具（雛形）</h1>
+
+<div class="layout">
+  <section class="panel" id="header-panel">
+    <h2>1. 基本資訊</h2>
+    <div class="grid2">
+      <label>ASSY_LOT <input id="assy_lot" value="V27NVJH"></label>
+      <label>MAPPING_LOT <input id="mapping_lot" value="S7MJS"></label>
+      <label>EQPID <input id="eqpid" value="BAB12"></label>
+      <label>OPER (站別) <input id="oper" value="2070"></label>
+      <label>SUBSTRATE_ID <input id="substrate_id" value="Z281226C"></label>
+      <label>ROW <input id="substrate_row" type="number" value="4"></label>
+      <label>COLUMN <input id="substrate_column" type="number" value="20"></label>
+      <label>BLOCK <input id="substrate_block" type="number" value="2"></label>
+      <label>NOTCH <input id="notch" value="180"></label>
+      <label>Ref <input id="ref" value="-72,340"></label>
+      <label>編號慣例
+        <select id="convention">
+          <option value="EPOXY">EPOXY (從0:0起)</option>
+          <option value="LOC">LOC (從1:1起)</option>
+        </select>
+      </label>
+      <label>來源Wafer Barcode <input id="wafer_ring" value="A27572"></label>
+      <label>開始時間 <input id="start_time" type="datetime-local" value="2026-08-12T22:16:33"></label>
+      <label>間隔(秒) <input id="interval_seconds" type="number" value="2"></label>
+    </div>
+    <button id="btn-blank">產生空白骨架</button>
+    <p id="blank-status"></p>
+  </section>
+
+  <section class="panel" id="wafer-panel">
+    <h2>2. Wafer Bin 資料</h2>
+    <p class="hint">先手動用現場的查詢工具查出wafer bin資料，貼在下面（每行 <code>x,y,bin</code>）。之後這步可以換成別的資料來源，不影響後面流程。</p>
+    <textarea id="wafer-input" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
+    <button id="btn-load-wafer">載入Wafer地圖</button>
+    <div id="wafer-grid"></div>
+    <p class="hint">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。</p>
+  </section>
+
+  <section class="panel" id="pick-panel">
+    <h2>3. 已選座標</h2>
+    <p id="qty-status">已選擇 0 / 目標 ?</p>
+    <table id="pick-table">
+      <thead><tr><th>#</th><th>X</th><th>Y</th><th>Bin</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button id="btn-clear">清空選取</button>
+  </section>
+
+  <section class="panel" id="generate-panel">
+    <h2>4. 產生 .strate</h2>
+    <button id="btn-generate">產生檔案</button>
+    <p id="generate-status"></p>
+  </section>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
