@@ -10,12 +10,19 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 - `blank_generator.py`：依標頭參數（跟EAS「Create Golden SubstrateMap」表單同一組欄位）自動產生空白骨架，取代手動登入EAS網頁系統那一步。支援LOC(從1:1起)/EPOXY(從0:0起)兩種基板編號慣例
 
 **Phase 1b：座標填入引擎**
-- `assignment.py`：把操作員選的wafer座標(`DiePick`)填進空白骨架，未被選到的基板位置整筆省略、存活的DIE重新編號、時間戳依起始時間+間隔秒數遞增。數量防呆訊息(`DieCountMismatch`)沿用WaferCoordinate.exe對話框的原文「需要 Die 數量N，已選擇數量M，需減少/增加…顆」
+- `assignment.py`：把操作員選的wafer座標(`DiePick`)填進空白骨架，未被選到的基板位置整筆省略、存活的DIE重新編號、時間戳依起始時間+間隔秒數遞增。數量防呆訊息(`DieCountMismatch`)沿用WaferCoordinate.exe對話框的原文——選多了「需減少N顆」、選少了「還需選擇N顆」（兩個方向用字不對稱，已用真實對話框截圖驗證）
 - 已驗證：把真實範例檔的75筆實際選點依原順序餵回`generate_blank`+`assign_dies`，結構(座標、bin、順序)可完全重現
+
+**Phase 1c：Mapping Lot查詢**
+- `mapping_service.py`：呼叫ChipMOS內部SOAP服務(`http://tneas.tn.chipmos.com.tw:10000/Mapping/Service.asmx`)的`GetMappingLotNoByAssyLot`，依ASSY_LOT自動查出對應的MAPPING_LOT清單（一個母批號可能對應多片wafer/多筆MAPPING_LOT）
+- 這個網址只有ChipMOS內網連得到，所以這裡只負責組請求/解析回應（單元測試用真實回應驗證），實際HTTP呼叫要在內網環境跑
+- **關鍵眉角（已用真實環境驗證）**：查詢要用**去掉子批次尾碼的母批號**（例如`V32AWCW`，不是`V32AWCW01`或`V32AWCW02`）——用子批次全碼查詢，即使該子批當下確實在產線RUNNING，也會查無資料
+- 同一份SOAP服務裡的`GetAOIBinData`原本以為是wafer逐顆bin資料的來源，但用正確格式的母批號實測仍回`STATUS=NG`，判斷不是我們要的API，已停損，不再追
 
 ## 尚未實作
 
-- 讀取/渲染wafer die mapping圖（bin值→顏色），讓使用者實際「點選」座標（目前`assignment.py`只接受已經決定好的`DiePick`清單，還沒有UI幫你產生這份清單）
+- **wafer die mapping圖的真正資料來源**：綠色(bin1)/粉紅(bin7)逐顆die的資料，目前唯一確認可行的方式是操作員手動開現場的「目視檢查」或`P_map_image.exe`查詢、再匯出/讀取——這步驟先保留手動，不強求自動化
+- 讀取/渲染上述mapping圖，讓使用者實際「點選」座標（目前`assignment.py`只接受已經決定好的`DiePick`清單，還沒有UI幫你產生這份清單）
 - 「複製既有.strate為範本」模式
 - 桌面/網頁介面本身
 
