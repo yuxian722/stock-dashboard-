@@ -1,16 +1,31 @@
 """Read/write .strate substrate-map files (SUBSTRATE MAP format used by EAS/BINGO MAP).
 
-File layout (verified byte-for-byte against a real sample):
+File layout (verified byte-for-byte against a real single-layer sample):
 - CRLF line endings throughout
 - 16 header `KEY=VALUE` lines
 - `[DIE_INFO_BEG]` / `[DIE_INFO_END]` bracketing one CSV line per die
-- two trailing blank lines after `[DIE_INFO_END]`
+- two trailing blank lines after the last section
 
 Each DIE_INFO line has 9 comma-separated fields:
     index, wafer_ring, wafer_xy, sub_pos, bin, f6, f7, timestamp, f9
 
 wafer_xy and sub_pos are themselves "A:B" pairs (wafer pickup X:Y, and
-substrate column:row placement respectively).
+substrate column:row placement respectively). f9 is the stack layer number
+(see below) — not a constant, despite every sample we first saw having "1"
+there.
+
+Stacked dies ("一次上兩顆" — the bonder picks up and places more than one
+die per cycle, at different z-layers on the same substrate site): a second
+section appears right after `[DIE_INFO_END]`, bracketed by
+`[DIE_INFO_OTHER_LAYER_BEG]` / `[DIE_INFO_OTHER_LAYER_END]`, holding the
+same substrate positions again but for the other layer — its rows' f9
+differs from the first section's (e.g. first section all "2", other-layer
+section all "1"). Confirmed against a real 2-layer sample (55 dies each
+section, both matching header TOTAL_BOND_DIE_QTY). Only the first section
+was confirmed with a complete real file top-to-bottom byte-for-byte; the
+other-layer section's structure (BEG/END markers, per-row shape) is
+confirmed from real captured rows but not a fully transcribed complete
+file, so treat it as verified-but-not-exhaustively-fuzzed.
 """
 from __future__ import annotations
 
@@ -37,6 +52,8 @@ HEADER_FIELDS = [
 
 DIE_INFO_BEG = "[DIE_INFO_BEG]"
 DIE_INFO_END = "[DIE_INFO_END]"
+DIE_INFO_OTHER_LAYER_BEG = "[DIE_INFO_OTHER_LAYER_BEG]"
+DIE_INFO_OTHER_LAYER_END = "[DIE_INFO_OTHER_LAYER_END]"
 
 
 class StrateFormatError(ValueError):
@@ -104,6 +121,11 @@ class StrateFile:
     t2_point: str = "NA"
     t2_flat: str = "NA"
     die_info: list[DieInfo] = field(default_factory=list)
+    other_layer_die_info: list[DieInfo] = field(default_factory=list)
+    """Second stacked layer's DIE_INFO rows, if this substrate has one
+    (see module docstring). Empty by default — a plain single-layer file
+    emits no [DIE_INFO_OTHER_LAYER_*] section at all, matching the
+    originally-verified single-layer sample byte-for-byte."""
 
     def filename(self, timestamp: str) -> str:
         """站別_批號_基板流水號碼_時間.strate"""
@@ -116,6 +138,10 @@ class StrateFile:
         lines.append(DIE_INFO_BEG)
         lines.extend(d.to_line() for d in self.die_info)
         lines.append(DIE_INFO_END)
+        if self.other_layer_die_info:
+            lines.append(DIE_INFO_OTHER_LAYER_BEG)
+            lines.extend(d.to_line() for d in self.other_layer_die_info)
+            lines.append(DIE_INFO_OTHER_LAYER_END)
         lines.append("")
         lines.append("")
         return "".join(line + "\r\n" for line in lines)
@@ -143,6 +169,16 @@ class StrateFile:
             i += 1
         if i >= len(lines):
             raise StrateFormatError(f"Missing {DIE_INFO_END} marker")
+        i += 1  # skip DIE_INFO_END
+
+        other_layer_die_info: list[DieInfo] = []
+        if i < len(lines) and lines[i] == DIE_INFO_OTHER_LAYER_BEG:
+            i += 1  # skip DIE_INFO_OTHER_LAYER_BEG
+            while i < len(lines) and lines[i] != DIE_INFO_OTHER_LAYER_END:
+                other_layer_die_info.append(DieInfo.from_line(lines[i]))
+                i += 1
+            if i >= len(lines):
+                raise StrateFormatError(f"Missing {DIE_INFO_OTHER_LAYER_END} marker")
 
         missing = [key for key, _ in HEADER_FIELDS if key not in header]
         if missing:
@@ -158,4 +194,4 @@ class StrateFile:
                     raise StrateFormatError(f"{key} must be an integer, got {value!r}") from exc
             kwargs[attr] = value
 
-        return cls(die_info=die_info, **kwargs)
+        return cls(die_info=die_info, other_layer_die_info=other_layer_die_info, **kwargs)

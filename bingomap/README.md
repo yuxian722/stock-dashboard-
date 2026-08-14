@@ -7,6 +7,7 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 
 **Phase 1a：格式與空白產生器**
 - `strate.py`：`.strate`檔案的parse/序列化，格式已用真實範例檔案做byte-for-byte round-trip驗證
+- **疊層(一次上兩顆)支援**：`StrateFile.other_layer_die_info`——當機台一次動作同時吸取兩顆die疊在同一個基板位置時，檔案裡除了原本`[DIE_INFO_BEG]/[END]`那段，還會多一段`[DIE_INFO_OTHER_LAYER_BEG]/[END]`裝第二層資料，每列最後一欄(`f9`)是層數，兩段各自的層數不同(例如一段全部是2、另一段全部是1)。已用真實雙層範例檔的表頭+頭尾幾筆資料驗證結構；單層檔案(沒有第二段)行為不受影響，原本的byte-for-byte驗證仍然通過
 - `blank_generator.py`：依標頭參數（跟EAS「Create Golden SubstrateMap」表單同一組欄位）自動產生空白骨架，取代手動登入EAS網頁系統那一步。支援LOC(從1:1起)/EPOXY(從0:0起)兩種基板編號慣例
 
 **Phase 1b：座標填入引擎**
