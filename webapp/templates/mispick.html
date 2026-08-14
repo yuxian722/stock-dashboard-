@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>誤吸偏移／BIN點除</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+{% include "_nav.html" %}
+
+<div class="hero">
+  <h1>誤吸偏移／BIN點除</h1>
+  <p>已知機台偏移量 + 原始wafer MAP + 已上片STRATE → 反算哪些已上片位置實際落在壞BIN上，產出點除清單</p>
+</div>
+
+<div class="notice">
+  移植自使用者提供的ESEC 2100參考工具，<b>只驗證過NOTCH=270的情況</b>（該工具本身就是這樣設計的）。
+  NOTCH不是270的STRATE會被拒絕分析，不會用未驗證的公式硬猜。原始wafer MAP讀的是跟「補資料」頁面同一種
+  FRM檔案格式，需要這台電腦連得到 <code>F:\SMAP\FRM\</code> 網路磁碟機。
+</div>
+
+<div class="layout">
+  <section class="panel" id="frm-panel">
+    <h2><span class="step-badge">1</span>原始 wafer MAP</h2>
+    <div class="grid2">
+      <label>FRM Lot No <input id="mp_frm_lot_no" value=""></label>
+      <label>Barcode ID <input id="mp_frm_barcode_id" value=""></label>
+    </div>
+    <label style="margin-bottom:0.6rem">FRM根路徑 <input id="mp_frm_path" value="F:\SMAP\FRM\"></label>
+    <label>要比對的完整Wafer ID（跟STRATE DIE_INFO第2欄比對，不符的會被排除不分析）
+      <input id="mp_wafer_ring" value="">
+    </label>
+  </section>
+
+  <section class="panel" id="strate-panel">
+    <h2><span class="step-badge">2</span>已上片 STRATE</h2>
+    <label>選擇一或多份 .strate 檔案 <input type="file" id="mp_strate_files" accept=".strate,.txt" multiple></label>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">每份檔案獨立分析，結果分開列出。</p>
+  </section>
+
+  <section class="panel" id="offset-panel">
+    <h2><span class="step-badge">3</span>偏移與BIN設定</h2>
+    <div class="notice">偏移量使用「機台轉向後方向」。X：負數往左、正數往右；Y：負數往上、正數往下。</div>
+    <div class="grid2">
+      <label>偏移方向
+        <select id="mp_offset_axis">
+          <option value="X" selected>X 偏移</option>
+          <option value="Y">Y 偏移</option>
+        </select>
+      </label>
+      <label>機台偏移量（非0整數） <input id="mp_offset_value" type="number" value="1" step="1"></label>
+      <label>正常 Good BIN <input id="mp_good_bins" value="1"></label>
+      <label>強制點除 BIN <input id="mp_ng_bins" value="7,9"></label>
+      <label>人工確認 BIN <input id="mp_review_bins" value="2"></label>
+    </div>
+  </section>
+
+  <section class="panel" id="mispick-generate-panel" style="grid-column:1/-1">
+    <h2><span class="step-badge">4</span>分析</h2>
+    <button id="mp-btn-analyze">分析偏移 + 產生點除清單</button>
+    <button class="secondary" id="mp-btn-download-csv" style="display:none">下載CSV</button>
+    <p id="mp-status"></p>
+  </section>
+
+  <section class="panel" id="mispick-results-panel" style="grid-column:1/-1">
+    <h2>結果</h2>
+    <div class="legend">
+      <span><i style="background:#ef4444"></i>強制點除 (BIN NG)</span>
+      <span><i style="background:#facc15"></i>人工確認 (BIN Review)</span>
+    </div>
+    <div id="mp-results"></div>
+  </section>
+</div>
+
+</div>
+<script src="{{ url_for('static', filename='mispick.js') }}"></script>
+</body>
+</html>

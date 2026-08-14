@@ -2,6 +2,16 @@ from .assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layer
 from .blank_generator import blank_from_positions, generate_blank, timestamp_now
 from .frm_reader import FrmFormatError, FrmMap, frm_file_path, frm_to_wafer_bin_map, parse_frm
 from .mapping_service import fetch_mapping_lots, strip_sub_lot_suffix
+from .mispick_analysis import (
+    InvalidGeometryError,
+    MispickResult,
+    MispickRow,
+    Offset,
+    UnsupportedNotchError,
+    analyze_substrate,
+    make_offset,
+    parse_bin_set,
+)
 from .strate import DieInfo, StrateFile, StrateFormatError
 from .wafer_map import WaferBinMap, build_picks_from_scan, scan_rectangle
 
@@ -11,9 +21,15 @@ __all__ = [
     "DiePick",
     "FrmFormatError",
     "FrmMap",
+    "InvalidGeometryError",
+    "MispickResult",
+    "MispickRow",
+    "Offset",
     "StrateFile",
     "StrateFormatError",
+    "UnsupportedNotchError",
     "WaferBinMap",
+    "analyze_substrate",
     "assign_dies",
     "assign_two_layers",
     "blank_from_positions",
@@ -22,6 +38,8 @@ __all__ = [
     "frm_file_path",
     "frm_to_wafer_bin_map",
     "generate_blank",
+    "make_offset",
+    "parse_bin_set",
     "parse_frm",
     "scan_rectangle",
     "strip_sub_lot_suffix",

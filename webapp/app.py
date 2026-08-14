@@ -13,6 +13,8 @@ anything below /api/generate.
 """
 from __future__ import annotations
 
+import csv
+import io
 import os
 from datetime import datetime
 
@@ -20,7 +22,19 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layers
 from bingomap.blank_generator import blank_from_positions, generate_blank
-from bingomap.frm_reader import FrmFormatError, frm_file_path, parse_frm
+from bingomap.frm_reader import FrmFormatError, frm_file_path, frm_to_wafer_bin_map, parse_frm
+from bingomap.mispick_analysis import (
+    DECISION_ANOMALY,
+    DECISION_FORCE_DELETE,
+    DECISION_OK,
+    DECISION_REVIEW,
+    InvalidGeometryError,
+    UnsupportedNotchError,
+    analyze_substrate,
+    make_offset,
+    output_coord,
+    parse_bin_set,
+)
 from bingomap.strate import StrateFile, StrateFormatError
 
 app = Flask(__name__)
@@ -55,7 +69,7 @@ def _blank_from_header(data: dict):
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", active_page="supplement")
 
 
 @app.post("/api/blank")
@@ -274,6 +288,156 @@ def api_generate():
         content,
         mimetype="text/plain",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/mispick")
+def mispick_page():
+    return render_template("mispick.html", active_page="mispick")
+
+
+_MISPICK_CSV_HEADER = [
+    "source_file", "substrate_id", "layer", "action_no", "decision",
+    "output_block", "output_coord", "tx", "ty", "fx", "fy",
+    "nominal_map_x", "nominal_map_y", "nominal_bin",
+    "actual_map_x", "actual_map_y", "actual_bin", "wafer_ring",
+]
+
+
+def _csv_text(rows: list[list]) -> str:
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\r\n")
+    for row in rows:
+        writer.writerow(row)
+    return "﻿" + buf.getvalue()  # BOM so Excel opens it as UTF-8, not Big5
+
+
+@app.post("/api/mispick/analyze")
+def api_mispick_analyze():
+    """誤吸偏移／BIN點除: given a known machine pick offset, the original
+    wafer bin map (FRM), and one or more already-produced STRATE files,
+    figure out which placed dies actually landed on a bad wafer BIN and
+    need to be point-removed. See bingomap/mispick_analysis.py — ported
+    from the user's ESEC 2100 reference tool, NOTCH=270 only."""
+    data = request.get_json(force=True)
+
+    wafer_ring = (data.get("wafer_ring") or "").strip()
+    if not wafer_ring:
+        return jsonify({"error": "請輸入要比對的完整Wafer ID"}), 400
+
+    try:
+        offset = make_offset(data.get("offset_axis", "X"), int(data.get("offset_value", 0)))
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    good_bins = parse_bin_set(data.get("good_bins", ""), default="1")
+    ng_bins = parse_bin_set(data.get("ng_bins", ""), default="7,9")
+    review_bins = parse_bin_set(data.get("review_bins", ""), default="2")
+
+    frm_info = data.get("frm") or {}
+    lot_no = (frm_info.get("lot_no") or "").strip()
+    barcode_id = (frm_info.get("barcode_id") or "").strip()
+    frm_root = (frm_info.get("frm_path") or DEFAULT_FRM_PATH).strip()
+    if not lot_no or not barcode_id:
+        return jsonify({"error": "請輸入原始wafer MAP的FRM Lot No跟Barcode ID"}), 400
+    try:
+        path = frm_file_path(frm_root, lot_no, barcode_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    fs_path = path.replace("\\", os.sep)
+    if not os.path.exists(fs_path):
+        return jsonify({"error": f"找不到原始wafer MAP檔案：{path}"}), 404
+    try:
+        with open(fs_path, "rb") as f:
+            frm = parse_frm(f.read())
+    except FrmFormatError as exc:
+        return jsonify({"error": f"原始wafer MAP格式解析失敗：{exc}"}), 422
+    wafer_map = frm_to_wafer_bin_map(frm)
+
+    strate_files = data.get("strate_files") or []
+    if not strate_files:
+        return jsonify({"error": "請至少上傳一份STRATE檔案"}), 400
+
+    substrates_out = []
+    csv_rows = [_MISPICK_CSV_HEADER]
+    for item in strate_files:
+        name = item.get("name", "")
+        text = item.get("text", "")
+        try:
+            substrate = StrateFile.parse(text)
+        except StrateFormatError as exc:
+            substrates_out.append({"name": name, "substrate_id": None, "error": f"STRATE格式解析失敗：{exc}"})
+            continue
+        try:
+            result = analyze_substrate(
+                substrate,
+                wafer_map,
+                wafer_ring=wafer_ring,
+                offset=offset,
+                good_bins=good_bins,
+                ng_bins=ng_bins,
+                review_bins=review_bins,
+            )
+        except (UnsupportedNotchError, InvalidGeometryError) as exc:
+            substrates_out.append({"name": name, "substrate_id": substrate.substrate_id, "error": str(exc)})
+            continue
+
+        summary = {"force_delete": 0, "review": 0, "anomaly": 0, "ok": 0, "other": 0}
+        action_rows_out = []
+        for row in result.rows:
+            if row.decision == DECISION_FORCE_DELETE:
+                summary["force_delete"] += 1
+            elif row.decision == DECISION_REVIEW:
+                summary["review"] += 1
+            elif row.decision == DECISION_ANOMALY:
+                summary["anomaly"] += 1
+            elif row.decision == DECISION_OK:
+                summary["ok"] += 1
+            else:
+                summary["other"] += 1
+
+            nominal_x, nominal_y = row.nominal_map_xy or ("", "")
+            actual_x, actual_y = row.actual_map_xy or ("", "")
+            csv_rows.append(
+                [
+                    name, substrate.substrate_id, row.layer, row.action_no or "", row.decision,
+                    row.output_block or "", output_coord(row), row.tx, row.ty, row.fx, row.fy,
+                    nominal_x, nominal_y, row.nominal_bin or "",
+                    actual_x, actual_y, row.actual_bin or "", row.source_die.wafer_ring,
+                ]
+            )
+            if row.action_no is not None:
+                action_rows_out.append(
+                    {
+                        "action_no": row.action_no,
+                        "decision": row.decision,
+                        "layer": row.layer,
+                        "output_block": row.output_block,
+                        "output_coord": output_coord(row),
+                        "tx": row.tx,
+                        "ty": row.ty,
+                        "actual_bin": row.actual_bin,
+                    }
+                )
+        action_rows_out.sort(key=lambda r: r["action_no"])
+
+        substrates_out.append(
+            {
+                "name": name,
+                "substrate_id": substrate.substrate_id,
+                "error": None,
+                "summary": summary,
+                "excluded_count": len(result.excluded),
+                "action_rows": action_rows_out,
+            }
+        )
+
+    return jsonify(
+        {
+            "wafer": {"columns": frm.col, "rows": frm.row, "lot_no": frm.lot_no, "wafer_id": frm.wafer_id},
+            "substrates": substrates_out,
+            "csv": _csv_text(csv_rows),
+        }
     )
 
 

@@ -61,6 +61,24 @@ DB/ESEC規則重新產生順序，等於放棄範本模式。
 產生時會呼叫`assign_two_layers()`，輸出檔案會有`[DIE_INFO_BEG]`(主層)跟`[DIE_INFO_OTHER_LAYER_BEG]`
 (次層)兩段。
 
+## 多分頁架構
+
+首頁最上方有導覽列（`templates/_nav.html`，各頁共用），目前有兩頁：①補資料(`/`，本頁)、②誤吸偏移／
+BIN點除(`/mispick`)。導覽列上也先列出③Crack位置回推、④STRATE補檔(XML合併)、⑤上片狀態人工確認/修正
+三個「尚未開發」的項目，之後每移植一個ESEC參考工具的功能就補一個新頁面+對應路由，不會把不相關的功能
+硬塞進同一頁。
+
+## 誤吸偏移／BIN點除（`/mispick`）
+
+移植自使用者提供的ESEC 2100參考工具（STRATE座標偏移點除工具v78）。流程：填「原始wafer MAP」的FRM
+LotNo+Barcode ID（跟補資料頁共用同一份`frm_reader.py`）、上傳一或多份已上片`.strate`檔案、填要比對的
+完整Wafer ID、機台偏移方向與數量、Good/強制點除/人工確認的BIN設定，按「分析」後每份STRATE各自列出
+強制點除／人工確認的清單(含基板座標、Block、TX:TY、實際BIN)，並可下載全部結果的CSV。
+
+**只支援NOTCH=270**（比照參考工具本身的限制，其他角度會直接被拒絕分析、不會硬猜公式）——詳見
+`bingomap/mispick_analysis.py`docstring跟`bingomap/CLAUDE.md`。座標轉換數學本身用手算合成測資驗證過，
+但**還沒有拿bingomap這邊的真實已知誤吸案例核對過整條pipeline**，正式使用前先拿已知案例試跑確認。
+
 ## 尚未做的
 
-- 「複製既有.strate為範本」模式
+- Crack位置回推、STRATE補檔(XML合併)、上片狀態人工確認/修正——ESEC參考工具裡另外三個功能，尚未移植

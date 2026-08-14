@@ -111,6 +111,51 @@ DIE_INFO裡基板位置(第4欄)的排列順序完全不同：
   `DOTNET_ROLL_FORWARD=LatestMajor`讓.NET 8 runtime代跑.NET 6目標的程式，
   不然會報「You must install or update .NET to run this application」
 
+## 移植使用者提供的參考工具：先分辨「活的邏輯」跟「死碼」，再談要不要搬
+
+2026/08/14：使用者要求把另外兩套自己開發的ESEC 2100參考工具（STRATE座標偏移點除工具v78、
+STRATE補檔工具v38）的功能也搬進bingomap網頁。這兩個檔案都是單檔HTML+內嵌JS，而且都是**改版多次
+沒清乾淨**的狀態：
+
+- v78裡有整個`run()`函式（連同只有它會呼叫的`renderCorrectWaferOverlay`/`diagnoseCoordModes`/
+  `classifyRow`等一大串helper，約占全檔35%）完全沒被任何按鈕綁定——是作者放棄的舊版「比對兩張wafer
+  MAP」設計，跟目前活的`v67*`/`v72*`/`v78*`是兩套不同的演算法，不是被依賴的helper
+- v38裡有整段包在`<script type="text/plain" id="legacyV31">`裡的舊版`run()`實作——`type="text/plain"`
+  的script瀏覽器根本不會執行，是100%死碼，而且檔案裡同一個函式名稱（如`mapHtml32`）還疊了3~4代
+  舊定義，靠後面的`window.mapHtml32=function(){...}`覆蓋前面的，只有最後一次賦值是真的在跑
+
+**移植前一定要先追蹤每個按鈕的`addEventListener`實際呼叫到哪個函式版本，把真正在跑的邏輯跟版本
+演進留下的殘骸分開**，不要照著檔案從頭到尾的順序理解「這是什麼設計」，很容易把已經被放棄的舊設計
+當成現行邏輯搬過來。
+
+## 誤吸偏移／BIN點除：座標轉換公式是「現場驗證過的經驗公式」，不是幾何推導
+
+v78的核心轉換（STRATE記錄的wafer座標`FX:FY`轉回原始wafer MAP座標）用固定X反轉：
+`MAP_X = wafer_map裡實際資料的max_x - FX`，程式裡的中文註解直接寫「現場資料驗證後，回原始MAP採X
+反轉」——這是作者拿ESEC 2100SD真實資料試出來的，不是從geometry第一性原理推出來的公式，而且**整個
+工具鎖死只支援NOTCH=270**，其他角度直接不處理。
+
+移植到`mispick_analysis.py`時比照辦理：只支援NOTCH=270，遇到其他NOTCH直接丟`UnsupportedNotchError`
+拒絕分析，不要自己延伸公式去猜其他角度怎麼轉——這正是使用者當下提醒的：「他的是針對esec2100機台
+開發所以會跟我的規則有點不一樣」，別把單一機型驗證過的經驗公式當成放諸四海皆準的通用邏輯。
+
+同一個原因，這個分析流程本身**還沒拿bingomap這邊的真實已知誤吸案例核對過**（只有拿v78的公式手算
+出的合成測資驗證過數學本身算對），操作前應該先用一個已知結果的真實案例試跑確認，不要一開始就直接
+信任輸出拿去現場點除。
+
+## 誤吸偏移分析讀的wafer MAP，跟FRM是同一種格式——但參考工具自己那段parser是用猜的，不要照抄
+
+v78自己內建一個`parseWaferMapBinary`，是完全沒有固定header、用滑動視窗掃描位元組、每個候選區段用
+「取樣80筆、要求≥85%像座標」這種機率門檻去猜出來的heuristic scanner，程式裡自己標註
+`parser:'v56_viewer_4byte_col_rowhi_rowlo'`，註解也承認是「沿用使用者提供的wafer_viewer原圖parser」
+——不是反編譯得出的，是猜的。這個位元組佈局（1 byte bin字元+2個0+2byte count+1個0接住座標，每筆座標
+4 bytes：col、row高位、row低位、padding）跟`frm_reader.py`已經反編譯verified的FRM格式（bin_kind是
+2-byte大端ASCII碼、格式I座標是1byte x+1byte y沒有padding byte）完全對不上。
+
+問過使用者確認：誤吸點除工具讀的「原始wafer MAP」就是同一份F:\SMAP\FRM\的FRM檔案，所以
+`mispick_analysis.py`直接吃`frm_to_wafer_bin_map()`轉出來的`WaferBinMap`，v78那段heuristic scanner
+完全沒有搬——這是本專案「不要猜格式，能反編譯/能問清楚就不要用機率門檻硬猜」原則的又一次應用。
+
 ## WaferCoordinate.exe對話框文字不對稱，不要自己腦補
 
 數量不符時的提示文字，選多跟選少用的字不一樣：

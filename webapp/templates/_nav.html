@@ -1,0 +1,7 @@
+<nav class="topNav">
+  <a href="{{ url_for('index') }}" class="{{ 'active' if active_page == 'supplement' else '' }}">① 補資料</a>
+  <a href="{{ url_for('mispick_page') }}" class="{{ 'active' if active_page == 'mispick' else '' }}">② 誤吸偏移／BIN點除</a>
+  <span class="topNavMuted">③ Crack位置回推（尚未開發）</span>
+  <span class="topNavMuted">④ STRATE補檔 XML合併（尚未開發）</span>
+  <span class="topNavMuted">⑤ 上片狀態人工確認（尚未開發）</span>
+</nav>
