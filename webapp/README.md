@@ -37,9 +37,15 @@ python3 -m pytest webapp/tests/ -v
 用Flask test client測API，也用Playwright實際開瀏覽器跑過一次完整流程（產生骨架→框選→
 下載檔案），確認產出的檔案內容正確。
 
+## 視覺設計
+
+套用了使用者提供的另一套內部工具（ESEC 2100 STRATE補檔/座標偏移點除工具）的設計語言：深色漸層
+Hero橫幅、步驟流程徽章(依操作進度顯示done/active)、卡片分區、notice提示框、色塊圖例。CSS變數
+(`--blue`/`--green`等)照抄那套工具的配色。
+
 ## 尚未做的
 
-- 真實wafer bin資料來源（目前手動貼文字）
+- 真實wafer bin資料來源——**格式已經解出來了**（見主README的`frm_reader.py`，已用真實檔案驗證），
+  還沒接進這個網頁，目前還是手動貼文字
 - 「複製既有.strate為範本」模式
 - 疊層(`DIE_INFO_OTHER_LAYER_*`)在UI上還沒有對應介面，`bingomap`核心也還沒串（見主README）
-- 樣式/易用性只是堪用程度，還沒有精修
