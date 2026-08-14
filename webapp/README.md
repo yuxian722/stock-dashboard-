@@ -8,6 +8,10 @@ wafer bin資料（綠/粉紅那張圖）目前還沒有自動來源，先用「�
 
 ## 執行
 
+**Windows雙擊執行**：直接雙擊 `webapp/launch_bingomap.bat`，第一次執行會自動裝套件，
+之後每次雙擊就直接啟動（仿照`da_bot/launch_da_bot.bat`的做法）。
+
+**手動執行**：
 ```
 pip install -r webapp/requirements.txt
 cd stock-dashboard-   # repo根目錄
