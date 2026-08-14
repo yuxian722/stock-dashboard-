@@ -127,6 +127,59 @@ def generate_blank(
     )
 
 
+def blank_from_positions(
+    *,
+    assy_lot: str,
+    mapping_lot: str,
+    eqpid: str,
+    oper: str,
+    substrate_id: str,
+    substrate_row: int,
+    substrate_column: int,
+    substrate_block: int,
+    notch: str = "",
+    ref: str = "",
+    t2_point: str = "NA",
+    t2_flat: str = "NA",
+    out_mgz_slot_no: str = "",
+    positions: list[str],
+) -> StrateFile:
+    """Build a blank skeleton from an explicit, already-known position order
+    instead of deriving it from `convention`/`machine_type`.
+
+    This is the "複製既有.strate為範本" (copy an existing file as a template)
+    path: `positions` comes straight from a previously-parsed real file's own
+    DIE_INFO (see webapp's /api/parse_strate), so it is guaranteed correct
+    for that specific substrate — reusing it sidesteps the DB-vs-ESEC
+    ordering pitfall entirely (see module docstring / CLAUDE.md) instead of
+    trying to re-guess which machine_type produced the original file.
+    """
+    die_info = [
+        DieInfo(index=i, wafer_ring="", wafer_xy="", sub_pos=pos, bin="1", f6="0", f7="0", timestamp="0", f9="1")
+        for i, pos in enumerate(positions, start=1)
+    ]
+    total = len(positions)
+    return StrateFile(
+        assy_lot=assy_lot,
+        mapping_lot=mapping_lot,
+        eqpid=eqpid,
+        oper=oper,
+        substrate_id=substrate_id,
+        substrate_row=substrate_row,
+        substrate_column=substrate_column,
+        substrate_block=substrate_block,
+        out_mgz_slot_no=out_mgz_slot_no,
+        total_bond_die_qty=total,
+        good_die=total,
+        run_time="",
+        notch=notch,
+        ref=ref,
+        t2_point=t2_point,
+        t2_flat=t2_flat,
+        die_info=die_info,
+    )
+
+
 def timestamp_now() -> str:
     """YYYYMMDDHHMMSS, matching the filename/RUN_TIME convention."""
     return datetime.now().strftime("%Y%m%d%H%M%S")

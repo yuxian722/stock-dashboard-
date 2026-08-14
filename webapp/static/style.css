@@ -41,7 +41,7 @@ body{
   border-radius:18px; padding:18px 20px; margin-top:0;
   box-shadow:0 8px 24px rgba(15,42,68,.08);
 }
-#generate-panel{grid-column:1/-1}
+#generate-panel,#template-panel{grid-column:1/-1}
 
 h2{font-size:1rem;margin:0 0 0.9rem;display:flex;align-items:center;gap:0.5rem}
 h2 .step-badge{

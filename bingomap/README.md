@@ -36,10 +36,16 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 - **已用真實檔案(`F:\SMAP\FRM\8P065800A1\T3\DA62`)100%驗證**：LotNo/WaferID/Layout/Row/Column全部吻合，**BIN1=1635顆、BIN7=379顆跟目視檢查畫面上的數字完全一致**，渲染出來的圖形也跟WaferCoordinate.exe畫面上的橢圓形完全一樣。真實檔案存在`tests/fixtures/8P065800A1_T3_DA62.frm`，有專屬回歸測試。另外發現檔案結尾有2個`\xff\xff`結尾標記位元組，不影響解析(loop是靠`bin_kind_count`/`bin_qty`驅動，不會讀到那邊)，已記錄在測試裡
 - `frm_to_wafer_bin_map()`把解析結果轉成`wafer_map.py`用的`WaferBinMap`，串上後面的框選/填入邏輯完全不用改
 
+## 複製既有.strate為範本
+
+`blank_generator.py`的`blank_from_positions()`：跟`generate_blank()`不同，不吃`convention`/`machine_type`，
+直接吃呼叫者給的`positions`(已知順序的`sub_pos`字串列表)。這是給webapp的`/api/parse_strate`用的——
+先把一份真實舊檔案parse出來，直接拿它自己`DIE_INFO`裡的`sub_pos`順序當作新blank的順序，完全不需要
+猜測/重新判斷這份舊檔案當初是哪個機型產生的，從根本上避開DB/ESEC順序搞混的風險。
+
 ## 尚未實作
 
 - ESEC以外、DB以外的其他機型(CM700等)排列規則尚未驗證
-- 「複製既有.strate為範本」模式
 
 ## 執行測試
 

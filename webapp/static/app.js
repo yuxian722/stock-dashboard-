@@ -11,6 +11,7 @@ let substratePositions = []; // ["col:row", ...] in blank_generator's own machin
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 let focusedSubstratePos = null; // "col:row" clicked in the substrate grid, for reverse lookup
 let focusedWaferXY = null; // {x, y} the focused substrate position maps to, if filled
+let usingTemplate = false; // true once a template .strate has been loaded via loadTemplate()
 
 function setActiveLayer(key) {
   currentLayerKey = key;
@@ -46,6 +47,9 @@ function headerPayload() {
 }
 
 async function loadBlank() {
+  // Explicitly regenerating via convention/machine_type supersedes any
+  // previously loaded template's position order.
+  usingTemplate = false;
   const res = await fetch("/api/blank", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -66,6 +70,66 @@ async function loadBlank() {
     setStepFlow(2, { done: [1] });
   }
   renderAll();
+}
+
+async function loadTemplate(text) {
+  const status = document.getElementById("template-status");
+  status.className = "";
+  status.textContent = "讀取中...";
+  const res = await fetch("/api/parse_strate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    status.className = "error";
+    status.textContent = data.error;
+    return;
+  }
+
+  document.getElementById("assy_lot").value = data.assy_lot;
+  document.getElementById("mapping_lot").value = data.mapping_lot;
+  document.getElementById("eqpid").value = data.eqpid;
+  document.getElementById("oper").value = data.oper;
+  document.getElementById("substrate_id").value = data.substrate_id;
+  document.getElementById("substrate_row").value = data.substrate_row;
+  document.getElementById("substrate_column").value = data.substrate_column;
+  document.getElementById("substrate_block").value = data.substrate_block;
+  document.getElementById("notch").value = data.notch;
+  document.getElementById("ref").value = data.ref;
+  document.getElementById("wafer_ring").value = data.wafer_ring;
+
+  usingTemplate = true;
+  targetQty = data.total_qty;
+  substratePositions = data.positions;
+  substrateBounds = computeSubstrateBounds(substratePositions);
+
+  picksPrimary.length = 0;
+  picksPrimary.push(...data.picks);
+  picksOther.length = 0;
+
+  const checkbox = document.getElementById("two_layer_enabled");
+  twoLayerEnabled = data.two_layer;
+  checkbox.checked = twoLayerEnabled;
+  document.getElementById("two-layer-fields").style.display = twoLayerEnabled ? "" : "none";
+  document.getElementById("layer-switch").style.display = twoLayerEnabled ? "" : "none";
+  if (twoLayerEnabled) {
+    document.getElementById("primary_layer").value = data.primary_layer;
+    document.getElementById("other_layer").value = data.other_layer;
+    document.getElementById("layer-primary-label").textContent = data.primary_layer;
+    document.getElementById("layer-other-label").textContent = data.other_layer;
+    picksOther.push(...data.other_picks);
+  }
+  setActiveLayer("primary"); // also calls renderAll()
+
+  status.className = "ok";
+  const otherNote = twoLayerEnabled ? `（含次層 ${data.other_picks.length} 顆）` : "";
+  status.textContent =
+    `已載入範本：共 ${data.total_qty} 個基板位置、主層已對應 ${data.picks.length} 顆${otherNote}。` +
+    `基板位置順序沿用範本原本的順序。可以直接調整基板流水號/時間後產生，或繼續編輯座標。`;
+  document.getElementById("blank-status").textContent = "（目前使用範本的基板位置順序，不需要再按「產生空白骨架」——除非要改用DB/ESEC規則重新產生）";
+  setStepFlow(4, { done: [1, 2, 3] });
 }
 
 function computeSubstrateBounds(positions) {
@@ -382,6 +446,11 @@ async function generateStrate() {
   } else {
     payload.selections = picks;
   }
+  if (usingTemplate) {
+    // Send the template's own position order verbatim so the backend
+    // bypasses convention/machine_type re-derivation entirely.
+    payload.template_positions = substratePositions;
+  }
 
   const res = await fetch("/api/generate", {
     method: "POST",
@@ -414,6 +483,16 @@ async function generateStrate() {
 }
 
 document.getElementById("btn-blank").addEventListener("click", loadBlank);
+document.getElementById("template-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  document.getElementById("template-text").value = text;
+  loadTemplate(text);
+});
+document.getElementById("btn-load-template").addEventListener("click", () => {
+  loadTemplate(document.getElementById("template-text").value);
+});
 document.getElementById("btn-load-frm").addEventListener("click", loadFrm);
 document.getElementById("btn-load-wafer").addEventListener("click", () => {
   parseWaferInput(document.getElementById("wafer-input").value);

@@ -7,6 +7,13 @@ from webapp.app import app
 REAL_FRM_FIXTURE = (
     Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "8P065800A1_T3_DA62.frm"
 )
+REAL_STRATE_FIXTURE = (
+    Path(__file__).parent.parent.parent
+    / "bingomap"
+    / "tests"
+    / "fixtures"
+    / "2070_V27NVJH_Z281226C_20260812221959.strate"
+)
 
 BASE_HEADER = dict(
     assy_lot="V27NVJH",
@@ -198,3 +205,69 @@ def test_api_generate_two_layer_mismatch_reports_which_side(client):
     data = res.get_json()
     assert f"需要 Die 數量{total_qty}" in data["error"]
     assert "已選擇數量1" in data["error"]
+
+
+def _read_real_strate_text():
+    with open(REAL_STRATE_FIXTURE, encoding="ascii", newline="") as f:
+        return f.read()
+
+
+def test_api_parse_strate_extracts_header_positions_and_picks(client):
+    res = client.post("/api/parse_strate", json={"text": _read_real_strate_text()})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["assy_lot"] == "V27NVJH"
+    assert data["substrate_id"] == "Z281226C"
+    assert data["substrate_row"] == 4
+    assert data["substrate_column"] == 20
+    assert data["wafer_ring"] == "A27572"
+    assert data["total_qty"] == 75
+    assert len(data["positions"]) == 75
+    assert data["positions"][0] == "0:0"
+    assert data["positions"][-1] == "19:3"
+    assert len(data["picks"]) == 75
+    assert data["picks"][0] == {"x": 23, "y": 195, "bin": "1"}
+    assert data["two_layer"] is False
+    assert data["other_picks"] == []
+
+
+def test_api_parse_strate_rejects_malformed_text(client):
+    res = client.post("/api/parse_strate", json={"text": "not a strate file"})
+    assert res.status_code == 422
+
+
+def test_api_parse_strate_rejects_empty_text(client):
+    res = client.post("/api/parse_strate", json={"text": ""})
+    assert res.status_code == 400
+
+
+def test_api_generate_with_template_positions_bypasses_machine_type(client):
+    parsed = client.post("/api/parse_strate", json={"text": _read_real_strate_text()}).get_json()
+    payload = {
+        "assy_lot": parsed["assy_lot"],
+        "mapping_lot": parsed["mapping_lot"],
+        "eqpid": parsed["eqpid"],
+        "oper": parsed["oper"],
+        "substrate_id": "Z999999Z",  # deliberately changed, as a real re-use would
+        "substrate_row": parsed["substrate_row"],
+        "substrate_column": parsed["substrate_column"],
+        "substrate_block": parsed["substrate_block"],
+        "notch": parsed["notch"],
+        "ref": parsed["ref"],
+        # No convention/machine_type at all — template_positions must win
+        # regardless, proving this path never touches generate_blank().
+        "wafer_ring": parsed["wafer_ring"],
+        "start_time": "2026-08-14T09:00:00",
+        "interval_seconds": 2,
+        "template_positions": parsed["positions"],
+        "selections": parsed["picks"],
+    }
+    res = client.post("/api/generate", json=payload)
+    assert res.status_code == 200
+    text = res.get_data(as_text=True)
+    assert "SUBSTRATE_ID=Z999999Z" in text
+    assert "TOTAL_BOND_DIE_QTY=75" in text
+    # exact same position order as the original real file, not a
+    # DB/ESEC-regenerated one
+    assert "0:0" in text
+    assert "19:3" in text

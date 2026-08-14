@@ -19,8 +19,9 @@ from datetime import datetime
 from flask import Flask, Response, jsonify, render_template, request
 
 from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layers
-from bingomap.blank_generator import generate_blank
+from bingomap.blank_generator import blank_from_positions, generate_blank
 from bingomap.frm_reader import FrmFormatError, frm_file_path, parse_frm
+from bingomap.strate import StrateFile, StrateFormatError
 
 app = Flask(__name__)
 
@@ -68,6 +69,60 @@ def api_blank():
         {
             "positions": [d.sub_pos for d in blank.die_info],
             "total_qty": blank.total_bond_die_qty,
+        }
+    )
+
+
+def _die_info_to_picks(die_list: list) -> list[dict]:
+    picks = []
+    for d in die_list:
+        x_str, _, y_str = d.wafer_xy.partition(":")
+        try:
+            x, y = int(x_str), int(y_str)
+        except ValueError:
+            continue
+        picks.append({"x": x, "y": y, "bin": d.bin})
+    return picks
+
+
+@app.post("/api/parse_strate")
+def api_parse_strate():
+    """複製既有.strate為範本：parse an existing real file and hand back
+    everything the frontend needs to prefill the form and picks — header
+    fields, the file's own substrate position order (verbatim, so
+    regenerating never has to re-guess convention/machine_type), and the
+    wafer picks already made, split by layer if the file has a stacked
+    OTHER_LAYER section."""
+    data = request.get_json(force=True)
+    text = data.get("text", "")
+    if not text.strip():
+        return jsonify({"error": "請提供.strate檔案內容"}), 400
+
+    try:
+        template = StrateFile.parse(text)
+    except StrateFormatError as exc:
+        return jsonify({"error": f"檔案格式解析失敗：{exc}"}), 422
+
+    return jsonify(
+        {
+            "assy_lot": template.assy_lot,
+            "mapping_lot": template.mapping_lot,
+            "eqpid": template.eqpid,
+            "oper": template.oper,
+            "substrate_id": template.substrate_id,
+            "substrate_row": template.substrate_row,
+            "substrate_column": template.substrate_column,
+            "substrate_block": template.substrate_block,
+            "notch": template.notch,
+            "ref": template.ref,
+            "wafer_ring": template.die_info[0].wafer_ring if template.die_info else "",
+            "positions": [d.sub_pos for d in template.die_info],
+            "total_qty": len(template.die_info),
+            "picks": _die_info_to_picks(template.die_info),
+            "two_layer": bool(template.other_layer_die_info),
+            "other_picks": _die_info_to_picks(template.other_layer_die_info),
+            "primary_layer": template.die_info[0].f9 if template.die_info else "1",
+            "other_layer": template.other_layer_die_info[0].f9 if template.other_layer_die_info else "",
         }
     )
 
@@ -151,7 +206,27 @@ def _build_picks(selections: list[dict], sub_positions: list[str], wafer_ring: s
 def api_generate():
     data = request.get_json(force=True)
     try:
-        blank = _blank_from_header(data)
+        template_positions = data.get("template_positions")
+        if template_positions:
+            # 複製既有.strate為範本 path: reuse the source file's own
+            # position order verbatim instead of re-deriving it from
+            # convention/machine_type — see blank_from_positions()'s
+            # docstring for why that's the safer choice here.
+            blank = blank_from_positions(
+                assy_lot=data["assy_lot"],
+                mapping_lot=data["mapping_lot"],
+                eqpid=data["eqpid"],
+                oper=data["oper"],
+                substrate_id=data["substrate_id"],
+                substrate_row=int(data["substrate_row"]),
+                substrate_column=int(data["substrate_column"]),
+                substrate_block=int(data["substrate_block"]),
+                notch=data.get("notch", ""),
+                ref=data.get("ref", ""),
+                positions=template_positions,
+            )
+        else:
+            blank = _blank_from_header(data)
     except (KeyError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
 

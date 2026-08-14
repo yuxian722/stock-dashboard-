@@ -21,6 +21,22 @@
 </div>
 
 <div class="layout">
+  <section class="panel" id="template-panel">
+    <h2>複製既有 .strate 為範本（選用）</h2>
+    <div class="notice">
+      如果之前已經產生過類似的檔案，可以直接載入舊檔案當範本：下面「基本資訊」跟「已選座標」都會自動帶入，
+      不用重新輸入或重新點一次座標。基板位置順序會照舊檔案原本記錄的順序，<b>不會</b>重新用DB/ESEC規則產生——
+      確保跟原檔案完全一致，不會有機型抄錯導致順序跑掉的風險。載入後可以直接改基板流水號/時間就產生，或繼續
+      調整座標。
+    </div>
+    <label>選擇 .strate 檔案 <input type="file" id="template-file" accept=".strate,.txt"></label>
+    <label style="margin-top:0.6rem">或貼上檔案內容
+      <textarea id="template-text" rows="4" placeholder="貼上舊.strate檔案的完整內容"></textarea>
+    </label>
+    <button class="secondary" id="btn-load-template">載入範本</button>
+    <p id="template-status"></p>
+  </section>
+
   <section class="panel" id="header-panel">
     <h2><span class="step-badge">1</span>基本資訊</h2>
     <div class="grid2">
