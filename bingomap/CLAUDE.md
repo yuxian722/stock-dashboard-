@@ -156,6 +156,19 @@ v78自己內建一個`parseWaferMapBinary`，是完全沒有固定header、用�
 `mispick_analysis.py`直接吃`frm_to_wafer_bin_map()`轉出來的`WaferBinMap`，v78那段heuristic scanner
 完全沒有搬——這是本專案「不要猜格式，能反編譯/能問清楚就不要用機率門檻硬猜」原則的又一次應用。
 
+## 移植Crack模式時往回讀v78原始碼，才發現誤吸模式自己漏掉了wafer ID正規化
+
+2026/08/14移植Crack位置回推時重新細讀`runV78Crack`，發現它比對wafer ID用的是
+`String(r.strateWaferId||'').trim().toUpperCase()`——回頭看`runV68`（誤吸點除模式的進入點）
+其實**也是**同一種寫法，只是我第一次移植`mispick_analysis.py`時只顧著搬座標轉換公式，
+沒注意到這個正規化，寫成了`die.wafer_ring != wafer_ring`的exact match（比參考工具本身還嚴格，
+會把大小寫或前後空白不同但其實是同一顆wafer的資料誤判成「其他wafer」而排除掉）。
+
+已經修正：兩個模式現在共用`mispick_analysis.normalize_wafer_id()`（trim+大寫）做比對，
+`crack_recovery.py`從一開始就用這個規則。**教訓：只移植看得到、在意的那一小段邏輯（例如這次
+一開始只看了座標轉換公式那幾行）容易漏掉旁邊看起來不起眼但同樣重要的正規化/防呆邏輯——
+移植同一個工具的第二個功能時，值得回頭把第一個功能也對照一次，不要假設第一次就搬乾淨了。**
+
 ## WaferCoordinate.exe對話框文字不對稱，不要自己腦補
 
 數量不符時的提示文字，選多跟選少用的字不一樣：

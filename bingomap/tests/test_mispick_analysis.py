@@ -163,6 +163,25 @@ def test_wrong_wafer_ring_is_excluded_not_classified():
     assert result.excluded[0].index == 2
 
 
+def test_wafer_ring_matching_is_case_and_whitespace_insensitive():
+    # Matches the reference tool's own comparison
+    # (String(r.strateWaferId||'').trim().toUpperCase()), not a stricter
+    # exact match.
+    die = _die(1, "0:0", "1:1", wafer_ring="  testwafer  ")
+    substrate = _substrate([die])
+    result = analyze_substrate(
+        substrate,
+        _wafer_map(),
+        wafer_ring="TestWafer",
+        offset=make_offset("X", 1),
+        good_bins={"1"},
+        ng_bins={"7", "9"},
+        review_bins={"2"},
+    )
+    assert len(result.rows) == 1
+    assert not result.excluded
+
+
 def test_stacked_other_layer_is_processed_too():
     # The reference tool silently ignored OTHER_LAYER; this module doesn't.
     primary = _die(1, "0:0", "1:1")

@@ -22,6 +22,13 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layers
 from bingomap.blank_generator import blank_from_positions, generate_blank
+from bingomap.crack_recovery import (
+    MissingNotchError,
+    build_session,
+    crack_csv_rows,
+    crack_output_coord,
+    wafer_scatter,
+)
 from bingomap.frm_reader import FrmFormatError, frm_file_path, frm_to_wafer_bin_map, parse_frm
 from bingomap.mispick_analysis import (
     DECISION_ANOMALY,
@@ -437,6 +444,118 @@ def api_mispick_analyze():
             "wafer": {"columns": frm.col, "rows": frm.row, "lot_no": frm.lot_no, "wafer_id": frm.wafer_id},
             "substrates": substrates_out,
             "csv": _csv_text(csv_rows),
+        }
+    )
+
+
+@app.get("/crack")
+def crack_page():
+    return render_template("crack.html", active_page="crack")
+
+
+def _crack_doc_payload(doc_index, name, substrate, candidates):
+    cells = [
+        {
+            "key": c.key,
+            "tx": c.tx,
+            "ty": c.ty,
+            "output_x": c.output_xy[0],
+            "output_y": c.output_xy[1],
+            "output_block": c.output_block,
+            "output_coord": crack_output_coord(c),
+            "wafer_id": c.wafer_id,
+            "fx": c.fx,
+            "fy": c.fy,
+        }
+        for c in candidates
+        if c.doc_index == doc_index
+    ]
+    return {
+        "doc_index": doc_index,
+        "name": name,
+        "substrate_id": substrate.substrate_id,
+        "row": substrate.substrate_row,
+        "column": substrate.substrate_column,
+        "block": substrate.substrate_block,
+        "cells": cells,
+    }
+
+
+@app.post("/api/crack/analyze")
+def api_crack_analyze():
+    """Crack位置回推: pool DIE_INFO rows sharing a wafer ID across every
+    uploaded STRATE, let the operator mark crack positions on each
+    substrate's own grid, and reconstruct where those marks sit relative to
+    each other on the source wafer (local scatter only — see
+    bingomap/crack_recovery.py for why this is explicitly not a true
+    absolute wafer position). Stateless like the rest of this app: every
+    call re-parses the uploaded STRATE text and re-derives everything from
+    `marked_keys`, so there's nothing to keep in sync server-side."""
+    data = request.get_json(force=True)
+    strate_files = data.get("strate_files") or []
+    if not strate_files:
+        return jsonify({"error": "請至少上傳一份STRATE檔案"}), 400
+
+    docs = []
+    for item in strate_files:
+        name = item.get("name", "")
+        text = item.get("text", "")
+        try:
+            substrate = StrateFile.parse(text)
+        except StrateFormatError as exc:
+            return jsonify({"error": f"{name} 格式解析失敗：{exc}"}), 422
+        docs.append((name, substrate))
+
+    try:
+        session = build_session(docs)
+    except (InvalidGeometryError, MissingNotchError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 422
+
+    marked_keys = [k for k in (data.get("marked_keys") or []) if k in session.by_key]
+    wafer_ids = session.wafer_ids()
+
+    focus_wafer_id = data.get("focus_wafer_id") or ""
+    if focus_wafer_id not in wafer_ids:
+        marked = session.marked(marked_keys)
+        focus_wafer_id = marked[-1].wafer_id if marked else session.candidates[0].wafer_id
+
+    docs_out = [_crack_doc_payload(i, name, substrate, session.candidates) for i, (name, substrate) in enumerate(docs)]
+
+    rng, notch, points = wafer_scatter(session, focus_wafer_id, marked_keys)
+    scatter = {
+        "range": {"min_x": rng.min_x, "max_x": rng.max_x, "min_y": rng.min_y, "max_y": rng.max_y},
+        "notch": notch,
+        "points": [
+            {"key": p.key, "x": p.x, "y": p.y, "is_crack": p.is_crack, "crack_no": p.crack_no} for p in points
+        ],
+    }
+
+    crack_table = [
+        {
+            "crack_no": i,
+            "key": c.key,
+            "substrate_id": c.substrate_id,
+            "source": c.doc_name,
+            "output_block": c.output_block,
+            "output_coord": crack_output_coord(c),
+            "tx": c.tx,
+            "ty": c.ty,
+            "wafer_id": c.wafer_id,
+            "fx": c.fx,
+            "fy": c.fy,
+            "notch": c.notch,
+        }
+        for i, c in enumerate(session.marked(marked_keys), start=1)
+    ]
+
+    return jsonify(
+        {
+            "docs": docs_out,
+            "wafer_ids": wafer_ids,
+            "focus_wafer_id": focus_wafer_id,
+            "scatter": scatter,
+            "crack_table": crack_table,
+            "csv": _csv_text(crack_csv_rows(session, marked_keys)),
         }
     )
 

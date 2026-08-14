@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crack位置回推</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+{% include "_nav.html" %}
+
+<div class="hero">
+  <h1>Crack位置回推</h1>
+  <p>在已上片STRATE的格子上點選實物Crack位置 → 回推在原始wafer上的相對分布（跨多份STRATE、同一個完整Wafer ID自動匯總）</p>
+</div>
+
+<div class="notice">
+  只需要STRATE檔案，不用wafer MAP、不套偏移。任何NOTCH都接受（跟「誤吸偏移／BIN點除」頁不同，那頁鎖定只支援NOTCH=270）。
+  <b>局部分布只代表已匯入資料彼此的相對位置，不是完整wafer的絕對座標</b>——空白格只代表沒有匯入STRATE上片紀錄，不代表空Die或NG。
+</div>
+
+<div class="layout">
+  <section class="panel" id="crack-upload-panel" style="grid-column:1/-1">
+    <h2><span class="step-badge">1</span>上傳 STRATE</h2>
+    <label>選擇一或多份 .strate 檔案（建議匯入同一個完整Wafer ID的全部相關STRATE）
+      <input type="file" id="ck_strate_files" accept=".strate,.txt" multiple>
+    </label>
+    <button id="ck-btn-load">載入 STRATE</button>
+    <button class="secondary" id="ck-btn-reset">清除</button>
+    <p id="ck-status"></p>
+  </section>
+
+  <section class="panel" id="crack-strip-panel">
+    <h2><span class="step-badge">2</span>已上片 STRATE（點格子建立/取消Crack）</h2>
+    <label>實物 Substrate
+      <select id="ck_doc_select"></select>
+    </label>
+    <div class="legend">
+      <span><i style="background:#fff"></i>已上片</span>
+      <span><i style="background:#e5e7eb"></i>無資料(不能標記)</span>
+      <span><i style="background:#ffedd5;border-color:#ea580c"></i>Crack</span>
+    </div>
+    <div id="ck-strip-grid"></div>
+  </section>
+
+  <section class="panel" id="crack-wafer-panel">
+    <h2><span class="step-badge">3</span>Wafer局部分布</h2>
+    <label>局部分布完整 Wafer ID
+      <select id="ck_wafer_select"></select>
+    </label>
+    <div class="legend">
+      <span><i style="background:#dcfce7"></i>已匯入上片</span>
+      <span><i style="background:#fff7ed;border-color:#ea580c"></i>Crack</span>
+    </div>
+    <p class="small" id="ck-wafer-info"></p>
+    <div id="ck-wafer-grid"></div>
+  </section>
+
+  <section class="panel" id="crack-table-panel" style="grid-column:1/-1">
+    <h2><span class="step-badge">4</span>Crack清單</h2>
+    <button class="secondary" id="ck-btn-download-csv" style="display:none">下載Crack CSV</button>
+    <div id="ck-table-wrap"></div>
+  </section>
+</div>
+
+</div>
+<script src="{{ url_for('static', filename='crack.js') }}"></script>
+</body>
+</html>

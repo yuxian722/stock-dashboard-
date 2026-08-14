@@ -1,5 +1,20 @@
 from .assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layers
 from .blank_generator import blank_from_positions, generate_blank, timestamp_now
+from .crack_recovery import (
+    CrackCandidate,
+    CrackSession,
+    MissingNotchError,
+    ScatterPoint,
+    build_session,
+    crack_csv_rows,
+    crack_direction_label,
+    crack_output_coord,
+    local_view,
+    notch_degrees,
+    wafer_notch,
+    wafer_pool_range,
+    wafer_scatter,
+)
 from .frm_reader import FrmFormatError, FrmMap, frm_file_path, frm_to_wafer_bin_map, parse_frm
 from .mapping_service import fetch_mapping_lots, strip_sub_lot_suffix
 from .mispick_analysis import (
@@ -9,13 +24,22 @@ from .mispick_analysis import (
     Offset,
     UnsupportedNotchError,
     analyze_substrate,
+    col_name,
     make_offset,
+    normalize_wafer_id,
+    output_block,
+    output_coord,
+    output_position,
     parse_bin_set,
+    parse_xy,
+    validate_geometry,
 )
 from .strate import DieInfo, StrateFile, StrateFormatError
 from .wafer_map import WaferBinMap, build_picks_from_scan, scan_rectangle
 
 __all__ = [
+    "CrackCandidate",
+    "CrackSession",
     "DieCountMismatch",
     "DieInfo",
     "DiePick",
@@ -24,7 +48,9 @@ __all__ = [
     "InvalidGeometryError",
     "MispickResult",
     "MispickRow",
+    "MissingNotchError",
     "Offset",
+    "ScatterPoint",
     "StrateFile",
     "StrateFormatError",
     "UnsupportedNotchError",
@@ -34,14 +60,30 @@ __all__ = [
     "assign_two_layers",
     "blank_from_positions",
     "build_picks_from_scan",
+    "build_session",
+    "col_name",
+    "crack_csv_rows",
+    "crack_direction_label",
+    "crack_output_coord",
     "fetch_mapping_lots",
     "frm_file_path",
     "frm_to_wafer_bin_map",
     "generate_blank",
+    "local_view",
     "make_offset",
+    "normalize_wafer_id",
+    "notch_degrees",
+    "output_block",
+    "output_coord",
+    "output_position",
     "parse_bin_set",
     "parse_frm",
+    "parse_xy",
     "scan_rectangle",
     "strip_sub_lot_suffix",
     "timestamp_now",
+    "validate_geometry",
+    "wafer_notch",
+    "wafer_pool_range",
+    "wafer_scatter",
 ]

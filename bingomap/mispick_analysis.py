@@ -136,21 +136,31 @@ def _strate_wafer_to_raw_map_270(fx: int, fy: int, r: WaferRange) -> tuple[int, 
     return r.max_x - fx, fy
 
 
-def _output_position(tx: int, ty: int, substrate_column: int) -> tuple[int, int]:
+def output_position(tx: int, ty: int, substrate_column: int) -> tuple[int, int]:
     """The printed work-order grid is a fixed left-right flip of the STRATE
     substrate position (top-left = A1) — cosmetic, matches the reference
-    tool's `v67OutputPos`."""
+    tool's `v67OutputPos`. Shared with crack_recovery.py, which ports the
+    same reference tool's `v78CrackOutputCoord`/`v78CrackOutputBlock`."""
     return substrate_column - 1 - tx, ty
 
 
-def _output_block(output_x: int, substrate_column: int, substrate_block: int) -> int | None:
+def output_block(output_x: int, substrate_column: int, substrate_block: int) -> int | None:
     if output_x < 0 or output_x >= substrate_column:
         return None
     block_width = substrate_column / substrate_block
     return min(substrate_block, int(output_x // block_width) + 1)
 
 
-def _validate_geometry(substrate: StrateFile) -> None:
+def normalize_wafer_id(value: str) -> str:
+    """Trim + uppercase, matching the reference tool's own wafer-ID
+    comparison (`String(r.strateWaferId||'').trim().toUpperCase()`) in both
+    its mis-pick (`runV68`) and Crack (`runV78Crack`) pipelines — used so
+    this module's `wafer_ring` matching isn't accidentally stricter (exact,
+    case-sensitive) than what the reference tool actually does."""
+    return (value or "").strip().upper()
+
+
+def validate_geometry(substrate: StrateFile) -> None:
     w, h, b = substrate.substrate_column, substrate.substrate_row, substrate.substrate_block
     if w <= 0 or h <= 0 or b <= 0:
         raise InvalidGeometryError(
@@ -181,7 +191,7 @@ class MispickRow:
     action_no: int | None = None
 
 
-def _parse_xy(text: str) -> tuple[int, int] | None:
+def parse_xy(text: str) -> tuple[int, int] | None:
     x_str, sep, y_str = text.partition(":")
     if not sep:
         return None
@@ -202,8 +212,8 @@ def _classify_row(
     ng_bins: set[str],
     review_bins: set[str],
 ) -> MispickRow:
-    wafer_xy = _parse_xy(die.wafer_xy)
-    sub_xy = _parse_xy(die.sub_pos)
+    wafer_xy = parse_xy(die.wafer_xy)
+    sub_xy = parse_xy(die.sub_pos)
 
     row = MispickRow(
         substrate_id=substrate.substrate_id,
@@ -256,8 +266,8 @@ def _classify_row(
     else:
         row.decision = DECISION_ANOMALY
 
-    row.output_xy = _output_position(tx, ty, substrate.substrate_column)
-    row.output_block = _output_block(row.output_xy[0], substrate.substrate_column, substrate.substrate_block)
+    row.output_xy = output_position(tx, ty, substrate.substrate_column)
+    row.output_block = output_block(row.output_xy[0], substrate.substrate_column, substrate.substrate_block)
     return row
 
 
@@ -310,13 +320,14 @@ def analyze_substrate(
             f"這個分析只驗證過NOTCH=270的情況，這份STRATE的NOTCH={substrate.notch!r}，"
             "為避免用未驗證的公式誤判，不會產生結果"
         )
-    _validate_geometry(substrate)
+    validate_geometry(substrate)
     rng = wafer_range(wafer_map)
+    target_wafer_id = normalize_wafer_id(wafer_ring)
 
     result = MispickResult()
     for layer, dies in (("primary", substrate.die_info), ("other", substrate.other_layer_die_info)):
         for die in dies:
-            if die.wafer_ring != wafer_ring:
+            if normalize_wafer_id(die.wafer_ring) != target_wafer_id:
                 result.excluded.append(die)
                 continue
             result.rows.append(
