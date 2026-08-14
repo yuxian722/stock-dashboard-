@@ -5,6 +5,8 @@ let waferBounds = null;
 let dragStart = null;
 let substratePositions = []; // ["col:row", ...] in blank_generator's own machine-type order
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
+let focusedSubstratePos = null; // "col:row" clicked in the substrate grid, for reverse lookup
+let focusedWaferXY = null; // {x, y} the focused substrate position maps to, if filled
 
 function setStepFlow(step, { done = [] } = {}) {
   for (let i = 1; i <= 4; i++) {
@@ -76,20 +78,60 @@ function renderSubstrateGrid() {
   const filled = new Set(substratePositions.slice(0, picks.length));
   const nextPos = substratePositions[picks.length];
   const { minCol, maxCol, minRow, maxRow } = substrateBounds;
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "wafer-row";
+  const corner = document.createElement("div");
+  corner.className = "substrate-axis-cell substrate-axis-corner";
+  headerRow.appendChild(corner);
+  for (let col = minCol; col <= maxCol; col++) {
+    const label = document.createElement("div");
+    label.className = "substrate-axis-cell";
+    label.textContent = col;
+    headerRow.appendChild(label);
+  }
+  container.appendChild(headerRow);
+
   for (let row = minRow; row <= maxRow; row++) {
     const rowEl = document.createElement("div");
     rowEl.className = "wafer-row";
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "substrate-axis-cell";
+    rowLabel.textContent = row;
+    rowEl.appendChild(rowLabel);
     for (let col = minCol; col <= maxCol; col++) {
       const pos = `${col}:${row}`;
       const cell = document.createElement("div");
       cell.className = "substrate-cell";
       if (filled.has(pos)) cell.classList.add("filled");
       if (pos === nextPos) cell.classList.add("next");
+      if (pos === focusedSubstratePos) cell.classList.add("focus");
+      cell.dataset.pos = pos;
       cell.title = pos;
       rowEl.appendChild(cell);
     }
     container.appendChild(rowEl);
   }
+}
+
+function reverseLookupSubstratePos(pos) {
+  const status = document.getElementById("lookup-status");
+  focusedSubstratePos = pos;
+  const index = substratePositions.indexOf(pos);
+  const isFilled = index >= 0 && index < picks.length;
+  if (isFilled) {
+    const pick = picks[index];
+    focusedWaferXY = { x: pick.x, y: pick.y };
+    status.textContent = `基板位置 ${pos} ↔ Wafer座標 ${pick.x}:${pick.y}（第 ${index + 1} 顆）`;
+    status.className = "notice";
+  } else {
+    focusedWaferXY = null;
+    status.textContent = `基板位置 ${pos} 尚未對應到任何wafer座標（還沒點選到這一格）`;
+    status.className = "notice";
+  }
+  renderAll();
+  const waferCellEl = document.querySelector(".wafer-cell.focus");
+  if (waferCellEl) waferCellEl.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
 }
 
 function parseWaferInput(text) {
@@ -167,6 +209,7 @@ function renderWaferGrid() {
       const cell = document.createElement("div");
       cell.className = "wafer-cell " + cellClass(bin);
       if (isPicked(x, y)) cell.classList.add("picked");
+      if (focusedWaferXY && focusedWaferXY.x === x && focusedWaferXY.y === y) cell.classList.add("focus");
       cell.dataset.x = x;
       cell.dataset.y = y;
       cell.dataset.bin = bin === undefined ? "" : bin;
@@ -275,6 +318,13 @@ function wireWaferGridEvents() {
   });
 }
 
+function wireSubstrateGridEvents() {
+  document.getElementById("substrate-grid").addEventListener("click", (e) => {
+    if (!e.target.classList.contains("substrate-cell")) return;
+    reverseLookupSubstratePos(e.target.dataset.pos);
+  });
+}
+
 async function generateStrate() {
   const status = document.getElementById("generate-status");
   status.className = "";
@@ -327,8 +377,12 @@ document.getElementById("btn-load-wafer").addEventListener("click", () => {
 });
 document.getElementById("btn-clear").addEventListener("click", () => {
   picks = [];
+  focusedSubstratePos = null;
+  focusedWaferXY = null;
+  document.getElementById("lookup-status").textContent = "";
   renderAll();
 });
 document.getElementById("btn-generate").addEventListener("click", generateStrate);
 wireWaferGridEvents();
+wireSubstrateGridEvents();
 renderQtyStatus();
