@@ -6,11 +6,14 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<h1>BINGO MAP 補資料工具（雛形）</h1>
+<header class="app-header">
+  <h1>BINGO MAP 補資料工具</h1>
+  <p>開軟體 → 輸入資訊 → 產生mapping骨架 → 點選座標 → 產生 .strate</p>
+</header>
 
 <div class="layout">
   <section class="panel" id="header-panel">
-    <h2>1. 基本資訊</h2>
+    <h2><span class="step-badge">1</span>基本資訊</h2>
     <div class="grid2">
       <label>ASSY_LOT <input id="assy_lot" value="V27NVJH"></label>
       <label>MAPPING_LOT <input id="mapping_lot" value="S7MJS"></label>
@@ -37,26 +40,29 @@
   </section>
 
   <section class="panel" id="wafer-panel">
-    <h2>2. Wafer Bin 資料</h2>
+    <h2><span class="step-badge">2</span>Wafer Bin 資料</h2>
     <p class="hint">先手動用現場的查詢工具查出wafer bin資料，貼在下面（每行 <code>x,y,bin</code>）。之後這步可以換成別的資料來源，不影響後面流程。</p>
     <textarea id="wafer-input" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
-    <button id="btn-load-wafer">載入Wafer地圖</button>
-    <div id="wafer-grid"></div>
-    <p class="hint">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。</p>
+    <button class="secondary" id="btn-load-wafer">載入Wafer地圖</button>
+    <div id="wafer-wrap">
+      <div id="wafer-grid"></div>
+      <svg id="wafer-overlay"></svg>
+    </div>
+    <p class="hint">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。</p>
   </section>
 
   <section class="panel" id="pick-panel">
-    <h2>3. 已選座標</h2>
+    <h2><span class="step-badge">3</span>已選座標</h2>
     <p id="qty-status">已選擇 0 / 目標 ?</p>
     <table id="pick-table">
       <thead><tr><th>#</th><th>X</th><th>Y</th><th>Bin</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
-    <button id="btn-clear">清空選取</button>
+    <button class="secondary" id="btn-clear">清空選取</button>
   </section>
 
   <section class="panel" id="generate-panel">
-    <h2>4. 產生 .strate</h2>
+    <h2><span class="step-badge">4</span>產生 .strate</h2>
     <button id="btn-generate">產生檔案</button>
     <p id="generate-status"></p>
   </section>

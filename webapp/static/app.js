@@ -83,6 +83,31 @@ function renderWaferGrid() {
     }
     container.appendChild(row);
   }
+  renderWaferOverlay();
+}
+
+function renderWaferOverlay() {
+  const svg = document.getElementById("wafer-overlay");
+  const grid = document.getElementById("wafer-grid");
+  if (!waferBounds) {
+    svg.setAttribute("width", 0);
+    svg.setAttribute("height", 0);
+    svg.innerHTML = "";
+    return;
+  }
+  const w = grid.offsetWidth;
+  const h = grid.offsetHeight;
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  // Approximate reference guide only — inscribed in the loaded grid's own
+  // bounding box, not a calibrated wafer diameter. Mirrors the blue
+  // ellipse + red crosshair WaferCoordinate.exe draws over its grid.
+  svg.innerHTML = `
+    <ellipse cx="${w / 2}" cy="${h / 2}" rx="${Math.max(w / 2 - 1, 0)}" ry="${Math.max(h / 2 - 1, 0)}"
+      fill="none" stroke="#1a3fd6" stroke-width="1.5" opacity="0.5" />
+    <line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="#e04b4b" stroke-width="1" opacity="0.45" />
+    <line x1="${w / 2}" y1="0" x2="${w / 2}" y2="${h}" stroke="#e04b4b" stroke-width="1" opacity="0.45" />
+  `;
 }
 
 function addPick(x, y, bin) {
