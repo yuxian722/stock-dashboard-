@@ -39,6 +39,7 @@ def _blank_from_header(data: dict):
         t2_flat=data.get("t2_flat", "NA"),
         out_mgz_slot_no=data.get("out_mgz_slot_no", ""),
         convention=data.get("convention", "EPOXY"),
+        machine_type=data.get("machine_type", "DB"),
     )
 
 

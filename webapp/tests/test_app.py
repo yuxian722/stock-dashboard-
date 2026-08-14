@@ -30,6 +30,19 @@ def test_index_page_loads(client):
     assert b"BINGO MAP" in res.data
 
 
+def test_api_blank_esec_machine_type_starts_at_last_position(client):
+    res = client.post("/api/blank", json={**BASE_HEADER, "machine_type": "ESEC"})
+    assert res.status_code == 200
+    positions = res.get_json()["positions"]
+    assert positions[0] == "19:3"  # COLUMN-1:ROW-1 for ROW=4, COLUMN=20
+
+
+def test_api_blank_defaults_to_db_machine_type(client):
+    res = client.post("/api/blank", json=BASE_HEADER)  # no machine_type key at all
+    positions = res.get_json()["positions"]
+    assert positions[0] == "0:0"
+
+
 def test_api_blank_returns_positions_and_qty(client):
     res = client.post("/api/blank", json=BASE_HEADER)
     assert res.status_code == 200

@@ -17,6 +17,7 @@ function headerPayload() {
     notch: document.getElementById("notch").value,
     ref: document.getElementById("ref").value,
     convention: document.getElementById("convention").value,
+    machine_type: document.getElementById("machine_type").value,
   };
 }
 
