@@ -131,6 +131,56 @@ def assign_dies(
     return replace(blank, die_info=filled, total_bond_die_qty=len(filled), good_die=len(filled))
 
 
+def assign_layers(
+    blank: StrateFile,
+    layer_picks: list[list[DiePick]],
+    *,
+    start_time: datetime,
+    interval_seconds: int = 2,
+    expected_qty: int | None = None,
+) -> StrateFile:
+    """N-layer generalization of assign_dies()/assign_two_layers(), for
+    "一次上N顆" (N dies stacked per cycle, N possibly > 2).
+
+    Confirmed against a real 8-layer sample (see
+    bingomap/tests/test_strate_eight_layer_real_sample.py): f9 for
+    `layer_picks[i]` is `str(i + 1)`, 1-indexed. `[DIE_INFO_BEG]` always
+    holds only the LAST layer in `layer_picks` (the highest f9 — the
+    just-completed/current layer); every other layer is concatenated, in
+    ascending f9 order, into a single `[DIE_INFO_OTHER_LAYER_BEG]`
+    section — NOT one section per extra layer — with one continuous
+    index numbered across the whole combined section (not restarting at
+    1 per layer), exactly matching that real file's layout.
+
+    `expected_qty`, if given, is checked against every layer
+    independently (same rule assign_two_layers() enforces for its 2
+    layers), so a mismatch on any single layer raises DieCountMismatch
+    for that layer without needing the others to be checked.
+    """
+    if not layer_picks:
+        raise ValueError("assign_layers() needs at least one layer")
+
+    filled_per_layer = [
+        _build_die_info_list(
+            blank, picks, layer=str(i + 1), start_time=start_time,
+            interval_seconds=interval_seconds, expected_qty=expected_qty,
+        )
+        for i, picks in enumerate(layer_picks)
+    ]
+
+    *other_layers, current_layer = filled_per_layer
+    other_filled: list[DieInfo] = [d for layer_filled in other_layers for d in layer_filled]
+    other_filled = [replace(d, index=idx) for idx, d in enumerate(other_filled, start=1)]
+
+    return replace(
+        blank,
+        die_info=current_layer,
+        other_layer_die_info=other_filled,
+        total_bond_die_qty=len(current_layer),
+        good_die=len(current_layer),
+    )
+
+
 def assign_two_layers(
     blank: StrateFile,
     primary_picks: list[DiePick],

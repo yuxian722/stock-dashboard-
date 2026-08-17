@@ -20,7 +20,7 @@ from datetime import datetime
 
 from flask import Flask, Response, jsonify, render_template, request
 
-from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_two_layers
+from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_layers
 from bingomap.blank_generator import blank_from_positions, generate_blank
 from bingomap.crack_recovery import (
     MissingNotchError,
@@ -107,6 +107,29 @@ def _die_info_to_picks(die_list: list) -> list[dict]:
     return picks
 
 
+def _split_into_layer_picks(template: StrateFile) -> list[list[dict]]:
+    """Group a parsed template's dies back into assign_layers()'s
+    layer_picks shape: one pick-list per layer, ascending by f9, with the
+    DIE_INFO layer (the highest f9 — see assign_layers()) last.
+
+    [DIE_INFO_OTHER_LAYER_*] can hold several layers mixed together,
+    distinguished only by each row's own f9 (confirmed against a real
+    8-layer sample — see bingomap/tests/test_strate_eight_layer_real_sample.py),
+    so this groups by f9 rather than assuming one section = one layer."""
+    if not template.die_info:
+        return []
+    if not template.other_layer_die_info:
+        return [_die_info_to_picks(template.die_info)]
+
+    by_f9: dict[str, list] = {}
+    for d in template.other_layer_die_info:
+        by_f9.setdefault(d.f9, []).append(d)
+    ordered_f9 = sorted(by_f9, key=lambda f9: int(f9))
+    layers = [_die_info_to_picks(by_f9[f9]) for f9 in ordered_f9]
+    layers.append(_die_info_to_picks(template.die_info))
+    return layers
+
+
 @app.post("/api/parse_strate")
 def api_parse_strate():
     """複製既有.strate為範本：parse an existing real file and hand back
@@ -141,10 +164,8 @@ def api_parse_strate():
             "positions": [d.sub_pos for d in template.die_info],
             "total_qty": len(template.die_info),
             "picks": _die_info_to_picks(template.die_info),
-            "two_layer": bool(template.other_layer_die_info),
-            "other_picks": _die_info_to_picks(template.other_layer_die_info),
-            "primary_layer": template.die_info[0].f9 if template.die_info else "1",
-            "other_layer": template.other_layer_die_info[0].f9 if template.other_layer_die_info else "",
+            "num_layers": 1 + len({d.f9 for d in template.other_layer_die_info}),
+            "layer_picks": _split_into_layer_picks(template),
         }
     )
 
@@ -270,18 +291,22 @@ def api_generate():
     interval_seconds = int(data.get("interval_seconds", 2))
 
     try:
-        if data.get("two_layer"):
-            primary_picks = _build_picks(data.get("primary_selections", []), sub_positions, wafer_ring)
-            other_picks = _build_picks(data.get("other_selections", []), sub_positions, wafer_ring)
-            filled = assign_two_layers(
+        layers_data = data.get("layers")
+        if layers_data:
+            # N-layer (一次上N顆) path — layers_data[i] is layer i+1's
+            # selections; the LAST layer is the current/topmost one and
+            # goes into DIE_INFO, everything else into DIE_INFO_OTHER_LAYER
+            # (see assign_layers() docstring / bingomap/CLAUDE.md).
+            layer_picks = [
+                _build_picks(layer_selections, sub_positions, wafer_ring)
+                for layer_selections in layers_data
+            ]
+            filled = assign_layers(
                 blank,
-                primary_picks,
-                other_picks,
+                layer_picks,
                 start_time=start_time,
                 interval_seconds=interval_seconds,
                 expected_qty=target_qty,
-                primary_layer=str(data.get("primary_layer", "2")),
-                other_layer=str(data.get("other_layer", "1")),
             )
         else:
             picks = _build_picks(data.get("selections", []), sub_positions, wafer_ring)

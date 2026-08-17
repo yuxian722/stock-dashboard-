@@ -14,6 +14,13 @@ REAL_STRATE_FIXTURE = (
     / "fixtures"
     / "2070_V27NVJH_Z281226C_20260812221959.strate"
 )
+REAL_EIGHT_LAYER_STRATE_FIXTURE = (
+    Path(__file__).parent.parent.parent
+    / "bingomap"
+    / "tests"
+    / "fixtures"
+    / "2070_V25NVDY_F2006908_20260702203138.strate"
+)
 
 BASE_HEADER = dict(
     assy_lot="V27NVJH",
@@ -205,18 +212,16 @@ def test_api_generate_two_layer_success(client):
     res = client.post("/api/blank", json=BASE_HEADER)
     total_qty = res.get_json()["total_qty"]  # 80 for BASE_HEADER's 4x20
 
-    primary = [{"x": 21 - i, "y": 24, "bin": "1"} for i in range(total_qty)]
-    other = [{"x": 22 - i, "y": 24, "bin": "1"} for i in range(total_qty)]
+    # layers[-1] is the current/topmost layer -> f9=2 (DIE_INFO);
+    # layers[0] -> f9=1 (DIE_INFO_OTHER_LAYER)
+    other = [{"x": 21 - i, "y": 24, "bin": "1"} for i in range(total_qty)]
+    primary = [{"x": 22 - i, "y": 24, "bin": "1"} for i in range(total_qty)]
     payload = {
         **BASE_HEADER,
         "wafer_ring": "I4F247",
         "start_time": "2026-08-12T16:15:21",
         "interval_seconds": 3,
-        "two_layer": True,
-        "primary_selections": primary,
-        "other_selections": other,
-        "primary_layer": "2",
-        "other_layer": "1",
+        "layers": [other, primary],
     }
     res = client.post("/api/generate", json=payload)
     assert res.status_code == 200
@@ -235,15 +240,37 @@ def test_api_generate_two_layer_mismatch_reports_which_side(client):
         **BASE_HEADER,
         "wafer_ring": "I4F247",
         "start_time": "2026-08-12T16:15:21",
-        "two_layer": True,
-        "primary_selections": [{"x": 1, "y": 1, "bin": "1"}],  # short
-        "other_selections": [{"x": 2, "y": 2, "bin": "1"}] * total_qty,
+        "layers": [
+            [{"x": 2, "y": 2, "bin": "1"}] * total_qty,
+            [{"x": 1, "y": 1, "bin": "1"}],  # short (this is the last/current layer)
+        ],
     }
     res = client.post("/api/generate", json=payload)
     assert res.status_code == 409
     data = res.get_json()
     assert f"需要 Die 數量{total_qty}" in data["error"]
     assert "已選擇數量1" in data["error"]
+
+
+def test_api_generate_eight_layer_success(client):
+    header = dict(BASE_HEADER, substrate_row=1, substrate_column=7, substrate_block=1)
+    res = client.post("/api/blank", json=header)
+    total_qty = res.get_json()["total_qty"]
+    assert total_qty == 7
+
+    layers = [[{"x": layer * 10 + i, "y": 1, "bin": "1"} for i in range(total_qty)] for layer in range(8)]
+    payload = {
+        **header,
+        "wafer_ring": "B6844E",
+        "start_time": "2026-07-02T20:26:40",
+        "layers": layers,
+    }
+    res = client.post("/api/generate", json=payload)
+    assert res.status_code == 200
+    text = res.get_data(as_text=True)
+    assert "[DIE_INFO_OTHER_LAYER_BEG]" in text
+    for f9 in range(1, 9):
+        assert text.count(f",{f9}\r\n") == total_qty, f9
 
 
 def _read_real_strate_text():
@@ -266,8 +293,23 @@ def test_api_parse_strate_extracts_header_positions_and_picks(client):
     assert data["positions"][-1] == "19:3"
     assert len(data["picks"]) == 75
     assert data["picks"][0] == {"x": 23, "y": 195, "bin": "1"}
-    assert data["two_layer"] is False
-    assert data["other_picks"] == []
+    assert data["num_layers"] == 1
+    assert data["layer_picks"] == [data["picks"]]
+
+
+def test_api_parse_strate_splits_real_eight_layer_file_by_f9(client):
+    with open(REAL_EIGHT_LAYER_STRATE_FIXTURE, encoding="ascii", newline="") as f:
+        text = f.read()
+    res = client.post("/api/parse_strate", json={"text": text})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["num_layers"] == 8
+    assert len(data["layer_picks"]) == 8
+    assert all(len(layer) == 7 for layer in data["layer_picks"])
+    # layer_picks[-1] is the DIE_INFO (topmost/current) layer
+    assert data["layer_picks"][-1] == data["picks"]
+    # layer_picks[0] is f9=1's picks — first row's wafer_xy is "3:66"
+    assert data["layer_picks"][0][0] == {"x": 3, "y": 66, "bin": "1"}
 
 
 def test_api_parse_strate_rejects_malformed_text(client):
