@@ -340,12 +340,19 @@ function renderWaferGridInto(containerId, overlayId, cells, bounds, gridKind) {
   }
   const { minX, maxX, minY, maxY } = bounds;
 
+  // X axis is rendered right-to-left (0 at the right edge) to match the
+  // real WaferCoordinate.exe tool's convention, where the wafer's origin
+  // (0,0) sits at the top-right, not top-left. Confirmed against a photo
+  // of the real tool the user sent — its column header reads high→low
+  // left to right. Only the display order changes here; dataset.x/y on
+  // each cell still carries the real coordinate, so picking/dragging/
+  // reverse-lookup are unaffected.
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let x = minX; x <= maxX; x++) {
+  for (let x = maxX; x >= minX; x--) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
     label.textContent = x;
@@ -366,7 +373,7 @@ function renderWaferGridInto(containerId, overlayId, cells, bounds, gridKind) {
     rowLabel.className = "grid-axis-cell";
     rowLabel.textContent = y;
     row.appendChild(rowLabel);
-    for (let x = minX; x <= maxX; x++) {
+    for (let x = maxX; x >= minX; x--) {
       const bin = cells.get(`${x},${y}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell " + cellClass(bin);
