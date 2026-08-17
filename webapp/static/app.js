@@ -283,7 +283,12 @@ function waferCellsFromApiCells(apiCells) {
 }
 
 async function loadFrmInto(prefix, targetIsOther) {
-  const status = document.getElementById(`frm-status${prefix}`);
+  // The status paragraph's id uses a hyphen ("frm-status-other"), unlike
+  // the other fields for this panel which use an underscore-suffixed
+  // `prefix` ("frm_lot_no_other" etc.) — building it from `prefix` directly
+  // silently produced "frm-status_other", a non-existent id, which crashed
+  // this function before the fetch ever ran (getElementById returned null).
+  const status = document.getElementById(targetIsOther ? "frm-status-other" : "frm-status");
   status.className = "";
   status.textContent = "讀取中...";
   const payload = {

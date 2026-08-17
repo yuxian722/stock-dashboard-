@@ -163,9 +163,9 @@ table#pick-table tbody tr:hover,table#pick-table-other tbody tr:hover{background
 #qty-status.bad,.badge.bad{color:var(--red);background:var(--red-bg)}
 .badge:empty{display:none}
 
-#generate-status,#frm-status{font-size:0.85rem;margin-top:0.5rem}
-#generate-status.error,#frm-status.error{color:var(--red);white-space:pre-wrap}
-#generate-status.ok,#frm-status.ok{color:var(--green)}
+#generate-status,#frm-status,#frm-status-other{font-size:0.85rem;margin-top:0.5rem}
+#generate-status.error,#frm-status.error,#frm-status-other.error{color:var(--red);white-space:pre-wrap}
+#generate-status.ok,#frm-status.ok,#frm-status-other.ok{color:var(--green)}
 #blank-status{font-size:0.85rem;color:var(--muted);margin-top:0.5rem}
 
 /* Generic reusable status/table classes (mispick page and future pages) */
