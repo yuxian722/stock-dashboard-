@@ -75,13 +75,16 @@
         <label>主層 f9 <input id="primary_layer" value="2"></label>
         <label>次層(OTHER_LAYER) f9 <input id="other_layer" value="1"></label>
       </div>
+      <label id="dual-wafer-field" style="flex-direction:row;align-items:center;gap:0.5rem;font-weight:700;margin-top:0.6rem;display:none">
+        <input type="checkbox" id="dual_wafer_enabled" style="width:auto"> 主層/次層來自不同的wafer（跨兩片wafer）
+      </label>
     </div>
     <button id="btn-blank">產生空白骨架</button>
     <p id="blank-status"></p>
   </section>
 
   <section class="panel" id="wafer-panel" style="grid-column:1/-1">
-    <h2><span class="step-badge">2</span>Wafer Bin 資料</h2>
+    <h2><span class="step-badge">2</span>Wafer Bin 資料<span id="wafer-panel-title-suffix"></span></h2>
 
     <div class="notice">自動讀取FRM檔案（只有這台電腦連得到<code>F:\SMAP\FRM\</code>網路磁碟機時才會成功；否則用下面手動貼文字）。</div>
     <div class="grid2">
@@ -98,14 +101,40 @@
     <div class="legend">
       <span><i style="background:#4fb84a"></i>Bin 1（可選）</span>
       <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
-      <span><i style="background:#fff;border-color:#1a3fd6"></i>已點選</span>
+      <span><i style="background:#fff;border-color:#1a3fd6"></i>已點選（主層）</span>
+      <span id="wafer-legend-other-picked" style="display:none"><i style="background:#fff;border-color:#7e22ce"></i>已點選（次層）</span>
     </div>
     <p id="wafer-hover-status" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
     <div id="wafer-wrap">
       <div id="wafer-grid"></div>
       <svg id="wafer-overlay"></svg>
     </div>
-    <p class="hint" style="font-size:0.78rem;color:var(--muted)">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。</p>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)" id="wafer-hint">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。已經點過的座標(不論主層或次層)不能重複點選。</p>
+  </section>
+
+  <section class="panel" id="wafer-panel-other" style="grid-column:1/-1;display:none">
+    <h2><span class="step-badge">2</span>Wafer Bin 資料 — 次層（不同wafer）</h2>
+    <div class="notice">次層使用跟主層不同的wafer，這裡獨立讀取/貼上次層自己的wafer bin資料。</div>
+    <div class="grid2">
+      <label>FRM Lot No <input id="frm_lot_no_other" value=""></label>
+      <label>Barcode ID <input id="frm_barcode_id_other" value=""></label>
+    </div>
+    <label style="margin-bottom:0.6rem">FRM根路徑 <input id="frm_path_other" value="F:\SMAP\FRM\"></label>
+    <button id="btn-load-frm-other">自動讀取FRM檔案</button>
+    <p id="frm-status-other"></p>
+    <div class="notice" style="margin-top:1rem">或手動貼上次層wafer bin資料（每行 <code>x,y,bin</code>）</div>
+    <textarea id="wafer-input-other" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
+    <button class="secondary" id="btn-load-wafer-other">載入次層Wafer地圖(文字)</button>
+    <div class="legend">
+      <span><i style="background:#4fb84a"></i>Bin 1（可選）</span>
+      <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
+      <span><i style="background:#fff;border-color:#7e22ce"></i>已點選（次層）</span>
+    </div>
+    <p id="wafer-hover-status-other" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
+    <div id="wafer-wrap-other">
+      <div id="wafer-grid-other"></div>
+      <svg id="wafer-overlay-other"></svg>
+    </div>
   </section>
 
   <section class="panel" id="pick-panel" style="grid-column:1/-1">
@@ -113,8 +142,8 @@
     <div id="layer-switch" style="display:none;margin-bottom:0.6rem">
       <button type="button" id="btn-layer-primary" class="secondary">主層 (f9=<span id="layer-primary-label">2</span>)</button>
       <button type="button" id="btn-layer-other" class="secondary">次層 OTHER_LAYER (f9=<span id="layer-other-label">1</span>)</button>
-      <span id="layer-status" style="margin-left:0.5rem;font-size:0.82rem;color:var(--muted)"></span>
     </div>
+    <p id="layer-status" style="font-size:0.82rem;color:var(--muted)"></p>
     <p id="qty-status">已選擇 0 / 目標 ?</p>
     <div class="legend">
       <span><i style="background:#1769d1"></i>已對應到wafer座標的基板位置</span>
@@ -123,13 +152,31 @@
     </div>
     <button type="button" class="secondary" id="btn-skip-mode">標記「不上片」模式：關閉</button>
     <div class="notice" id="substrate-mode-hint">點基板圖上任一格，可以反查它對應到哪個wafer座標（會在下方wafer圖上用橘框標示出來）。</div>
-    <p id="substrate-hover-status" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
-    <div id="substrate-grid"></div>
     <p id="lookup-status"></p>
-    <table id="pick-table">
-      <thead><tr><th>#</th><th>X</th><th>Y</th><th>Bin</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
+
+    <div id="bingo-maps-wrap">
+      <div class="bingo-map-block" id="bingo-map-block-primary">
+        <h3 id="bingo-map-title-primary">BINGO MAP</h3>
+        <p id="qty-status-primary" class="badge"></p>
+        <p id="substrate-hover-status" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
+        <div id="substrate-grid"></div>
+        <table id="pick-table">
+          <thead><tr><th>#</th><th>X</th><th>Y</th><th>Bin</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="bingo-map-block" id="bingo-map-block-other" style="display:none">
+        <h3>次層 BINGO MAP</h3>
+        <p id="qty-status-other" class="badge"></p>
+        <p id="substrate-hover-status-other" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
+        <div id="substrate-grid-other"></div>
+        <table id="pick-table-other">
+          <thead><tr><th>#</th><th>X</th><th>Y</th><th>Bin</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
     <button class="secondary" id="btn-clear">清空選取</button>
   </section>
 
