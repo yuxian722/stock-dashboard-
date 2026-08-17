@@ -1,3 +1,8 @@
+// Display-label note: on screen "primary"/picksPrimary is shown as "第二層"
+// and "other"/picksOther as "第一層" (per user request — f9=1 die is
+// naturally "layer one", f9=2 die is "layer two"). Only the user-facing
+// text was swapped; these internal names and the /api/generate payload
+// field names (primary_layer, other_selections, ...) are unchanged.
 let targetQty = null;
 let picksPrimary = []; // {x, y, bin}[] — layer f9=primary_layer (or the only layer, single-layer mode)
 let picksOther = []; // layer f9=other_layer, only used when twoLayerEnabled
@@ -134,9 +139,9 @@ async function loadTemplate(text) {
   setActiveLayer("primary"); // also calls renderAll()
 
   status.className = "ok";
-  const otherNote = twoLayerEnabled ? `（含次層 ${data.other_picks.length} 顆）` : "";
+  const otherNote = twoLayerEnabled ? `（含第一層 ${data.other_picks.length} 顆）` : "";
   status.textContent =
-    `已載入範本：共 ${data.total_qty} 個基板位置、主層已對應 ${data.picks.length} 顆${otherNote}。` +
+    `已載入範本：共 ${data.total_qty} 個基板位置、第二層已對應 ${data.picks.length} 顆${otherNote}。` +
     `基板位置順序沿用範本原本的順序。可以直接調整基板流水號/時間後產生，或繼續編輯座標。`;
   document.getElementById("blank-status").textContent = "（目前使用範本的基板位置順序，不需要再按「產生空白骨架」——除非要改用DB/ESEC規則重新產生）";
   setStepFlow(4, { done: [1, 2, 3] });
@@ -219,7 +224,7 @@ function renderSubstrateGrid() {
 function reverseLookupSubstratePos(pos, layer) {
   const status = document.getElementById("lookup-status");
   const layerPicks = layer === "other" ? picksOther : picksPrimary;
-  const layerLabel = twoLayerEnabled ? (layer === "other" ? "次層：" : "主層：") : "";
+  const layerLabel = twoLayerEnabled ? (layer === "other" ? "第一層：" : "第二層：") : "";
   if (layer === "other") focusedSubstratePosOther = pos;
   else focusedSubstratePos = pos;
 
@@ -508,7 +513,7 @@ function renderQtyStatus() {
   if (twoLayerEnabled) {
     const primaryDone = effTarget !== null && picksPrimary.length === effTarget;
     const otherDone = effTarget !== null && picksOther.length === effTarget;
-    el.textContent = `主層已選擇 ${picksPrimary.length} / 目標 ${target}　次層已選擇 ${picksOther.length} / 目標 ${target}${skipNote}`;
+    el.textContent = `第一層已選擇 ${picksOther.length} / 目標 ${target}　第二層已選擇 ${picksPrimary.length} / 目標 ${target}${skipNote}`;
     el.className = primaryDone && otherDone ? "ok" : "bad";
     if (primaryBadge) {
       primaryBadge.textContent = `${picksPrimary.length} / ${target}`;
@@ -551,10 +556,10 @@ function renderLayerStatus() {
   const effTarget = effectiveTargetQty();
   const target = effTarget === null ? "?" : effTarget;
   if (dualWaferEnabled) {
-    status.textContent = `雙wafer模式：左圖(主層 wafer)點選會加入主層，右圖(次層 wafer)點選會加入次層（主層 ${picksPrimary.length}/${target}，次層 ${picksOther.length}/${target}）`;
+    status.textContent = `雙wafer模式：上方圖(第二層 wafer)點選會加入第二層，下方圖(第一層 wafer)點選會加入第一層（第一層 ${picksOther.length}/${target}，第二層 ${picksPrimary.length}/${target}）`;
   } else {
-    const layerName = currentLayerKey === "primary" ? "主層" : "次層";
-    status.textContent = `目前wafer圖點選會加入：${layerName}（主層 ${picksPrimary.length}/${target}，次層 ${picksOther.length}/${target}）`;
+    const layerName = currentLayerKey === "primary" ? "第二層" : "第一層";
+    status.textContent = `目前wafer圖點選會加入：${layerName}（第一層 ${picksOther.length}/${target}，第二層 ${picksPrimary.length}/${target}）`;
   }
 }
 
@@ -566,9 +571,27 @@ function renderAll() {
   renderLayerStatus();
 }
 
+// Floating tooltip that follows the cursor over a grid, so the coordinate
+// is visible right where you're looking instead of only in a fixed status
+// line that can be scrolled out of view on a big grid. `cell` must be a
+// descendant of `tooltipEl`'s own parent (the *-wrap container) so
+// offsetLeft/offsetTop are relative to that same positioned ancestor.
+function showGridTooltip(tooltipEl, cell, text) {
+  if (!tooltipEl) return;
+  tooltipEl.textContent = text;
+  tooltipEl.style.left = `${cell.offsetLeft + cell.offsetWidth / 2}px`;
+  tooltipEl.style.top = `${cell.offsetTop}px`;
+  tooltipEl.classList.add("visible");
+}
+
+function hideGridTooltip(tooltipEl) {
+  if (tooltipEl) tooltipEl.classList.remove("visible");
+}
+
 function wireGridDragEvents(containerId, hoverStatusId, gridKindForPick) {
   const container = document.getElementById(containerId);
   const hoverStatus = document.getElementById(hoverStatusId);
+  const tooltip = document.getElementById(containerId.replace("grid", "tooltip"));
   let localDragStart = null;
   container.addEventListener("mousedown", (e) => {
     if (!e.target.classList.contains("wafer-cell")) return;
@@ -588,9 +611,11 @@ function wireGridDragEvents(containerId, hoverStatusId, gridKindForPick) {
   container.addEventListener("mouseover", (e) => {
     if (!e.target.classList.contains("wafer-cell")) return;
     hoverStatus.textContent = `Wafer座標：${e.target.dataset.x}:${e.target.dataset.y}`;
+    showGridTooltip(tooltip, e.target, `${e.target.dataset.x}:${e.target.dataset.y}`);
   });
   container.addEventListener("mouseleave", () => {
     hoverStatus.textContent = "滑鼠移到格子上會顯示座標";
+    hideGridTooltip(tooltip);
   });
 }
 
@@ -607,6 +632,7 @@ function setSkipMode(enabled) {
 function wireSubstrateGridClicks(containerId, hoverStatusId, layer) {
   const container = document.getElementById(containerId);
   const hoverStatus = document.getElementById(hoverStatusId);
+  const tooltip = document.getElementById(containerId.replace("grid", "tooltip"));
   container.addEventListener("click", (e) => {
     if (!e.target.classList.contains("substrate-cell")) return;
     const pos = e.target.dataset.pos;
@@ -622,9 +648,11 @@ function wireSubstrateGridClicks(containerId, hoverStatusId, layer) {
     container.addEventListener("mouseover", (e) => {
       if (!e.target.classList.contains("substrate-cell")) return;
       hoverStatus.textContent = `基板座標：${e.target.dataset.pos}`;
+      showGridTooltip(tooltip, e.target, e.target.dataset.pos);
     });
     container.addEventListener("mouseleave", () => {
       hoverStatus.textContent = "滑鼠移到格子上會顯示座標";
+      hideGridTooltip(tooltip);
     });
   }
 }
@@ -633,11 +661,11 @@ function setTwoLayerUiVisibility() {
   document.getElementById("two-layer-fields").style.display = twoLayerEnabled ? "" : "none";
   document.getElementById("dual-wafer-field").style.display = twoLayerEnabled ? "" : "none";
   document.getElementById("bingo-map-block-other").style.display = twoLayerEnabled ? "" : "none";
-  document.getElementById("bingo-map-title-primary").textContent = twoLayerEnabled ? "主層 BINGO MAP" : "BINGO MAP";
+  document.getElementById("bingo-map-title-primary").textContent = twoLayerEnabled ? "第二層 BINGO MAP" : "BINGO MAP";
   document.getElementById("wafer-legend-other-picked").style.display = twoLayerEnabled && !dualWaferEnabled ? "" : "none";
   document.getElementById("layer-switch").style.display = twoLayerEnabled && !dualWaferEnabled ? "" : "none";
   document.getElementById("wafer-panel-title-suffix").textContent = twoLayerEnabled
-    ? dualWaferEnabled ? " — 主層" : "（主層/次層共用，點選會加入下方選定的層）"
+    ? dualWaferEnabled ? " — 第二層" : "（第一層/第二層共用，點選會加入下方選定的層）"
     : "";
   document.getElementById("wafer-panel-other").style.display = twoLayerEnabled && dualWaferEnabled ? "" : "none";
 }

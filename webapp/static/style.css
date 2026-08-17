@@ -104,6 +104,17 @@ button.secondary.active-layer:hover{background:#0c7550}
 #wafer-wrap,#wafer-wrap-other{position:relative;display:inline-block;margin-top:0.5rem;max-width:100%;overflow-x:auto}
 #wafer-grid,#wafer-grid-other{display:inline-block;user-select:none;background:#fff;border-radius:8px;border:1px solid var(--line)}
 #wafer-overlay,#wafer-overlay-other{position:absolute;top:0;left:0;pointer-events:none}
+
+/* Floating tooltip that follows the cursor over a wafer/substrate grid —
+   shows the coordinate right where you're looking, not just in the fixed
+   status line above the grid (which can scroll out of view on a big grid). */
+.grid-tooltip{
+  position:absolute;pointer-events:none;display:none;
+  background:#111f35;color:#fff;font-size:0.75rem;font-weight:700;
+  padding:3px 8px;border-radius:6px;white-space:nowrap;z-index:6;
+  transform:translate(-50%,-135%);box-shadow:0 4px 10px rgba(0,0,0,.25);
+}
+.grid-tooltip.visible{display:block}
 .wafer-row{display:flex}
 .wafer-cell{width:20px;height:20px;box-sizing:border-box;border:1px solid #eef1f6;background:#fff;cursor:pointer;transition:filter .1s ease}
 .wafer-cell:hover{filter:brightness(.93)}
@@ -118,7 +129,8 @@ button.secondary.active-layer:hover{background:#0c7550}
 .bingo-map-block{min-width:0}
 .bingo-map-block h3{margin:0 0 0.3rem;font-size:0.95rem}
 
-#substrate-grid,#substrate-grid-other{display:inline-block;margin:0.3rem 0 0.8rem;user-select:none;border:1px solid var(--line);border-radius:8px;overflow:auto;max-width:100%;background:#fff}
+.grid-wrap-inner{position:relative;display:inline-block;margin:0.3rem 0 0.8rem;max-width:100%;overflow:auto}
+#substrate-grid,#substrate-grid-other{display:inline-block;user-select:none;border:1px solid var(--line);border-radius:8px;background:#fff}
 .substrate-cell{width:20px;height:20px;box-sizing:border-box;border:1px solid #eef1f6;background:#f3f5f8;cursor:pointer}
 .substrate-cell:hover{filter:brightness(.93)}
 .substrate-cell.filled{background:var(--blue);border-color:#0f4f9e}
