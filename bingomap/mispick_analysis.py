@@ -1,62 +1,77 @@
 """誤吸偏移／BIN點除 (mis-pick offset / BIN exclusion) analysis.
 
-Ported from the user's ESEC 2100 reference tool ("STRATE座標偏移點除工具"
-v78, its live `v67BuildRows`/`v67Classify`/`v72RawToMachine270`/
-`v72MachineToRaw270` functions — the file also contains an entire earlier
-implementation, `run()`, that is dead code never wired to any button; it
-was not ported). The user explicitly flagged that tool as machine-specific
-(ESEC 2100SD) and asked that its rules not be assumed to generalize, so
-this module intentionally does **not** try to support any NOTCH other than
-270 — see `REQUIRED_NOTCH` below — matching this project's own
-verify-before-generalizing discipline (bingomap/CLAUDE.md).
+Two independent coordinate models, selected by `machine_type`:
 
-Real-world problem: a bonder had a *known* systematic wafer-pickup offset
-(e.g. off by one column) during some run. Given the original wafer bin map
-and the STRATE file(s) already produced from that run, figure out which
-already-placed dies actually came from a bad wafer position and need to be
-mechanically point-removed from the substrate.
+- **DB** (`"DB"`, the default — this project's actual production machine
+  type): the STRATE `wafer_xy` ("FX:FY") *is* the wafer bin map's own raw
+  (x, y) coordinate, no transform at all. Confirmed 2026/08/17 against a
+  real DB case the user provided: a screenshot of ChipMOS's internal
+  "WaferCoordinate" tool with its 機型(machine type) selector explicitly
+  set to "DB系列", whose own picked-coordinate list (X, Y, Bin columns)
+  matched a real STRATE file's `wafer_xy` column entry-for-entry, plus the
+  matching 目視檢查 wafer bin map screenshot and the matching EAS "Bingo Map
+  Query" report for the same SUBSTRATE_ID. There is no known-mis-pick
+  incident in that evidence, so the *coordinate correspondence* is
+  confirmed but the *offset-direction* convention (what a "+1 in X"
+  machine-motion offset means) is inferred by consistency (DB has no
+  rotation anywhere else in this evidence, so offsets are applied directly
+  in the same frame) rather than independently confirmed — flag this to
+  the user rather than treating it as fully verified.
 
-Pipeline, mirroring the reference tool exactly:
+- **ESEC** (`"ESEC"`): ported from the user's ESEC 2100 reference tool
+  ("STRATE座標偏移點除工具" v78, its live `v67BuildRows`/`v67Classify`/
+  `v72RawToMachine270`/`v72MachineToRaw270` functions — the file also
+  contains an entire earlier implementation, `run()`, that is dead code
+  never wired to any button; it was not ported). The reference tool's own
+  comments say its formulas were field-verified for ESEC 2100SD
+  specifically and locked to NOTCH=270 — see `REQUIRED_NOTCH_ESEC` below.
+  **This project's actual machines are DB, not ESEC** — the user explicitly
+  said so on 2026/08/17 after this ESEC path had already shipped — so this
+  path exists for reference/future use but should not be assumed to match
+  this project's own real hardware. See bingomap/CLAUDE.md for the full
+  story of both corrections (the DB confirmation, and the earlier
+  wafer-ID-normalization fix).
 
-  1. STRATE records each placed die's source wafer coordinate as
-     `wafer_xy` ("FX:FY"), already in NOTCH=270 orientation. Converting
-     that back to the wafer MAP's own raw coordinate frame is a plain
-     X-flip (`MAP_X = wafer_map_max_x - FX`, `MAP_Y = FY`) — field-verified
-     by the reference tool's author for ESEC 2100SD, not derived from
-     first principles. Look up the **nominal** bin there: if it isn't a
-     Good bin, this position wasn't going to be picked anyway and is
-     dropped rather than classified.
-  2. The raw-MAP coordinate is further rotated into "machine frame"
-     (`_raw_to_machine_270`) purely so the operator's offset — which they
-     know in machine-motion terms ("moved 1 step in +X") — can be added in
-     the right frame, then rotated back (`_machine_to_raw_270`) to look up
-     the **actual** bin the shifted position lands on.
+Real-world problem (same for both machine types): a bonder had a *known*
+systematic wafer-pickup offset (e.g. off by one column) during some run.
+Given the original wafer bin map and the STRATE file(s) already produced
+from that run, figure out which already-placed dies actually came from a
+bad wafer position and need to be mechanically point-removed from the
+substrate.
+
+Pipeline:
+
+  1. Convert STRATE's `wafer_xy` ("FX:FY") to the wafer MAP's own raw
+     coordinate frame — identity for DB, a fixed X-flip for ESEC (see
+     above). Look up the **nominal** bin there: if it isn't a Good bin,
+     this position wasn't going to be picked anyway and is dropped rather
+     than classified.
+  2. Apply the operator's offset. For DB this is a direct add in the raw
+     frame. For ESEC the raw-MAP coordinate is first rotated into
+     "machine frame" so the offset (given in machine-motion terms) applies
+     in the right frame, then rotated back to look up the **actual** bin
+     the shifted position lands on.
   3. Classify by the actual bin: NG bin -> force-delete, review bin ->
      needs manual confirmation, Good bin -> still fine, anything else ->
      anomaly (never auto-deleted).
 
-Deliberate improvement over the reference tool: it silently ignored
+Deliberate improvement over the ESEC reference tool: it silently ignored
 stacked-die (一次上兩顆) substrates' `[DIE_INFO_OTHER_LAYER_*]` section —
 this module processes both layers (see `analyze_substrate`'s `layer`
 tagging), since bingomap already models that structure and there is no
 reason a mis-pick offset would only ever affect one layer.
-
-This has NOT been re-verified against a real known-mis-pick production
-sample from this project (unlike most of bingomap's other format logic,
-which was checked byte-for-byte against real files) — the coordinate math
-itself is a faithful port of the reference tool's field-validated formula,
-but the end-to-end pipeline should get a real test case before being
-trusted operationally. Flag this to the user rather than treating it as
-verified.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from .strate import DieInfo, StrateFile
 from .wafer_map import WaferBinMap
 
-REQUIRED_NOTCH = "270"
+MachineType = Literal["DB", "ESEC"]
+
+REQUIRED_NOTCH_ESEC = "270"
 
 DECISION_INVALID_COORD = "INVALID_STRATE_WAFER_COORD"
 DECISION_OUT_OF_GEOMETRY = "STRATE_POSITION_OUT_OF_DECLARED_GEOMETRY"
@@ -72,14 +87,24 @@ ACTION_DECISIONS = {DECISION_FORCE_DELETE, DECISION_REVIEW}
 
 
 class UnsupportedNotchError(ValueError):
-    """Raised when a STRATE's NOTCH header isn't 270 — the only orientation
-    this analysis has been field-validated for. See module docstring."""
+    """Raised for ESEC when a STRATE's NOTCH header isn't 270 — the only
+    orientation that machine type's formulas were field-validated for. Does
+    not apply to DB, which has no NOTCH restriction (see module docstring)."""
 
 
 class InvalidGeometryError(ValueError):
     """Raised instead of guessing when SUBSTRATE_COLUMN/ROW/BLOCK are
     missing or don't divide evenly — mirrors the reference tool's
     `v74ValidateGeom`, which refuses to fall back to a default size."""
+
+
+class UnknownMachineTypeError(ValueError):
+    pass
+
+
+def _check_machine_type(machine_type: str) -> None:
+    if machine_type not in ("DB", "ESEC"):
+        raise UnknownMachineTypeError(f"machine_type must be 'DB' or 'ESEC', got {machine_type!r}")
 
 
 @dataclass(frozen=True)
@@ -124,23 +149,37 @@ def wafer_range(wafer_map: WaferBinMap) -> WaferRange:
     return WaferRange(min(xs), max(xs), min(ys), max(ys))
 
 
-def _raw_to_machine_270(x: int, y: int, r: WaferRange) -> tuple[int, int]:
+def _raw_to_machine_esec270(x: int, y: int, r: WaferRange) -> tuple[int, int]:
     return r.max_y - y, x - r.min_x
 
 
-def _machine_to_raw_270(x: int, y: int, r: WaferRange) -> tuple[int, int]:
+def _machine_to_raw_esec270(x: int, y: int, r: WaferRange) -> tuple[int, int]:
     return y + r.min_x, r.max_y - x
 
 
-def _strate_wafer_to_raw_map_270(fx: int, fy: int, r: WaferRange) -> tuple[int, int]:
-    return r.max_x - fx, fy
+def _wafer_xy_to_raw_map(fx: int, fy: int, r: WaferRange, machine_type: MachineType) -> tuple[int, int]:
+    """STRATE `wafer_xy` -> the wafer MAP's own raw (x, y) coordinate."""
+    if machine_type == "DB":
+        return fx, fy  # identity — confirmed against real DB evidence, see module docstring
+    return r.max_x - fx, fy  # ESEC: fixed X-flip, field-verified for NOTCH=270 only
 
 
-def output_position(tx: int, ty: int, substrate_column: int) -> tuple[int, int]:
-    """The printed work-order grid is a fixed left-right flip of the STRATE
-    substrate position (top-left = A1) — cosmetic, matches the reference
-    tool's `v67OutputPos`. Shared with crack_recovery.py, which ports the
-    same reference tool's `v78CrackOutputCoord`/`v78CrackOutputBlock`."""
+def _apply_offset(nominal_xy: tuple[int, int], offset: Offset, r: WaferRange, machine_type: MachineType) -> tuple[int, int]:
+    if machine_type == "DB":
+        return nominal_xy[0] + offset.dx, nominal_xy[1] + offset.dy
+    machine_xy = _raw_to_machine_esec270(*nominal_xy, r)
+    shifted = (machine_xy[0] + offset.dx, machine_xy[1] + offset.dy)
+    return _machine_to_raw_esec270(*shifted, r)
+
+
+def output_position(tx: int, ty: int, substrate_column: int, machine_type: MachineType = "DB") -> tuple[int, int]:
+    """The printed work-order grid position for a substrate coordinate.
+    DB: identity (no evidence of any flip — see module docstring). ESEC: a
+    fixed left-right flip (top-left = A1), matching the reference tool's
+    `v67OutputPos`. Shared with crack_recovery.py."""
+    _check_machine_type(machine_type)
+    if machine_type == "DB":
+        return tx, ty
     return substrate_column - 1 - tx, ty
 
 
@@ -211,6 +250,7 @@ def _classify_row(
     good_bins: set[str],
     ng_bins: set[str],
     review_bins: set[str],
+    machine_type: MachineType,
 ) -> MispickRow:
     wafer_xy = parse_xy(die.wafer_xy)
     sub_xy = parse_xy(die.sub_pos)
@@ -238,7 +278,7 @@ def _classify_row(
         return row
     tx, ty = sub_xy
 
-    nominal_xy = _strate_wafer_to_raw_map_270(fx, fy, rng)
+    nominal_xy = _wafer_xy_to_raw_map(fx, fy, rng, machine_type)
     row.nominal_map_xy = nominal_xy
     row.nominal_bin = wafer_map.bin_at(*nominal_xy)
     if row.nominal_bin is None:
@@ -248,9 +288,7 @@ def _classify_row(
         row.decision = DECISION_NOMINAL_NOT_GOOD
         return row
 
-    machine_xy = _raw_to_machine_270(*nominal_xy, rng)
-    shifted_machine_xy = (machine_xy[0] + offset.dx, machine_xy[1] + offset.dy)
-    actual_xy = _machine_to_raw_270(*shifted_machine_xy, rng)
+    actual_xy = _apply_offset(nominal_xy, offset, rng, machine_type)
     row.actual_map_xy = actual_xy
     row.actual_bin = wafer_map.bin_at(*actual_xy)
     if row.actual_bin is None:
@@ -266,7 +304,7 @@ def _classify_row(
     else:
         row.decision = DECISION_ANOMALY
 
-    row.output_xy = output_position(tx, ty, substrate.substrate_column)
+    row.output_xy = output_position(tx, ty, substrate.substrate_column, machine_type)
     row.output_block = output_block(row.output_xy[0], substrate.substrate_column, substrate.substrate_block)
     return row
 
@@ -312,12 +350,17 @@ def analyze_substrate(
     good_bins: set[str],
     ng_bins: set[str],
     review_bins: set[str],
+    machine_type: MachineType = "DB",
 ) -> MispickResult:
     """Run the mis-pick offset analysis for one substrate's DIE_INFO rows
-    (both layers, if it's a stacked/two-layer substrate)."""
-    if str(substrate.notch).strip() != REQUIRED_NOTCH:
+    (both layers, if it's a stacked/two-layer substrate). `machine_type`
+    defaults to "DB" — this project's actual machine type, see module
+    docstring — not "ESEC" (which was this feature's first, since-corrected
+    default)."""
+    _check_machine_type(machine_type)
+    if machine_type == "ESEC" and str(substrate.notch).strip() != REQUIRED_NOTCH_ESEC:
         raise UnsupportedNotchError(
-            f"這個分析只驗證過NOTCH=270的情況，這份STRATE的NOTCH={substrate.notch!r}，"
+            f"ESEC模式只驗證過NOTCH=270的情況，這份STRATE的NOTCH={substrate.notch!r}，"
             "為避免用未驗證的公式誤判，不會產生結果"
         )
     validate_geometry(substrate)
@@ -331,7 +374,9 @@ def analyze_substrate(
                 result.excluded.append(die)
                 continue
             result.rows.append(
-                _classify_row(die, layer, substrate, wafer_map, rng, offset, good_bins, ng_bins, review_bins)
+                _classify_row(
+                    die, layer, substrate, wafer_map, rng, offset, good_bins, ng_bins, review_bins, machine_type
+                )
             )
 
     action_rows = [r for r in result.rows if r.decision in ACTION_DECISIONS]

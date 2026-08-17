@@ -70,26 +70,28 @@ BIN點除(`/mispick`)、③Crack位置回推(`/crack`)。導覽列上也先列�
 
 ## 誤吸偏移／BIN點除（`/mispick`）
 
-移植自使用者提供的ESEC 2100參考工具（STRATE座標偏移點除工具v78）。流程：填「原始wafer MAP」的FRM
-LotNo+Barcode ID（跟補資料頁共用同一份`frm_reader.py`）、上傳一或多份已上片`.strate`檔案、填要比對的
-完整Wafer ID、機台偏移方向與數量、Good/強制點除/人工確認的BIN設定，按「分析」後每份STRATE各自列出
-強制點除／人工確認的清單(含基板座標、Block、TX:TY、實際BIN)，並可下載全部結果的CSV。
+移植自使用者提供的ESEC 2100參考工具（STRATE座標偏移點除工具v78）。流程：選機型(DB/ESEC)、填「原始
+wafer MAP」的FRM LotNo+Barcode ID（跟補資料頁共用同一份`frm_reader.py`）、上傳一或多份已上片`.strate`
+檔案、填要比對的完整Wafer ID、機台偏移方向與數量、Good/強制點除/人工確認的BIN設定，按「分析」後每份
+STRATE各自列出強制點除／人工確認的清單(含基板座標、Block、TX:TY、實際BIN)，並可下載全部結果的CSV。
 
-**只支援NOTCH=270**（比照參考工具本身的限制，其他角度會直接被拒絕分析、不會硬猜公式）——詳見
-`bingomap/mispick_analysis.py`docstring跟`bingomap/CLAUDE.md`。座標轉換數學本身用手算合成測資驗證過，
-但**還沒有拿bingomap這邊的真實已知誤吸案例核對過整條pipeline**，正式使用前先拿已知案例試跑確認。
+**機型預設DB**——2026/08/17用使用者提供的真實DB案例確認：STRATE的`wafer_xy`就是wafer MAP自己的原始
+座標，不需要任何轉換，也不限制NOTCH。選ESEC則套用參考工具的公式（NOTCH鎖定270，其他角度直接拒絕
+分析）——那套公式沒有用這個系統的真實資料驗證過，選了會顯示警告。詳見`bingomap/mispick_analysis.py`
+docstring跟`bingomap/CLAUDE.md`。
 
 ## Crack位置回推（`/crack`）
 
-移植自同一個ESEC 2100參考工具的Crack模式。流程：上傳一或多份`.strate`檔案(建議把同一個完整Wafer ID
-相關的STRATE都一起上傳)、按「載入STRATE」，畫面左邊是選定基板的格子圖(點格子＝標記/取消Crack)，
-右邊是這個Wafer ID匯總後的局部分布散點圖(相對位置，不是絕對wafer座標)，下方會列出目前標記的Crack
-清單並可下載CSV。
+移植自同一個ESEC 2100參考工具的Crack模式。流程：選機型(DB/ESEC)、上傳一或多份`.strate`檔案(建議把
+同一個完整Wafer ID相關的STRATE都一起上傳)、按「載入STRATE」，畫面左邊是選定基板的格子圖(點格子＝
+標記/取消Crack)，右邊是這個Wafer ID匯總後的局部分布散點圖(相對位置，不是絕對wafer座標)，下方會列出
+目前標記的Crack清單並可下載CSV。
 
 跟誤吸偏移／BIN點除頁的差異：**不需要wafer MAP、不套偏移**；**任何NOTCH都接受**(不是只有270)；每個
 已上片位置一律當成背景BIN1，這個模式不驗證bin正不正確，只負責回推位置。任何一份STRATE缺NOTCH或
 基板規格無效，整個分析會直接失敗（不會只跳過那一份），因為這個功能本來就是要把多份STRATE匯總，
-悄悄漏掉一份會讓分布看起來不完整卻沒有警示。
+悄悄漏掉一份會讓分布看起來不完整卻沒有警示。機型同樣預設DB(identity，不反轉不旋轉)，ESEC選項套用
+參考工具原本的TX反轉+NOTCH旋轉。
 
 沒有搬參考工具原本的雙canvas對照圖PNG匯出，目前用HTML表格版的基板圖+散點圖取代，功能等價但視覺
 效果較簡單。

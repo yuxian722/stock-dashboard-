@@ -15,15 +15,15 @@
   <p>已知機台偏移量 + 原始wafer MAP + 已上片STRATE → 反算哪些已上片位置實際落在壞BIN上，產出點除清單</p>
 </div>
 
-<div class="notice error">
-  <b>⚠ 目前座標換算公式只針對ESEC 2100驗證過，還沒有用DB機型的真實案例核對——如果你的實際上片/wafer
-  mapping規則是DB機型，這一頁算出來的結果暫時不保證正確，正在等你提供DB真實案例(STRATE+wafer MAP+
-  已知正確結果)來修正。</b>
-</div>
 <div class="notice">
-  移植自使用者提供的ESEC 2100參考工具，<b>只驗證過NOTCH=270的情況</b>（該工具本身就是這樣設計的）。
-  NOTCH不是270的STRATE會被拒絕分析，不會用未驗證的公式硬猜。原始wafer MAP讀的是跟「補資料」頁面同一種
-  FRM檔案格式，需要這台電腦連得到 <code>F:\SMAP\FRM\</code> 網路磁碟機。
+  <b>機型</b>預設<b>DB</b>（已用2026/08/17你提供的真實DB案例核對：wafer_xy就是wafer MAP自己的原始座標，
+  不用轉換）。選<b>ESEC</b>則套用ESEC 2100參考工具的公式(NOTCH鎖定270，其他角度直接拒絕分析)——那套公式
+  沒有用你的真實資料驗證過，不是這個系統實際在用的機型，僅供參考/保留。原始wafer MAP讀的是跟「補資料」
+  頁面同一種FRM檔案格式，需要這台電腦連得到 <code>F:\SMAP\FRM\</code> 網路磁碟機。
+</div>
+<div class="notice error" id="mp-esec-warning" style="display:none">
+  <b>⚠ 目前選的是ESEC機型：座標公式只針對ESEC 2100參考工具驗證過，不是這個系統實際在用的DB機型規則，
+  結果僅供參考。</b>
 </div>
 
 <div class="layout">
@@ -49,6 +49,12 @@
     <h2><span class="step-badge">3</span>偏移與BIN設定</h2>
     <div class="notice">偏移量使用「機台轉向後方向」。X：負數往左、正數往右；Y：負數往上、正數往下。</div>
     <div class="grid2">
+      <label>機型
+        <select id="mp_machine_type">
+          <option value="DB" selected>DB（預設，已用真實案例驗證座標對應關係）</option>
+          <option value="ESEC">ESEC 2100（參考工具公式，未用本系統真實資料驗證，NOTCH鎖定270）</option>
+        </select>
+      </label>
       <label>偏移方向
         <select id="mp_offset_axis">
           <option value="X" selected>X 偏移</option>

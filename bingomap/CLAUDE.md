@@ -186,6 +186,20 @@ DB機型規則很可能對不上**。
 參數且DB是預設值；這裡誤吸/Crack的座標轉換公式是全新的、只依照ESEC工具本身的假設寫的，兩者不要混為
 一談。
 
+**2026/08/17後續更新：使用者提供了DB機型的真實案例，問題已解決。** 證據是四張截圖+一個真實
+`.strate`檔案：(1) ChipMOS內部「WaferCoordinate」工具的截圖，機型選單明確選在「DB系列」，右側面板
+列出它自己讀出來的X,Y,Bin清單；(2) 同一個LotNo/BarcodeID(8P964000A1/NBAE2D)的真實`.strate`檔案，
+`wafer_xy`欄位跟(1)的清單逐筆對得上（前15筆Y都是30，X是16,15,14,...,1，順序完全一致）；(3) 目視檢查
+工具的wafer圖(BIN1/BIN7分布)，Wafer ID/Layout/Ref Point都吻合；(4) EAS「Bingo Map Query」報表，同一個
+SUBSTRATE_ID(Z26306101030)、Pass Qty=308吻合。**結論：DB的STRATE `wafer_xy`就是wafer MAP自己的原始
+座標，不需要任何轉換**——不像ESEC需要NOTCH=270限定+X反轉。這份真實檔案(NOTCH=180)也證明DB模式不需要
+限制NOTCH。
+
+已經把`mispick_analysis.py`/`crack_recovery.py`改成`machine_type`參數(`"DB"`預設/`"ESEC"`)，DB路徑
+是identity轉換，ESEC路徑維持原本邏輯不變。真實檔案存進`tests/fixtures/`，寫了專屬回歸測試鎖定這個
+identity對應關係。**教訓的後半段：使用者說「我會給你真實案例」時，不要用猜的公式頂著先上線——這次
+等到真實資料後才動手改，公式一次就對，沒有先猜一版DB公式又要使用者來回confirm對不對。**
+
 ## WaferCoordinate.exe對話框文字不對稱，不要自己腦補
 
 數量不符時的提示文字，選多跟選少用的字不一樣：

@@ -32,6 +32,7 @@ async function analyze() {
     strate_files: strateFiles,
     marked_keys: markedKeys,
     focus_wafer_id: focusWaferId,
+    machine_type: document.getElementById("ck_machine_type").value,
   };
   const res = await fetch("/api/crack/analyze", {
     method: "POST",
@@ -251,3 +252,13 @@ document.getElementById("ck-strip-grid").addEventListener("click", (e) => {
   analyze();
 });
 document.getElementById("ck-btn-download-csv").addEventListener("click", downloadCsv);
+
+function updateEsecWarning() {
+  const isEsec = document.getElementById("ck_machine_type").value === "ESEC";
+  document.getElementById("ck-esec-warning").style.display = isEsec ? "" : "none";
+}
+document.getElementById("ck_machine_type").addEventListener("change", () => {
+  updateEsecWarning();
+  if (strateFiles.length) analyze(); // re-derive everything under the new machine_type
+});
+updateEsecWarning();

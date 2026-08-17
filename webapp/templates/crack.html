@@ -15,19 +15,28 @@
   <p>在已上片STRATE的格子上點選實物Crack位置 → 回推在原始wafer上的相對分布（跨多份STRATE、同一個完整Wafer ID自動匯總）</p>
 </div>
 
-<div class="notice error">
-  <b>⚠ 這一頁的基板顯示方向(TX反轉)跟局部分布旋轉公式，也是照ESEC 2100參考工具搬過來的，還沒有用DB機型
-  的真實案例核對過——如果你的實際上片/wafer mapping規則是DB機型，畫面上的方向/座標暫時不保證正確，
-  正在等你提供DB真實案例來修正。</b>
-</div>
 <div class="notice">
-  只需要STRATE檔案，不用wafer MAP、不套偏移。任何NOTCH都接受（跟「誤吸偏移／BIN點除」頁不同，那頁鎖定只支援NOTCH=270）。
-  <b>局部分布只代表已匯入資料彼此的相對位置，不是完整wafer的絕對座標</b>——空白格只代表沒有匯入STRATE上片紀錄，不代表空Die或NG。
+  <b>機型</b>預設<b>DB</b>（已用2026/08/17你提供的真實DB案例核對：基板顯示方向不反轉、局部分布不額外
+  旋轉）。選<b>ESEC</b>則套用ESEC 2100參考工具的公式(TX反轉+NOTCH旋轉)——那套公式沒有用你的真實資料
+  驗證過，不是這個系統實際在用的機型，僅供參考/保留。只需要STRATE檔案，不用wafer MAP、不套偏移。任何
+  NOTCH都接受（跟「誤吸偏移／BIN點除」頁不同，那頁ESEC模式鎖定只支援NOTCH=270）。
+  <b>局部分布只代表已匯入資料彼此的相對位置，不是完整wafer的絕對座標</b>——空白格只代表沒有匯入STRATE
+  上片紀錄，不代表空Die或NG。
+</div>
+<div class="notice error" id="ck-esec-warning" style="display:none">
+  <b>⚠ 目前選的是ESEC機型：基板顯示方向跟局部分布旋轉公式只針對ESEC 2100參考工具驗證過，不是這個系統
+  實際在用的DB機型規則，結果僅供參考。</b>
 </div>
 
 <div class="layout">
   <section class="panel" id="crack-upload-panel" style="grid-column:1/-1">
     <h2><span class="step-badge">1</span>上傳 STRATE</h2>
+    <label>機型
+      <select id="ck_machine_type">
+        <option value="DB" selected>DB（預設，已用真實案例驗證）</option>
+        <option value="ESEC">ESEC 2100（參考工具公式，未用本系統真實資料驗證）</option>
+      </select>
+    </label>
     <label>選擇一或多份 .strate 檔案（建議匯入同一個完整Wafer ID的全部相關STRATE）
       <input type="file" id="ck_strate_files" accept=".strate,.txt" multiple>
     </label>

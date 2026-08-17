@@ -80,7 +80,9 @@ def test_mispick_page_loads(client):
     assert "誤吸".encode() in res.data
 
 
-def test_analyze_classifies_force_delete_review_and_ok(client, frm_root):
+def test_analyze_esec_classifies_force_delete_review_and_ok(client, frm_root):
+    # machine_type="ESEC" — the reference-tool math, not this project's
+    # real machine type. See test_analyze_db_* below for the default.
     dies = [
         _die(1, "0:0", "1:1"),  # -> OK (see test_mispick_analysis.py derivation)
         _die(2, "1:0", "2:3"),  # -> FORCE_DELETE
@@ -93,6 +95,7 @@ def test_analyze_classifies_force_delete_review_and_ok(client, frm_root):
         "good_bins": "1",
         "ng_bins": "7,9",
         "review_bins": "2",
+        "machine_type": "ESEC",
         "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
         "strate_files": [{"name": "test.strate", "text": _strate_text(dies)}],
     }
@@ -111,11 +114,12 @@ def test_analyze_classifies_force_delete_review_and_ok(client, frm_root):
     assert "FORCE_DELETE_ACTUAL_BIN_NG" in data["csv"]
 
 
-def test_analyze_rejects_notch_other_than_270_per_substrate(client, frm_root):
+def test_analyze_esec_rejects_notch_other_than_270_per_substrate(client, frm_root):
     payload = {
         "wafer_ring": WAFER_RING,
         "offset_axis": "X",
         "offset_value": 1,
+        "machine_type": "ESEC",
         "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
         "strate_files": [{"name": "bad_notch.strate", "text": _strate_text([_die(1, "0:0", "1:1")], notch="180")}],
     }
@@ -124,6 +128,47 @@ def test_analyze_rejects_notch_other_than_270_per_substrate(client, frm_root):
     sub = res.get_json()["substrates"][0]
     assert sub["error"] is not None
     assert "NOTCH" in sub["error"]
+
+
+def test_analyze_db_is_default_and_classifies_correctly(client, frm_root):
+    # DB (default, no machine_type field at all): wafer_xy is the raw
+    # wafer MAP coordinate directly (identity), no X-flip/rotation. Same
+    # hand-derivation as bingomap/tests/test_mispick_analysis.py's DB
+    # section, adapted to this endpoint's 3x3 substrate.
+    dies = [
+        _die(1, "0:0", "0:0"),  # -> OK
+        _die(2, "1:0", "1:2"),  # -> FORCE_DELETE (nominal (1,2)=Good, +X1 -> (2,2)="7")
+        _die(3, "2:0", "2:3"),  # -> REVIEW (nominal (2,3)=Good, +X1 -> (3,3)="2")
+    ]
+    payload = {
+        "wafer_ring": WAFER_RING,
+        "offset_axis": "X",
+        "offset_value": 1,
+        "good_bins": "1",
+        "ng_bins": "7,9",
+        "review_bins": "2",
+        "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
+        "strate_files": [{"name": "test.strate", "text": _strate_text(dies, notch="180")}],
+    }
+    res = client.post("/api/mispick/analyze", json=payload)
+    assert res.status_code == 200
+    sub = res.get_json()["substrates"][0]
+    assert sub["error"] is None
+    assert sub["summary"] == {"force_delete": 1, "review": 1, "anomaly": 0, "ok": 1, "other": 0}
+
+
+def test_analyze_db_accepts_any_notch(client, frm_root):
+    payload = {
+        "wafer_ring": WAFER_RING,
+        "offset_axis": "X",
+        "offset_value": 1,
+        "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
+        "strate_files": [{"name": "x.strate", "text": _strate_text([_die(1, "0:0", "0:0")], notch="180")}],
+    }
+    res = client.post("/api/mispick/analyze", json=payload)
+    assert res.status_code == 200
+    sub = res.get_json()["substrates"][0]
+    assert sub["error"] is None
 
 
 def test_analyze_requires_wafer_ring(client):

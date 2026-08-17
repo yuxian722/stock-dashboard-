@@ -37,13 +37,33 @@ Wafer-ID matching uses `mispick_analysis.normalize_wafer_id()` (trim +
 uppercase) — same reason as mispick_analysis.py: the reference tool
 normalizes on both sides before comparing, so this module does too rather
 than being accidentally stricter.
+
+Like mispick_analysis.py, every function here takes a `machine_type`
+("DB", the default and this project's real machine type, or "ESEC", the
+reference tool's own machine, ported but not this project's hardware).
+DB's `local_view()` is a plain identity normalization (no flip, no
+rotation) — confirmed by extension from the same 2026/08/17 real DB
+evidence that fixed mispick_analysis.py's coordinate transform: since that
+evidence showed STRATE `wafer_xy` already equals the wafer MAP's own raw
+coordinate for DB with no flip anywhere, there is no reason for this
+module's *display* scatter to introduce a flip DB's own tooling doesn't
+have. This specific consequence (the scatter's own orientation) was not
+independently re-checked against a DB Crack scenario — it is inferred by
+consistency, and is a display-only choice, not a bin/pass-fail decision.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 
-from .mispick_analysis import normalize_wafer_id, output_block, output_position, parse_xy, validate_geometry
+from .mispick_analysis import (
+    MachineType,
+    normalize_wafer_id,
+    output_block,
+    output_position,
+    parse_xy,
+    validate_geometry,
+)
 from .strate import DieInfo, StrateFile
 
 CRACK_CSV_HEADER = [
@@ -110,7 +130,7 @@ class CrackSession:
         return [self.by_key[k] for k in marked_keys if k in self.by_key]
 
 
-def build_session(docs: list[tuple[str, StrateFile]]) -> CrackSession:
+def build_session(docs: list[tuple[str, StrateFile]], *, machine_type: MachineType = "DB") -> CrackSession:
     """`docs` is (source_file_name, parsed StrateFile) pairs — one entry
     per uploaded .strate file. All-or-nothing: raises on the first
     document with invalid geometry or a missing NOTCH rather than skipping
@@ -139,7 +159,7 @@ def build_session(docs: list[tuple[str, StrateFile]]) -> CrackSession:
                     continue
                 tx, ty = sub_xy
                 fx, fy = wafer_xy
-                out_xy = output_position(tx, ty, substrate.substrate_column)
+                out_xy = output_position(tx, ty, substrate.substrate_column, machine_type)
                 key = f"{doc_index}:{layer}:{row_index}"
                 candidate = CrackCandidate(
                     key=key,
@@ -188,12 +208,20 @@ def wafer_notch(rows: list[CrackCandidate]) -> int | None:
     return notch_degrees(rows[0].notch)
 
 
-def local_view(fx: int, fy: int, rng: WaferPoolRange, notch: int) -> tuple[int, int]:
+def local_view(fx: int, fy: int, rng: WaferPoolRange, notch: int, machine_type: MachineType = "DB") -> tuple[int, int]:
     """Normalizes a pooled wafer coordinate into a local, 0-based relative
     scatter position — NOT a true absolute wafer position (see module
-    docstring). Mirrors the reference tool's `v78WaferView` exactly,
-    including its fallback for any notch that isn't exactly 90/180/270
-    (treated the same as 0deg: a plain X-flip with no further rotation)."""
+    docstring).
+
+    DB: plain identity normalization (no flip, no rotation) — see module
+    docstring for the evidence basis.
+
+    ESEC: mirrors the reference tool's `v78WaferView` exactly, including
+    its fallback for any notch that isn't exactly 90/180/270 (treated the
+    same as 0deg: a plain X-flip with no further rotation)."""
+    if machine_type == "DB":
+        return fx - rng.min_x, fy - rng.min_y
+
     n = notch % 360
     raw_x = rng.max_x - fx
     raw_y = fy - rng.min_y
@@ -218,7 +246,7 @@ class ScatterPoint:
 
 
 def wafer_scatter(
-    session: CrackSession, wafer_id: str, marked_keys: list[str]
+    session: CrackSession, wafer_id: str, marked_keys: list[str], machine_type: MachineType = "DB"
 ) -> tuple[WaferPoolRange, int | None, list[ScatterPoint]]:
     """The pooled local scatter for one wafer_id — one point per distinct
     FX:FY (matches the reference tool's dot-plot dedup, `v78DrawWafer`'s
@@ -238,7 +266,7 @@ def wafer_scatter(
 
     points = []
     for (fx, fy), group in grouped.items():
-        vx, vy = local_view(fx, fy, rng, n)
+        vx, vy = local_view(fx, fy, rng, n, machine_type)
         marked_in_group = next((c for c in group if c.key in crack_no_by_key), None)
         rep = marked_in_group or group[0]
         crack_no = crack_no_by_key.get(rep.key)
@@ -259,7 +287,7 @@ def crack_output_coord(candidate: CrackCandidate) -> str:
     return col_name(x) + str(y + 1)
 
 
-def crack_csv_rows(session: CrackSession, marked_keys: list[str]) -> list[list]:
+def crack_csv_rows(session: CrackSession, marked_keys: list[str], machine_type: MachineType = "DB") -> list[list]:
     """CSV rows for the currently-marked cracks, in click order (crack_no
     is simply that order, 1-based) — matches `v78CrackCsv`."""
     rows: list[list] = [CRACK_CSV_HEADER]
@@ -267,7 +295,7 @@ def crack_csv_rows(session: CrackSession, marked_keys: list[str]) -> list[list]:
         pool = session.rows_for_wafer(c.wafer_id)
         rng = wafer_pool_range(pool)
         notch = wafer_notch(pool)
-        view_x, view_y = local_view(c.fx, c.fy, rng, notch if notch is not None else 0)
+        view_x, view_y = local_view(c.fx, c.fy, rng, notch if notch is not None else 0, machine_type)
         rows.append(
             [
                 f"C{i}",

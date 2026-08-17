@@ -36,6 +36,7 @@ from bingomap.mispick_analysis import (
     DECISION_OK,
     DECISION_REVIEW,
     InvalidGeometryError,
+    UnknownMachineTypeError,
     UnsupportedNotchError,
     analyze_substrate,
     make_offset,
@@ -324,13 +325,17 @@ def api_mispick_analyze():
     """誤吸偏移／BIN點除: given a known machine pick offset, the original
     wafer bin map (FRM), and one or more already-produced STRATE files,
     figure out which placed dies actually landed on a bad wafer BIN and
-    need to be point-removed. See bingomap/mispick_analysis.py — ported
-    from the user's ESEC 2100 reference tool, NOTCH=270 only."""
+    need to be point-removed. See bingomap/mispick_analysis.py —
+    machine_type="DB" (the default, this project's real machine type,
+    confirmed against a real DB case 2026/08/17) or "ESEC" (ported from a
+    reference tool, NOTCH=270 only, not this project's own machine)."""
     data = request.get_json(force=True)
 
     wafer_ring = (data.get("wafer_ring") or "").strip()
     if not wafer_ring:
         return jsonify({"error": "請輸入要比對的完整Wafer ID"}), 400
+
+    machine_type = data.get("machine_type", "DB")
 
     try:
         offset = make_offset(data.get("offset_axis", "X"), int(data.get("offset_value", 0)))
@@ -384,8 +389,9 @@ def api_mispick_analyze():
                 good_bins=good_bins,
                 ng_bins=ng_bins,
                 review_bins=review_bins,
+                machine_type=machine_type,
             )
-        except (UnsupportedNotchError, InvalidGeometryError) as exc:
+        except (UnsupportedNotchError, InvalidGeometryError, UnknownMachineTypeError) as exc:
             substrates_out.append({"name": name, "substrate_id": substrate.substrate_id, "error": str(exc)})
             continue
 
@@ -496,6 +502,8 @@ def api_crack_analyze():
     if not strate_files:
         return jsonify({"error": "請至少上傳一份STRATE檔案"}), 400
 
+    machine_type = data.get("machine_type", "DB")
+
     docs = []
     for item in strate_files:
         name = item.get("name", "")
@@ -507,8 +515,8 @@ def api_crack_analyze():
         docs.append((name, substrate))
 
     try:
-        session = build_session(docs)
-    except (InvalidGeometryError, MissingNotchError, ValueError) as exc:
+        session = build_session(docs, machine_type=machine_type)
+    except (InvalidGeometryError, MissingNotchError, UnknownMachineTypeError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 422
 
     marked_keys = [k for k in (data.get("marked_keys") or []) if k in session.by_key]
@@ -521,7 +529,7 @@ def api_crack_analyze():
 
     docs_out = [_crack_doc_payload(i, name, substrate, session.candidates) for i, (name, substrate) in enumerate(docs)]
 
-    rng, notch, points = wafer_scatter(session, focus_wafer_id, marked_keys)
+    rng, notch, points = wafer_scatter(session, focus_wafer_id, marked_keys, machine_type=machine_type)
     scatter = {
         "range": {"min_x": rng.min_x, "max_x": rng.max_x, "min_y": rng.min_y, "max_y": rng.max_y},
         "notch": notch,
@@ -555,7 +563,7 @@ def api_crack_analyze():
             "focus_wafer_id": focus_wafer_id,
             "scatter": scatter,
             "crack_table": crack_table,
-            "csv": _csv_text(crack_csv_rows(session, marked_keys)),
+            "csv": _csv_text(crack_csv_rows(session, marked_keys, machine_type=machine_type)),
         }
     )
 

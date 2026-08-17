@@ -87,6 +87,7 @@ async function analyze() {
 
   const payload = {
     wafer_ring: document.getElementById("mp_wafer_ring").value,
+    machine_type: document.getElementById("mp_machine_type").value,
     offset_axis: document.getElementById("mp_offset_axis").value,
     offset_value: document.getElementById("mp_offset_value").value,
     good_bins: document.getElementById("mp_good_bins").value,
@@ -132,5 +133,12 @@ function downloadCsv() {
   URL.revokeObjectURL(url);
 }
 
+function updateEsecWarning() {
+  const isEsec = document.getElementById("mp_machine_type").value === "ESEC";
+  document.getElementById("mp-esec-warning").style.display = isEsec ? "" : "none";
+}
+
 document.getElementById("mp-btn-analyze").addEventListener("click", analyze);
 document.getElementById("mp-btn-download-csv").addEventListener("click", downloadCsv);
+document.getElementById("mp_machine_type").addEventListener("change", updateEsecWarning);
+updateEsecWarning();
