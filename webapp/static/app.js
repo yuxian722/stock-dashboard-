@@ -12,6 +12,8 @@ let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 let focusedSubstratePos = null; // "col:row" clicked in the substrate grid, for reverse lookup
 let focusedWaferXY = null; // {x, y} the focused substrate position maps to, if filled
 let usingTemplate = false; // true once a template .strate has been loaded via loadTemplate()
+let skippedPositions = new Set(); // "col:row" substrate positions marked "不上片" — excluded from the fill order
+let skipModeEnabled = false; // true = clicking a substrate cell toggles skip instead of reverse-lookup
 
 function setActiveLayer(key) {
   currentLayerKey = key;
@@ -48,8 +50,10 @@ function headerPayload() {
 
 async function loadBlank() {
   // Explicitly regenerating via convention/machine_type supersedes any
-  // previously loaded template's position order.
+  // previously loaded template's position order — and any "不上片" marks,
+  // since they're tied to the old position list which may no longer apply.
   usingTemplate = false;
+  skippedPositions.clear();
   const res = await fetch("/api/blank", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -101,6 +105,7 @@ async function loadTemplate(text) {
   document.getElementById("wafer_ring").value = data.wafer_ring;
 
   usingTemplate = true;
+  skippedPositions.clear();
   targetQty = data.total_qty;
   substratePositions = data.positions;
   substrateBounds = computeSubstrateBounds(substratePositions);
@@ -143,26 +148,34 @@ function computeSubstrateBounds(positions) {
   return { minCol, maxCol, minRow, maxRow };
 }
 
+function fillablePositions() {
+  // Positions marked "不上片" are excluded from the fill order entirely —
+  // matches assign_dies()'s own "unfilled positions are simply absent"
+  // rule (see bingomap/CLAUDE.md), just with a smaller starting list.
+  return substratePositions.filter((pos) => !skippedPositions.has(pos));
+}
+
 function renderSubstrateGrid() {
   const container = document.getElementById("substrate-grid");
   container.innerHTML = "";
   if (!substrateBounds) return;
-  // First N picks (in click/scan order) fill the first N positions of the
-  // blank skeleton's own order — this mirrors exactly what assign_dies()
-  // does at generate time (zips picks with blank.die_info positionally),
-  // so this preview is never out of sync with the real output.
-  const filled = new Set(substratePositions.slice(0, picks.length));
-  const nextPos = substratePositions[picks.length];
+  // First N picks (in click/scan order) fill the first N *fillable*
+  // positions of the blank skeleton's own order (skipping any marked
+  // "不上片") — this mirrors exactly what assign_dies() does at generate
+  // time, so this preview is never out of sync with the real output.
+  const fillable = fillablePositions();
+  const filled = new Set(fillable.slice(0, picks.length));
+  const nextPos = fillable[picks.length];
   const { minCol, maxCol, minRow, maxRow } = substrateBounds;
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
-  corner.className = "substrate-axis-cell substrate-axis-corner";
+  corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
   for (let col = minCol; col <= maxCol; col++) {
     const label = document.createElement("div");
-    label.className = "substrate-axis-cell";
+    label.className = "grid-axis-cell";
     label.textContent = col;
     headerRow.appendChild(label);
   }
@@ -172,13 +185,14 @@ function renderSubstrateGrid() {
     const rowEl = document.createElement("div");
     rowEl.className = "wafer-row";
     const rowLabel = document.createElement("div");
-    rowLabel.className = "substrate-axis-cell";
+    rowLabel.className = "grid-axis-cell";
     rowLabel.textContent = row;
     rowEl.appendChild(rowLabel);
     for (let col = minCol; col <= maxCol; col++) {
       const pos = `${col}:${row}`;
       const cell = document.createElement("div");
       cell.className = "substrate-cell";
+      if (skippedPositions.has(pos)) cell.classList.add("skipped");
       if (filled.has(pos)) cell.classList.add("filled");
       if (pos === nextPos) cell.classList.add("next");
       if (pos === focusedSubstratePos) cell.classList.add("focus");
@@ -193,7 +207,14 @@ function renderSubstrateGrid() {
 function reverseLookupSubstratePos(pos) {
   const status = document.getElementById("lookup-status");
   focusedSubstratePos = pos;
-  const index = substratePositions.indexOf(pos);
+  if (skippedPositions.has(pos)) {
+    focusedWaferXY = null;
+    status.textContent = `基板位置 ${pos} 已標記「不上片」，不會對應到任何wafer座標`;
+    status.className = "notice";
+    renderAll();
+    return;
+  }
+  const index = fillablePositions().indexOf(pos);
   const isFilled = index >= 0 && index < picks.length;
   if (isFilled) {
     const pick = picks[index];
@@ -272,14 +293,36 @@ function isPicked(x, y) {
   return picks.some((p) => p.x === x && p.y === y);
 }
 
+const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style.css
+
 function renderWaferGrid() {
   const container = document.getElementById("wafer-grid");
   container.innerHTML = "";
   if (!waferBounds) return;
   const { minX, maxX, minY, maxY } = waferBounds;
+
+  // Axis labels, same style/size as the substrate grid's, so the two grids
+  // are easy to visually line up.
+  const headerRow = document.createElement("div");
+  headerRow.className = "wafer-row";
+  const corner = document.createElement("div");
+  corner.className = "grid-axis-cell grid-axis-corner";
+  headerRow.appendChild(corner);
+  for (let x = minX; x <= maxX; x++) {
+    const label = document.createElement("div");
+    label.className = "grid-axis-cell";
+    label.textContent = x;
+    headerRow.appendChild(label);
+  }
+  container.appendChild(headerRow);
+
   for (let y = minY; y <= maxY; y++) {
     const row = document.createElement("div");
     row.className = "wafer-row";
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "grid-axis-cell";
+    rowLabel.textContent = y;
+    row.appendChild(rowLabel);
     for (let x = minX; x <= maxX; x++) {
       const bin = waferCells.get(`${x},${y}`);
       const cell = document.createElement("div");
@@ -305,8 +348,12 @@ function renderWaferOverlay() {
     svg.innerHTML = "";
     return;
   }
-  const w = grid.offsetWidth;
-  const h = grid.offsetHeight;
+  // Offset by one axis-label row/column so the overlay only covers the
+  // actual cell area, not the coordinate labels.
+  const w = grid.offsetWidth - GRID_AXIS_SIZE;
+  const h = grid.offsetHeight - GRID_AXIS_SIZE;
+  svg.style.left = GRID_AXIS_SIZE + "px";
+  svg.style.top = GRID_AXIS_SIZE + "px";
   svg.setAttribute("width", w);
   svg.setAttribute("height", h);
   // Approximate reference guide only — inscribed in the loaded grid's own
@@ -354,16 +401,25 @@ function renderPickTable() {
   });
 }
 
+function effectiveTargetQty() {
+  // Positions marked "不上片" reduce how many dies are actually needed —
+  // mirrors /api/generate's own skip_positions handling server-side.
+  if (targetQty === null) return null;
+  return targetQty - skippedPositions.size;
+}
+
 function renderQtyStatus() {
   const el = document.getElementById("qty-status");
-  const target = targetQty === null ? "?" : targetQty;
+  const effTarget = effectiveTargetQty();
+  const target = effTarget === null ? "?" : effTarget;
+  const skipNote = skippedPositions.size ? `（已標記不上片 ${skippedPositions.size} 格，目標已扣除）` : "";
 
   if (twoLayerEnabled) {
-    const primaryDone = targetQty !== null && picksPrimary.length === targetQty;
-    const otherDone = targetQty !== null && picksOther.length === targetQty;
-    el.textContent = `主層已選擇 ${picksPrimary.length} / 目標 ${target}　次層已選擇 ${picksOther.length} / 目標 ${target}`;
+    const primaryDone = effTarget !== null && picksPrimary.length === effTarget;
+    const otherDone = effTarget !== null && picksOther.length === effTarget;
+    el.textContent = `主層已選擇 ${picksPrimary.length} / 目標 ${target}　次層已選擇 ${picksOther.length} / 目標 ${target}${skipNote}`;
     el.className = primaryDone && otherDone ? "ok" : "bad";
-    if (targetQty === null) return;
+    if (effTarget === null) return;
     if (primaryDone && otherDone) {
       setStepFlow(4, { done: [1, 2, 3] });
     } else if (picksPrimary.length > 0 || picksOther.length > 0 || waferBounds) {
@@ -372,10 +428,10 @@ function renderQtyStatus() {
     return;
   }
 
-  el.textContent = `已選擇 ${picks.length} / 目標 ${target}`;
-  const matched = targetQty !== null && picks.length === targetQty;
+  el.textContent = `已選擇 ${picks.length} / 目標 ${target}${skipNote}`;
+  const matched = effTarget !== null && picks.length === effTarget;
   el.className = matched ? "ok" : "bad";
-  if (targetQty === null) return;
+  if (effTarget === null) return;
   if (matched) {
     setStepFlow(4, { done: [1, 2, 3] });
   } else if (picks.length > 0 || waferBounds) {
@@ -386,7 +442,8 @@ function renderQtyStatus() {
 function renderLayerStatus() {
   if (!twoLayerEnabled) return;
   const status = document.getElementById("layer-status");
-  const target = targetQty === null ? "?" : targetQty;
+  const effTarget = effectiveTargetQty();
+  const target = effTarget === null ? "?" : effTarget;
   const layerName = currentLayerKey === "primary" ? "主層" : "次層";
   status.textContent = `目前編輯：${layerName}（主層 ${picksPrimary.length}/${target}，次層 ${picksOther.length}/${target}）`;
 }
@@ -401,6 +458,7 @@ function renderAll() {
 
 function wireWaferGridEvents() {
   const container = document.getElementById("wafer-grid");
+  const hoverStatus = document.getElementById("wafer-hover-status");
   container.addEventListener("mousedown", (e) => {
     if (!e.target.classList.contains("wafer-cell")) return;
     dragStart = { x: parseInt(e.target.dataset.x, 10), y: parseInt(e.target.dataset.y, 10) };
@@ -416,13 +474,47 @@ function wireWaferGridEvents() {
     dragStart = null;
     renderAll();
   });
+  container.addEventListener("mouseover", (e) => {
+    if (!e.target.classList.contains("wafer-cell")) return;
+    hoverStatus.textContent = `Wafer座標：${e.target.dataset.x}:${e.target.dataset.y}`;
+  });
+  container.addEventListener("mouseleave", () => {
+    hoverStatus.textContent = "滑鼠移到格子上會顯示座標";
+  });
+}
+
+function setSkipMode(enabled) {
+  skipModeEnabled = enabled;
+  const btn = document.getElementById("btn-skip-mode");
+  btn.textContent = `標記「不上片」模式：${enabled ? "開啟" : "關閉"}`;
+  btn.classList.toggle("skip-mode-on", enabled);
+  document.getElementById("substrate-mode-hint").textContent = enabled
+    ? "目前是「不上片」標記模式：點基板圖上任一格＝標記/取消該格不上片（黃色＝跳過，不會被wafer座標填入）。"
+    : "點基板圖上任一格，可以反查它對應到哪個wafer座標（會在下方wafer圖上用橘框標示出來）。";
 }
 
 function wireSubstrateGridEvents() {
-  document.getElementById("substrate-grid").addEventListener("click", (e) => {
+  const container = document.getElementById("substrate-grid");
+  const hoverStatus = document.getElementById("substrate-hover-status");
+  container.addEventListener("click", (e) => {
     if (!e.target.classList.contains("substrate-cell")) return;
-    reverseLookupSubstratePos(e.target.dataset.pos);
+    const pos = e.target.dataset.pos;
+    if (skipModeEnabled) {
+      if (skippedPositions.has(pos)) skippedPositions.delete(pos);
+      else skippedPositions.add(pos);
+      renderAll();
+      return;
+    }
+    reverseLookupSubstratePos(pos);
   });
+  container.addEventListener("mouseover", (e) => {
+    if (!e.target.classList.contains("substrate-cell")) return;
+    hoverStatus.textContent = `基板座標：${e.target.dataset.pos}`;
+  });
+  container.addEventListener("mouseleave", () => {
+    hoverStatus.textContent = "滑鼠移到格子上會顯示座標";
+  });
+  document.getElementById("btn-skip-mode").addEventListener("click", () => setSkipMode(!skipModeEnabled));
 }
 
 async function generateStrate() {
@@ -436,6 +528,7 @@ async function generateStrate() {
     wafer_ring: document.getElementById("wafer_ring").value,
     start_time: startTimeRaw.length === 16 ? startTimeRaw + ":00" : startTimeRaw,
     interval_seconds: document.getElementById("interval_seconds").value,
+    skip_positions: Array.from(skippedPositions),
   };
   if (twoLayerEnabled) {
     payload.two_layer = true;
@@ -523,4 +616,5 @@ document.getElementById("btn-layer-primary").addEventListener("click", () => set
 document.getElementById("btn-layer-other").addEventListener("click", () => setActiveLayer("other"));
 wireWaferGridEvents();
 wireSubstrateGridEvents();
+setSkipMode(false);
 renderQtyStatus();

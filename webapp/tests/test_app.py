@@ -95,6 +95,45 @@ def test_api_generate_success_downloads_strate_file(client):
     assert positions[0] in text
 
 
+def test_api_generate_skip_positions_reduces_required_qty(client):
+    res = client.post("/api/blank", json=BASE_HEADER)
+    positions = res.get_json()["positions"]
+    skip_positions = positions[:2]  # mark 2 substrate sites "不上片"
+
+    selections = [{"x": 23, "y": 195 + i, "bin": "1"} for i in range(78)]  # 80 - 2 skipped
+    payload = {
+        **BASE_HEADER,
+        "wafer_ring": "A27572",
+        "start_time": "2026-08-12T22:16:33",
+        "interval_seconds": 2,
+        "selections": selections,
+        "skip_positions": skip_positions,
+    }
+    res = client.post("/api/generate", json=payload)
+    assert res.status_code == 200
+    text = res.get_data(as_text=True)
+    assert "TOTAL_BOND_DIE_QTY=78" in text
+    for pos in skip_positions:
+        assert f",{pos},1,0,0," not in text  # never written as a DIE_INFO row
+
+
+def test_api_generate_skip_positions_mismatch_uses_adjusted_target(client):
+    res = client.post("/api/blank", json=BASE_HEADER)
+    positions = res.get_json()["positions"]
+    skip_positions = positions[:2]
+
+    payload = {
+        **BASE_HEADER,
+        "wafer_ring": "A27572",
+        "start_time": "2026-08-12T22:16:33",
+        "selections": [{"x": 1, "y": 1, "bin": "1"}],  # only 1, need 78 (80-2 skipped)
+        "skip_positions": skip_positions,
+    }
+    res = client.post("/api/generate", json=payload)
+    assert res.status_code == 409
+    assert "需要 Die 數量78" in res.get_json()["error"]
+
+
 def test_api_generate_quantity_mismatch_returns_dialog_wording(client):
     payload = {
         **BASE_HEADER,

@@ -253,7 +253,15 @@ def api_generate():
         return jsonify({"error": str(exc)}), 400
 
     wafer_ring = data.get("wafer_ring", "")
-    sub_positions = [d.sub_pos for d in blank.die_info]
+    # Positions the operator explicitly marked "不上片" (no die at this
+    # substrate site) are dropped from the fillable list up front — this
+    # reuses assign_dies()/assign_two_layers()'s existing "unfilled
+    # positions are simply absent from DIE_INFO" behavior (see
+    # bingomap/CLAUDE.md), it just shrinks what counts as "unfilled" and
+    # the required pick count to match.
+    skip_positions = set(data.get("skip_positions") or [])
+    sub_positions = [d.sub_pos for d in blank.die_info if d.sub_pos not in skip_positions]
+    target_qty = len(sub_positions)
 
     try:
         start_time = datetime.fromisoformat(data.get("start_time"))
@@ -271,7 +279,7 @@ def api_generate():
                 other_picks,
                 start_time=start_time,
                 interval_seconds=interval_seconds,
-                expected_qty=blank.total_bond_die_qty,
+                expected_qty=target_qty,
                 primary_layer=str(data.get("primary_layer", "2")),
                 other_layer=str(data.get("other_layer", "1")),
             )
@@ -282,7 +290,7 @@ def api_generate():
                 picks,
                 start_time=start_time,
                 interval_seconds=interval_seconds,
-                expected_qty=blank.total_bond_die_qty,
+                expected_qty=target_qty,
             )
     except DieCountMismatch as exc:
         return jsonify({"error": str(exc)}), 409

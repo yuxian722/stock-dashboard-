@@ -96,28 +96,39 @@ button.secondary.active-layer:hover{background:#0c7550}
 .legend{display:flex;gap:14px;flex-wrap:wrap;margin:0.5rem 0;font-size:0.78rem;color:#334155}
 .legend i{display:inline-block;width:14px;height:14px;border:1px solid #777;vertical-align:middle;margin-right:4px;border-radius:3px}
 
-#wafer-wrap{position:relative;display:inline-block;margin-top:0.5rem}
+/* Wafer grid and substrate grid deliberately share the same cell size,
+   axis-label style, and scroll behavior so the two are easy to visually
+   line up against each other — see bingomap CLAUDE.md/README for why this
+   matters (mismatched machine-type conventions are exactly the kind of
+   thing that's easy to catch by eye when the two grids look consistent). */
+#wafer-wrap{position:relative;display:inline-block;margin-top:0.5rem;max-width:100%;overflow-x:auto}
 #wafer-grid{display:inline-block;user-select:none;background:#fff;border-radius:8px;border:1px solid var(--line)}
 #wafer-overlay{position:absolute;top:0;left:0;pointer-events:none}
 .wafer-row{display:flex}
-.wafer-cell{width:16px;height:16px;box-sizing:border-box;border:1px solid #eef1f6;background:#fff;cursor:pointer;transition:filter .1s ease}
+.wafer-cell{width:20px;height:20px;box-sizing:border-box;border:1px solid #eef1f6;background:#fff;cursor:pointer;transition:filter .1s ease}
 .wafer-cell:hover{filter:brightness(.93)}
 .wafer-cell.bin-1{background:var(--bin1);border-color:rgba(0,0,0,.06)}
 .wafer-cell.bin-other{background:var(--bin-other);border-color:rgba(0,0,0,.06)}
 .wafer-cell.picked{outline:2px solid #1a3fd6;outline-offset:-2px}
 .wafer-cell.focus{outline:3px solid #f97316;outline-offset:-3px;z-index:1;position:relative}
 
-#substrate-grid{display:inline-block;margin:0.5rem 0 0.8rem;user-select:none;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
-.substrate-cell{width:13px;height:13px;box-sizing:border-box;border:1px solid #eef1f6;background:#f3f5f8;cursor:pointer}
+#substrate-grid{display:inline-block;margin:0.5rem 0 0.8rem;user-select:none;border:1px solid var(--line);border-radius:8px;overflow:auto;max-width:100%;background:#fff}
+.substrate-cell{width:20px;height:20px;box-sizing:border-box;border:1px solid #eef1f6;background:#f3f5f8;cursor:pointer}
 .substrate-cell:hover{filter:brightness(.93)}
 .substrate-cell.filled{background:var(--blue);border-color:#0f4f9e}
 .substrate-cell.next{outline:2px solid #f5900f;outline-offset:-2px}
 .substrate-cell.focus{outline:2px solid #f97316;outline-offset:-2px;z-index:1;position:relative}
-.substrate-axis-cell{
-  width:13px;height:13px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
-  font-size:7px;font-weight:700;color:var(--muted);background:#e9eef6;flex:none;
+.substrate-cell.skipped{background:#fde047;border-color:#b7791f}
+
+.grid-axis-cell,.substrate-axis-cell{
+  width:20px;height:20px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;color:var(--muted);background:#e9eef6;flex:none;
 }
-.substrate-axis-corner{background:#111f35}
+.grid-axis-corner,.substrate-axis-corner{background:#111f35}
+.grid-hover-status{font-size:0.8rem;font-weight:700;color:var(--blue);min-height:1.2em;margin:0.4rem 0 0.2rem}
+
+button.secondary.skip-mode-on{background:var(--yellow);color:#3a2a06;box-shadow:0 6px 14px rgba(183,121,31,.25)}
+button.secondary.skip-mode-on:hover{background:#a06a1c}
 #lookup-status{font-size:0.82rem;color:var(--muted);min-height:1.2em}
 #lookup-status.notice{margin:0.4rem 0}
 

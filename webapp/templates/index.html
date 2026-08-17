@@ -80,7 +80,7 @@
     <p id="blank-status"></p>
   </section>
 
-  <section class="panel" id="wafer-panel">
+  <section class="panel" id="wafer-panel" style="grid-column:1/-1">
     <h2><span class="step-badge">2</span>Wafer Bin 資料</h2>
 
     <div class="notice">自動讀取FRM檔案（只有這台電腦連得到<code>F:\SMAP\FRM\</code>網路磁碟機時才會成功；否則用下面手動貼文字）。</div>
@@ -100,6 +100,7 @@
       <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
       <span><i style="background:#fff;border-color:#1a3fd6"></i>已點選</span>
     </div>
+    <p id="wafer-hover-status" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
     <div id="wafer-wrap">
       <div id="wafer-grid"></div>
       <svg id="wafer-overlay"></svg>
@@ -107,7 +108,7 @@
     <p class="hint" style="font-size:0.78rem;color:var(--muted)">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。</p>
   </section>
 
-  <section class="panel" id="pick-panel">
+  <section class="panel" id="pick-panel" style="grid-column:1/-1">
     <h2><span class="step-badge">3</span>已選座標 / 基板對應圖</h2>
     <div id="layer-switch" style="display:none;margin-bottom:0.6rem">
       <button type="button" id="btn-layer-primary" class="secondary">主層 (f9=<span id="layer-primary-label">2</span>)</button>
@@ -118,8 +119,11 @@
     <div class="legend">
       <span><i style="background:#1769d1"></i>已對應到wafer座標的基板位置</span>
       <span><i style="background:#fff;border-color:#f5900f"></i>下一顆會填入的位置</span>
+      <span><i style="background:#fde047;border-color:#b7791f"></i>不上片(跳過)</span>
     </div>
-    <div class="notice">點基板圖上任一格，可以反查它對應到哪個wafer座標（會在下方wafer圖上用橘框標示出來）。</div>
+    <button type="button" class="secondary" id="btn-skip-mode">標記「不上片」模式：關閉</button>
+    <div class="notice" id="substrate-mode-hint">點基板圖上任一格，可以反查它對應到哪個wafer座標（會在下方wafer圖上用橘框標示出來）。</div>
+    <p id="substrate-hover-status" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
     <div id="substrate-grid"></div>
     <p id="lookup-status"></p>
     <table id="pick-table">
