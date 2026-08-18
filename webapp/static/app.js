@@ -269,12 +269,14 @@ async function loadTemplate(text) {
   document.getElementById("multi_layer_enabled").checked = multiLayerEnabled;
   document.getElementById("num_layers").value = numLayers;
   document.getElementById("multi-layer-fields").style.display = multiLayerEnabled ? "" : "none";
-  // "跨兩片wafer" is independent of layer count (see the change handler
-  // below) — a template carries no notion of "which physical wafer panel"
-  // either way, so it always resets to the single-wafer default on load.
-  multiWaferEnabled = false;
-  document.getElementById("multi_wafer_enabled").checked = false;
-
+  // "跨兩片wafer" (multiWaferEnabled) is deliberately left untouched here —
+  // a .strate file carries no notion of "which physical wafer panel" a die
+  // came from, so there's nothing in the template to derive it from either
+  // way, but that's not a reason to silently override whatever the user
+  // currently has set. This used to force it to false unconditionally,
+  // which meant checking "跨兩片wafer" and then loading a template made
+  // the second wafer panel vanish with no explanation — exactly the
+  // "找不到第二片wafer" bug report.
   resetLayerState();
   // A template file carries no notion of "which physical wafer panel" —
   // treat every loaded pick as panel 0 (the default single-wafer source).
