@@ -221,6 +221,8 @@ def api_frm():
             "lot_no": frm.lot_no,
             "wafer_id": frm.wafer_id,
             "wafer_type": frm.wafer_type,
+            "reference_point_x": frm.reference_point_x,
+            "reference_point_y": frm.reference_point_y,
             "cells": [{"x": x, "y": y, "bin": str(bin_kind)} for (x, y), bin_kind in frm.die_map.items()],
         }
     )
