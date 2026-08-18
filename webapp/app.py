@@ -436,6 +436,7 @@ def api_mispick_analyze():
 
         summary = {"force_delete": 0, "review": 0, "anomaly": 0, "ok": 0, "other": 0}
         action_rows_out = []
+        grid_cells_out = []
         for row in result.rows:
             if row.decision == DECISION_FORCE_DELETE:
                 summary["force_delete"] += 1
@@ -471,6 +472,20 @@ def api_mispick_analyze():
                         "actual_bin": row.actual_bin,
                     }
                 )
+            # Every placed die (not just the ones needing an action) — for
+            # drawing the substrate's own BINGO MAP grid with force-delete
+            # positions outlined in red, per the user's explicit ask
+            # 2026/08/18 ("要反紅框讓我知道"). tx/ty are the substrate's
+            # own DIE_INFO sub_pos, not the machine-type output-mirrored
+            # position — fine since this project's real machine type (DB)
+            # is an identity mapping between the two (see output_position()
+            # in mispick_analysis.py); only ESEC substrates would visually
+            # differ from the existing "output_coord" table column, and
+            # ESEC already carries its own prominent warning on this page.
+            if row.tx is not None and row.ty is not None:
+                grid_cells_out.append(
+                    {"tx": row.tx, "ty": row.ty, "decision": row.decision, "layer": row.layer}
+                )
         action_rows_out.sort(key=lambda r: r["action_no"])
 
         substrates_out.append(
@@ -481,12 +496,21 @@ def api_mispick_analyze():
                 "summary": summary,
                 "excluded_count": len(result.excluded),
                 "action_rows": action_rows_out,
+                "substrate_column": substrate.substrate_column,
+                "substrate_row": substrate.substrate_row,
+                "grid_cells": grid_cells_out,
             }
         )
 
     return jsonify(
         {
-            "wafer": {"columns": frm.col, "rows": frm.row, "lot_no": frm.lot_no, "wafer_id": frm.wafer_id},
+            "wafer": {
+                "columns": frm.col,
+                "rows": frm.row,
+                "lot_no": frm.lot_no,
+                "wafer_id": frm.wafer_id,
+                "cells": [{"x": x, "y": y, "bin": str(bin_kind)} for (x, y), bin_kind in frm.die_map.items()],
+            },
             "substrates": substrates_out,
             "csv": _csv_text(csv_rows),
         }

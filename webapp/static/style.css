@@ -173,6 +173,13 @@ button.secondary.active-layer:hover{background:#0c7550}
 .substrate-cell.next{outline:2px solid #f5900f;outline-offset:-2px}
 .substrate-cell.focus{outline:2px solid #f97316;outline-offset:-2px;z-index:1;position:relative}
 .substrate-cell.skipped{background:#fde047;border-color:#b7791f}
+/* 誤吸偏移／BIN點除頁(mispick.js)：每一枚已上片的位置畫成藍色
+   filled，強制點除/人工確認的位置額外疊一圈粗紅/黃框——使用者
+   2026/08/18明確要求「反紅框讓我知道」，不要只列在表格裡。跟
+   .next/.focus共用outline手法，只是顏色跟粗細不同，方便跟既有
+   的「下一格待填」橘框視覺上分開。 */
+.substrate-cell.mp-force{outline:3px solid #ef4444;outline-offset:-3px}
+.substrate-cell.mp-review{outline:3px solid #facc15;outline-offset:-3px}
 
 .grid-axis-cell,.substrate-axis-cell{
   width:20px;height:20px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;

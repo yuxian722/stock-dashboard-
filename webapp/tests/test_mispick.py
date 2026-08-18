@@ -157,6 +157,44 @@ def test_analyze_db_is_default_and_classifies_correctly(client, frm_root):
     assert sub["summary"] == {"force_delete": 1, "review": 1, "anomaly": 0, "ok": 1, "other": 0}
 
 
+def test_analyze_returns_wafer_cells_and_substrate_grid_cells(client, frm_root):
+    # Same scenario as test_analyze_db_is_default_and_classifies_correctly
+    # — checks the visual-grid data added 2026/08/18 so the mispick page
+    # can draw the actual wafer MAP and outline each substrate's own
+    # force-delete/review positions directly on its BINGO MAP, instead of
+    # only listing them in a table.
+    dies = [
+        _die(1, "0:0", "0:0"),  # -> OK
+        _die(2, "1:0", "1:2"),  # -> FORCE_DELETE
+        _die(3, "2:0", "2:3"),  # -> REVIEW
+    ]
+    payload = {
+        "wafer_ring": WAFER_RING,
+        "offset_axis": "X",
+        "offset_value": 1,
+        "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
+        "strate_files": [{"name": "test.strate", "text": _strate_text(dies, notch="180")}],
+    }
+    res = client.post("/api/mispick/analyze", json=payload)
+    assert res.status_code == 200
+    data = res.get_json()
+
+    wafer = data["wafer"]
+    assert wafer["columns"] == 5
+    assert wafer["rows"] == 5
+    assert len(wafer["cells"]) == 25  # full 5x5 synthetic wafer map
+    assert {"x": 2, "y": 2, "bin": "7"} in wafer["cells"]
+
+    sub = data["substrates"][0]
+    assert sub["substrate_column"] == 3
+    assert sub["substrate_row"] == 3
+    assert len(sub["grid_cells"]) == 3  # one per placed die, regardless of decision
+    by_pos = {(c["tx"], c["ty"]): c["decision"] for c in sub["grid_cells"]}
+    assert by_pos[(0, 0)] == "OK_ACTUAL_GOOD_BIN"
+    assert by_pos[(1, 0)] == "FORCE_DELETE_ACTUAL_BIN_NG"
+    assert by_pos[(2, 0)] == "REVIEW_ACTUAL_BIN_REVIEW"
+
+
 def test_analyze_db_accepts_any_notch(client, frm_root):
     payload = {
         "wafer_ring": WAFER_RING,
