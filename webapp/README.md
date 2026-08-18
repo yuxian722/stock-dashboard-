@@ -216,10 +216,10 @@ multiple>`），可以**一次選多個**已經完成的`.strate`檔案，純粹
 
 ## 多分頁架構
 
-首頁最上方有導覽列（`templates/_nav.html`，各頁共用），目前有三頁：①補資料(`/`，本頁)、②誤吸偏移／
-BIN點除(`/mispick`)、③Crack位置回推(`/crack`)。導覽列上也先列出④STRATE補檔(XML合併)、⑤上片狀態
-人工確認/修正兩個「尚未開發」的項目，之後每移植一個ESEC參考工具的功能就補一個新頁面+對應路由，
-不會把不相關的功能硬塞進同一頁。
+首頁最上方有導覽列（`templates/_nav.html`，各頁共用），目前有四頁：①補資料(`/`，本頁)、②誤吸偏移／
+BIN點除(`/mispick`)、③Crack位置回推(`/crack`)、④STRATE補檔 XML合併(`/strate-xml`)。導覽列上也先
+列出⑤上片狀態人工確認/修正「尚未開發」的項目，之後每移植一個ESEC參考工具的功能就補一個新頁面+
+對應路由，不會把不相關的功能硬塞進同一頁。
 
 ## 誤吸偏移／BIN點除（`/mispick`）
 
@@ -249,7 +249,29 @@ docstring跟`bingomap/CLAUDE.md`。
 沒有搬參考工具原本的雙canvas對照圖PNG匯出，目前用HTML表格版的基板圖+散點圖取代，功能等價但視覺
 效果較簡單。
 
+## STRATE補檔 XML合併（`/strate-xml`）
+
+2026/08/18使用者提供了機台真實的SECS/AFC交易紀錄log(BAB14站台)，要求「從這裡抓出strate的資料跟
+wafer圖檔的資料」。跟前三頁完全不同的地方：**不需要重新手動點座標**——log裡的`StrateMap`事件本身
+就已經完整記錄了每一枚基板實際上片的座標資料，直接轉成`.strate`檔案即可；這頁的角色是「資料救援」，
+適合基板檔案已經遺失、但機台的SECS log還留著的情況。
+
+流程：上傳log檔案(UTF-16LE，跟browser原生`file.text()`的解碼方式不合，前端改用`file.arrayBuffer()`
+轉base64送到後端，由`bingomap/secs_log.py`的`decode_secs_log()`偵測編碼解碼)、按「解析Log」，畫面
+列出：
+- **基板資料**(`StrateMap`事件)：每一列可以單獨下載成`.strate`檔案，也有「全部下載(.zip)」一次拿到
+  全部
+- **Wafer Bin Map資料**(`WaferStart`事件的`BinList`)：「顯示/複製座標文字」展開後是`x,y,bin`格式的
+  文字，跟「①補資料」頁面「手動貼上wafer bin資料」欄位格式完全一樣，可以直接複製貼過去繼續用
+
+**注意：**轉出來的`.strate`檔案`ASSY_LOT`、`OPER`、`MAPPING_LOT`三欄會是空白——這份log完全沒有
+記錄這幾項資料(不是我們沒解析，是機台log本身就沒有)，頁面上跟README都有提醒，請下載後自行人工
+補上，使用者已經確認這個處理方式可以接受。
+
+技術細節、真實資料交叉驗證過程(尤其是`BinList`座標方向怎麼驗證出來的)見`bingomap/README.md`跟
+`bingomap/secs_log.py`模組docstring。
+
 ## 尚未做的
 
-- STRATE補檔(XML合併)、上片狀態人工確認/修正——ESEC參考工具裡另外兩個功能，尚未移植
+- 上片狀態人工確認/修正——ESEC參考工具裡的另一個功能，尚未移植
 - Crack局部分布的PNG匯出

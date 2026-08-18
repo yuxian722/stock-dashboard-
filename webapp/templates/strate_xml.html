@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STRATE補檔 XML合併</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+{% include "_nav.html" %}
+
+<div class="hero">
+  <h1>STRATE補檔（SECS Log XML合併）</h1>
+  <p>上傳機台的SECS/AFC交易紀錄log，直接抓出裡面已經完整記錄的基板資料跟wafer bin map，不用重新手動點座標</p>
+</div>
+
+<div class="notice">
+  Log裡的<code>StrateMap</code>事件本身就已經記錄了每一枚基板實際上片的完整座標資料（跟.strate檔案
+  DIE_INFO格式幾乎一樣），直接轉成.strate檔案下載即可，<b>不需要重新手動選座標</b>——適合基板檔案已經
+  遺失、但這份log還在的情況。<code>WaferStart</code>事件則記錄了整片wafer的bin map，可以複製貼到
+  「①補資料」頁面的「手動貼上wafer bin資料」欄位繼續用。<br>
+  <b>注意：</b>這份log裡沒有ASSY_LOT跟OPER欄位的資料（機台log本身就沒有記錄這兩項），轉出來的.strate
+  檔案這兩欄會是空白，請下載後自行人工補上；MAPPING_LOT同樣不在這個事件裡，也是空白。
+</div>
+
+<div class="layout">
+  <section class="panel" id="sx-upload-panel" style="grid-column:1/-1">
+    <h2><span class="step-badge">1</span>上傳SECS Log</h2>
+    <label>選擇log檔案 <input type="file" id="sx_log_file" accept=".log,.txt"></label>
+    <button id="sx-btn-extract">解析Log</button>
+    <p id="sx-status"></p>
+  </section>
+
+  <section class="panel" id="sx-substrates-panel" style="grid-column:1/-1;display:none">
+    <h2><span class="step-badge">2</span>基板資料（StrateMap，共 <span id="sx-substrate-count">0</span> 筆）</h2>
+    <button class="secondary" id="sx-btn-download-zip">全部下載 (.zip)</button>
+    <div style="overflow-x:auto;margin-top:0.6rem">
+      <table class="tbl" id="sx-substrates-table">
+        <thead>
+          <tr>
+            <th>#</th><th>SUBSTRATE_ID</th><th>Wafer Ring</th><th>EQPID</th>
+            <th>DIE數量</th><th>疊層DIE數量</th><th>目標數量</th><th>GOOD_DIE</th>
+            <th>最後時間</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" id="sx-wafer-maps-panel" style="grid-column:1/-1;display:none">
+    <h2><span class="step-badge">3</span>Wafer Bin Map資料（WaferStart，共 <span id="sx-wafer-map-count">0</span> 筆）</h2>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">
+      「顯示/複製座標文字」展開的內容，格式是「x,y,bin」每行一顆，跟「①補資料」頁面wafer bin輸入框格式
+      完全一樣，可以直接複製貼上過去。
+    </p>
+    <div id="sx-wafer-maps-list"></div>
+  </section>
+</div>
+
+</div>
+<script src="{{ url_for('static', filename='strate_xml.js') }}"></script>
+</body>
+</html>

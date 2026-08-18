@@ -59,10 +59,32 @@ BINGO MAP補資料工具的核心邏輯（`.strate`檔案格式讀寫 + 空白�
 - wafer ID比對用`normalize_wafer_id()`(去頭尾空白+轉大寫)，這其實也是誤吸點除模式原本該有但漏掉的規則——移植Crack模式時往回讀v78原始碼才發現參考工具兩個模式都有做這個正規化，已經回頭把`mispick_analysis.py`也修正成一致的比對方式（原本是exact match，比參考工具本身還嚴格）
 - 也支援`machine_type`參數(`"DB"`預設/`"ESEC"`)：DB模式下`output_position()`(基板顯示)跟`local_view()`(局部分布)都是identity(無反轉/無旋轉)，跟誤吸模式的DB結論一致(由延伸推論確認，不是Crack情境本身逐一驗證過)；ESEC模式維持照參考工具原樣的TX反轉+NOTCH旋轉
 
+**Phase 6：STRATE補檔 XML合併（`secs_log.py`）**
+
+2026/08/18使用者提供了機台真實的SECS/AFC交易紀錄log(BAB14站台)，想從裡面直接抓出基板資料跟wafer bin
+map，不用透過FRM檔案或手動重新點座標。這不是SECS-II binary，是DEBUG/INFO log行跟內嵌XML片段交錯的
+純文字log(檔案本身是UTF-16LE編碼、沒有BOM——`decode_secs_log()`會自動偵測)。
+
+- `StrateMap`事件(`Type="Event"`)＝一枚完成上片的基板：`<DIE_INFO>`/`<DIE_INFO_OTHER_LAYER>`底下的
+  `<Item>`內容**剛好就是**.strate檔案DIE_INFO那行9欄CSV格式，`DieInfo.from_line()`直接原樣解析，
+  完全不用轉換
+- `ASSY_LOT`/`OPER`這份log完全沒有紀錄(不管哪個Transaction類型都沒有)；`MAPPING_LOT`也不在`StrateMap`
+  裡(只有`WaferMap`/`WaferStart`才有，記的是整片wafer的，不是這枚基板的)——三個欄位都留空，讓使用者
+  下載後自己人工補上(使用者2026/08/18明確指示：不要用猜的關聯去填)
+- `WaferStart`事件＝一片實體wafer的bin map，`<BinList>`是一整條`ColCount*RowCount`字元的字串(一個
+  字元一顆die，空白＝沒有die)——**這個座標系統的row/col對應方向，是拿同一個wafer_ring(frame)的真實
+  `StrateMap` DIE_INFO資料交叉驗證出來的**：BinList的第X列(row)、字串內第Y個字元(column)，對應的就
+  是DIE_INFO自己`wafer_xy`欄位的`X:Y`——196顆die交叉比對189顆(96%)完全吻合，剩下的差異是wafer-start
+  當下記錄好的die、實際被撿取時已經被判定成別的bin(合理的現實情況，不是座標算錯)。`WaferUpload`的
+  `<WAFER_INFO>`/`<ORG_WAFER_INFO>`乍看類似，但其實是稀疏的缺陷碼疊圖，不是完整bin map，**沒有用來
+  做這個功能**
+- 真實log的一小段存成`bingomap/tests/fixtures/secs_log_sample.log`(從使用者提供的完整log裁切、重新
+  編碼回UTF-16LE)，專屬測試鎖定上面這些結論
+
 ## 尚未實作
 
 - ESEC以外、DB以外的其他機型(CM700等)排列規則尚未驗證
-- STRATE補檔(XML合併)、上片狀態人工確認/修正——ESEC參考工具裡另外兩個功能，尚未移植
+- 上片狀態人工確認/修正——ESEC參考工具裡的另一個功能，尚未移植
 - Crack局部分布的PNG視覺化(參考工具的雙canvas對照圖)沒有搬，目前只有HTML表格版的基板圖+散點圖，功能等價但視覺效果較簡單
 
 ## 執行測試

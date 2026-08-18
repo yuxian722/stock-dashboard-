@@ -13,9 +13,12 @@ anything below /api/generate.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import csv
 import io
 import os
+import zipfile
 from datetime import datetime
 
 from flask import Flask, Response, jsonify, render_template, request
@@ -43,6 +46,7 @@ from bingomap.mispick_analysis import (
     output_coord,
     parse_bin_set,
 )
+from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_wafer_maps
 from bingomap.strate import StrateFile, StrateFormatError
 
 app = Flask(__name__)
@@ -600,6 +604,120 @@ def api_crack_analyze():
             "crack_table": crack_table,
             "csv": _csv_text(crack_csv_rows(session, marked_keys, machine_type=machine_type)),
         }
+    )
+
+
+@app.get("/strate-xml")
+def strate_xml_page():
+    return render_template("strate_xml.html", active_page="strate_xml")
+
+
+def _decode_uploaded_log(data: dict) -> tuple[str | None, tuple[dict, int] | None]:
+    """Shared by both /api/strate_xml endpoints: base64-decode the
+    uploaded log bytes and run them through decode_secs_log()'s UTF-16LE
+    detection (see bingomap/secs_log.py — the real log this was built
+    from has no BOM). Returns (text, None) on success, or
+    (None, (error_response_dict, status_code)) on failure."""
+    log_b64 = data.get("log_base64", "")
+    if not log_b64:
+        return None, ({"error": "請提供SECS log檔案"}, 400)
+    try:
+        raw = base64.b64decode(log_b64)
+    except (ValueError, binascii.Error) as exc:
+        return None, ({"error": f"檔案內容解碼失敗：{exc}"}, 400)
+    return decode_secs_log(raw), None
+
+
+def _substrate_summary(sf: StrateFile, index: int) -> dict:
+    last_ts = max((d.timestamp for d in sf.die_info), default="")
+    wafer_ring = sf.die_info[0].wafer_ring if sf.die_info else ""
+    base_name = sf.substrate_id or f"substrate_{index + 1}"
+    return {
+        "index": index,
+        "substrate_id": sf.substrate_id,
+        "wafer_ring": wafer_ring,
+        "eqpid": sf.eqpid,
+        "num_dies": len(sf.die_info),
+        "num_other_layer_dies": len(sf.other_layer_die_info),
+        "total_bond_die_qty": sf.total_bond_die_qty,
+        "good_die": sf.good_die,
+        "last_timestamp": last_ts,
+        "filename": f"{base_name}_{last_ts}.strate" if last_ts else f"{base_name}.strate",
+        "text": sf.to_text(),
+    }
+
+
+def _wafer_map_summary(wm, index: int) -> dict:
+    cells = wm.wafer_map.cells
+    paste_text = "\n".join(f"{x},{y},{bin_}" for (x, y), bin_ in sorted(cells.items()))
+    return {
+        "index": index,
+        "frame_id": wm.frame_id,
+        "wafer_id": wm.wafer_id,
+        "columns": wm.wafer_map.columns,
+        "rows": wm.wafer_map.rows,
+        "num_cells": len(cells),
+        "paste_text": paste_text,
+    }
+
+
+@app.post("/api/strate_xml/extract")
+def api_strate_xml_extract():
+    """④ STRATE補檔 XML合併: pull already-complete substrate data
+    (StrateMap events) and wafer bin maps (WaferStart events' BinList)
+    straight out of a machine's SECS/AFC transaction log — see
+    bingomap/secs_log.py's module docstring for how each was verified
+    against a real log. No coordinate re-picking needed for the substrate
+    side; ASSY_LOT/MAPPING_LOT/OPER aren't in this log at all, so they
+    come back blank for the operator to fill in by hand."""
+    data = request.get_json(force=True)
+    text, err = _decode_uploaded_log(data)
+    if err:
+        return jsonify(err[0]), err[1]
+
+    strate_files = extract_strate_files(text)
+    wafer_maps = extract_wafer_maps(text)
+
+    return jsonify(
+        {
+            "substrates": [_substrate_summary(sf, i) for i, sf in enumerate(strate_files)],
+            "wafer_maps": [_wafer_map_summary(wm, i) for i, wm in enumerate(wafer_maps)],
+        }
+    )
+
+
+@app.post("/api/strate_xml/download_zip")
+def api_strate_xml_download_zip():
+    """Batch download: every StrateMap event in the uploaded log, each as
+    its own .strate file, bundled into one zip — re-parses the same
+    uploaded log rather than trusting client-supplied file contents."""
+    data = request.get_json(force=True)
+    text, err = _decode_uploaded_log(data)
+    if err:
+        return jsonify(err[0]), err[1]
+
+    strate_files = extract_strate_files(text)
+    if not strate_files:
+        return jsonify({"error": "這份log裡沒有找到StrateMap(基板)資料"}), 400
+
+    buf = io.BytesIO()
+    used_names: set[str] = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, sf in enumerate(strate_files):
+            summary = _substrate_summary(sf, i)
+            name = summary["filename"]
+            n = 2
+            while name in used_names:
+                name = f"{summary['filename'][:-7]}_{n}.strate"  # strip ".strate", renumber
+                n += 1
+            used_names.add(name)
+            zf.writestr(name, summary["text"])
+    buf.seek(0)
+
+    return Response(
+        buf.getvalue(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="strate_xml_extract.zip"'},
     )
 
 

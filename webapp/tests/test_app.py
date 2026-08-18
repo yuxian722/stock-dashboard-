@@ -24,6 +24,9 @@ REAL_EIGHT_LAYER_STRATE_FIXTURE = (
     / "fixtures"
     / "2070_V25NVDY_F2006908_20260702203138.strate"
 )
+REAL_SECS_LOG_FIXTURE = (
+    Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "secs_log_sample.log"
+)
 
 BASE_HEADER = dict(
     assy_lot="V27NVJH",
@@ -390,3 +393,71 @@ def test_api_generate_with_template_positions_bypasses_machine_type(client):
     # DB/ESEC-regenerated one
     assert "0:0" in text
     assert "19:3" in text
+
+
+def _secs_log_base64() -> str:
+    import base64
+
+    return base64.b64encode(REAL_SECS_LOG_FIXTURE.read_bytes()).decode("ascii")
+
+
+def test_api_strate_xml_extract_real_log(client):
+    res = client.post("/api/strate_xml/extract", json={"log_base64": _secs_log_base64()})
+    assert res.status_code == 200
+    data = res.get_json()
+
+    assert len(data["substrates"]) == 2
+    first = data["substrates"][0]
+    assert first["substrate_id"] == "Z2570900444F"
+    assert first["wafer_ring"] == "HD56BA"
+    assert first["num_dies"] == 59
+    assert first["total_bond_die_qty"] == 59
+    assert first["good_die"] == 59
+    # ASSY_LOT/OPER/MAPPING_LOT are blank — not present in this log at all.
+    assert "ASSY_LOT=\r\n" in first["text"]
+    assert "OPER=\r\n" in first["text"]
+    assert "MAPPING_LOT=\r\n" in first["text"]
+    assert "SUBSTRATE_ID=Z2570900444F" in first["text"]
+
+    assert len(data["wafer_maps"]) == 1
+    wm = data["wafer_maps"][0]
+    assert wm["frame_id"] == "HD66D5"
+    assert wm["wafer_id"] == "P0264807-24"
+    assert wm["columns"] == 46
+    assert wm["rows"] == 24
+    assert wm["num_cells"] > 0
+    # paste_text must be directly usable in the main page's "x,y,bin" textarea.
+    first_line = wm["paste_text"].splitlines()[0]
+    assert len(first_line.split(",")) == 3
+
+
+def test_api_strate_xml_extract_requires_log(client):
+    res = client.post("/api/strate_xml/extract", json={})
+    assert res.status_code == 400
+    assert "log" in res.get_json()["error"] or "檔案" in res.get_json()["error"]
+
+
+def test_api_strate_xml_extract_rejects_bad_base64(client):
+    res = client.post("/api/strate_xml/extract", json={"log_base64": "not valid base64!!"})
+    assert res.status_code == 400
+
+
+def test_api_strate_xml_download_zip_real_log(client):
+    res = client.post("/api/strate_xml/download_zip", json={"log_base64": _secs_log_base64()})
+    assert res.status_code == 200
+    assert res.mimetype == "application/zip"
+    assert "attachment" in res.headers["Content-Disposition"]
+
+    import io
+    import zipfile
+
+    zf = zipfile.ZipFile(io.BytesIO(res.get_data()))
+    names = zf.namelist()
+    assert len(names) == 2
+    assert all(n.endswith(".strate") for n in names)
+    # Each entry must itself be a valid, parseable .strate file.
+    from bingomap.strate import StrateFile
+
+    for name in names:
+        parsed = StrateFile.parse(zf.read(name).decode("utf-8"))
+        assert parsed.die_info
