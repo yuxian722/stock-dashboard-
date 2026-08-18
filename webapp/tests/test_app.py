@@ -198,11 +198,14 @@ def test_api_frm_loads_real_file_end_to_end(client, tmp_path):
 
 
 def test_api_frm_returns_reference_point_from_real_file(client, tmp_path):
-    # Real file the user sent 2026/08/18 to pin down what "T點" in
-    # WaferCoordinate.exe's status bar actually is: confirmed (via the
-    # MAP INFORMATION AREA panel matching bin1=1746/bin7=268 exactly) to be
-    # the FRM header's own reference_point_x/y field, a fixed per-wafer
-    # anchor mark — not a die, not tied to mouse hover. See webapp/README.md.
+    # Real file the user sent 2026/08/18 while tracking down what "T點" in
+    # WaferCoordinate.exe's status bar actually is. This confirms the FRM
+    # header's own reference_point_x/y field parses correctly (matches the
+    # MAP INFORMATION AREA panel's bin1=1746/bin7=268) — NOT that this
+    # field is T點 itself: a follow-up photo proved that guess wrong (the
+    # field sits outside the wafer's actual die area, nowhere near the
+    # real on-screen crosshair). See webapp/README.md and app.js's
+    # refPointByPanel comment for how T點 is actually derived now.
     root = _fake_frm_root(tmp_path, "8P964000", "K84E13", fixture=REAL_FRM_WITH_REF_POINT_FIXTURE)
     res = client.post(
         "/api/frm",
