@@ -17,6 +17,92 @@ function arrayBufferToBase64(buf) {
   return btoa(binary);
 }
 
+// Same palette/letter convention as the main page's "參考同一片wafer的
+//其他基板" overlay (app.js) — reused here to answer the follow-up ask
+// "讓我知道對應你一枚strate": render the wafer bin map as an actual grid
+// and color each substrate's own die positions in on it, so it's visibly
+// obvious which cells on the wafer belong to which extracted substrate.
+const SUBSTRATE_COLORS = ["#e04b4b", "#0ea5a5", "#a855f7", "#ca8a04", "#059669", "#e0459e", "#0891b2", "#65a30d"];
+
+function substrateLetter(i) {
+  return i < 26 ? String.fromCharCode(65 + i) : `S${i + 1}`;
+}
+
+function cellClass(bin) {
+  if (bin === "1") return "bin-1";
+  if (bin === undefined) return "";
+  return "bin-other";
+}
+
+const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style.css
+
+// containerId: element to render the grid into. wm: one wafer_maps entry
+// (columns/rows/cells). matchedSubstrates: [{label, color, name,
+// positions: Set("x,y")}] — already-assigned colors/letters for the
+// substrates that came from this same wafer (matched by wafer_ring ===
+// frame_id in renderWaferMaps()).
+function renderWaferGrid(containerId, wm, matchedSubstrates) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  if (!wm.cells.length) return;
+
+  const cellMap = new Map(wm.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
+  const xs = wm.cells.map((c) => c.x);
+  const ys = wm.cells.map((c) => c.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "wafer-row";
+  const corner = document.createElement("div");
+  corner.className = "grid-axis-cell grid-axis-corner";
+  headerRow.appendChild(corner);
+  for (let x = maxX; x >= minX; x--) {
+    const label = document.createElement("div");
+    label.className = "grid-axis-cell";
+    label.textContent = x;
+    headerRow.appendChild(label);
+  }
+  container.appendChild(headerRow);
+
+  for (let y = minY; y <= maxY; y++) {
+    const row = document.createElement("div");
+    row.className = "wafer-row";
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "grid-axis-cell";
+    rowLabel.textContent = y;
+    row.appendChild(rowLabel);
+    for (let x = maxX; x >= minX; x--) {
+      const bin = cellMap.get(`${x},${y}`);
+      const cell = document.createElement("div");
+      cell.className = "wafer-cell " + cellClass(bin);
+      const key = `${x},${y}`;
+      const owner = matchedSubstrates.find((s) => s.positions.has(key));
+      if (owner) {
+        cell.classList.add("referenced");
+        cell.style.setProperty("--ref-color", owner.color);
+        cell.textContent = owner.label;
+        cell.title = `${x}:${y} — 基板「${owner.name}」`;
+      } else {
+        cell.title = `${x}:${y}`;
+      }
+      row.appendChild(cell);
+    }
+    container.appendChild(row);
+  }
+}
+
+function renderWaferLegend(containerId, matchedSubstrates) {
+  const el = document.getElementById(containerId);
+  if (!matchedSubstrates.length) {
+    el.innerHTML = '<span class="small">這片wafer在上面的StrateMap清單裡沒有找到對應的基板。</span>';
+    return;
+  }
+  el.innerHTML = matchedSubstrates
+    .map((s) => `<span><i style="background:${s.color};border-color:${s.color}"></i>${s.label} = ${s.name}（${s.positions.size}顆）</span>`)
+    .join("");
+}
+
 function downloadText(filename, text) {
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -47,7 +133,7 @@ function renderSubstrates(substrates) {
   });
 }
 
-function renderWaferMaps(waferMaps) {
+function renderWaferMaps(waferMaps, substrates) {
   const panel = document.getElementById("sx-wafer-maps-panel");
   const list = document.getElementById("sx-wafer-maps-list");
   list.innerHTML = "";
@@ -55,15 +141,30 @@ function renderWaferMaps(waferMaps) {
   panel.style.display = waferMaps.length ? "" : "none";
 
   waferMaps.forEach((wm) => {
+    // Substrates whose wafer_ring matches this wafer's own frame_id —
+    // the answer to "讓我知道對應你一枚strate": these are the substrates
+    // this specific wafer's dies were bonded into.
+    const owners = substrates.filter((s) => s.wafer_ring === wm.frame_id);
+    const matchedSubstrates = owners.map((s, i) => ({
+      label: substrateLetter(i),
+      color: SUBSTRATE_COLORS[i % SUBSTRATE_COLORS.length],
+      name: s.substrate_id || `#${s.index + 1}`,
+      positions: new Set(s.die_positions.map((p) => `${p.x},${p.y}`)),
+    }));
+
     const box = document.createElement("div");
     box.className = "notice";
     box.style.marginTop = "0.6rem";
     const textareaId = `sx-wafer-map-text-${wm.index}`;
+    const gridId = `sx-wafer-map-grid-${wm.index}`;
+    const legendId = `sx-wafer-map-legend-${wm.index}`;
     box.innerHTML =
       `<b>Frame ID：${wm.frame_id}</b>　Wafer ID：${wm.wafer_id}　尺寸：${wm.columns}x${wm.rows}　有資料的格子：${wm.num_cells}顆<br>` +
       `<button type="button" class="secondary sx-btn-toggle-text">顯示/複製座標文字</button>` +
       `<button type="button" class="secondary sx-btn-copy-text" style="display:none">複製到剪貼簿</button>` +
-      `<textarea id="${textareaId}" rows="6" readonly style="display:none;width:100%;margin-top:0.4rem"></textarea>`;
+      `<textarea id="${textareaId}" rows="6" readonly style="display:none;width:100%;margin-top:0.4rem"></textarea>` +
+      `<div class="legend" id="${legendId}" style="margin-top:0.6rem"></div>` +
+      `<div class="lyr-wafer-wrap"><div id="${gridId}" class="lyr-wafer-grid"></div></div>`;
     const textarea = box.querySelector(`#${textareaId}`);
     textarea.value = wm.paste_text;
     const toggleBtn = box.querySelector(".sx-btn-toggle-text");
@@ -86,6 +187,9 @@ function renderWaferMaps(waferMaps) {
       }, 2000);
     });
     list.appendChild(box);
+
+    renderWaferLegend(legendId, matchedSubstrates);
+    renderWaferGrid(gridId, wm, matchedSubstrates);
   });
 }
 
@@ -118,7 +222,7 @@ async function extractLog() {
   }
 
   renderSubstrates(data.substrates);
-  renderWaferMaps(data.wafer_maps);
+  renderWaferMaps(data.wafer_maps, data.substrates);
 
   status.className = "ok";
   status.textContent = `解析完成：共找到 ${data.substrates.length} 筆基板資料、${data.wafer_maps.length} 筆wafer bin map資料。`;

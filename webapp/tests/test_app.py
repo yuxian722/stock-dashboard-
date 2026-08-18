@@ -418,6 +418,8 @@ def test_api_strate_xml_extract_real_log(client):
     assert "OPER=\r\n" in first["text"]
     assert "MAPPING_LOT=\r\n" in first["text"]
     assert "SUBSTRATE_ID=Z2570900444F" in first["text"]
+    assert len(first["die_positions"]) == first["num_dies"] + first["num_other_layer_dies"]
+    assert first["die_positions"][0] == {"x": 10, "y": 42}
 
     assert len(data["wafer_maps"]) == 1
     wm = data["wafer_maps"][0]
@@ -426,6 +428,8 @@ def test_api_strate_xml_extract_real_log(client):
     assert wm["columns"] == 46
     assert wm["rows"] == 24
     assert wm["num_cells"] > 0
+    assert len(wm["cells"]) == wm["num_cells"]
+    assert all({"x", "y", "bin"} <= c.keys() for c in wm["cells"])
     # paste_text must be directly usable in the main page's "x,y,bin" textarea.
     first_line = wm["paste_text"].splitlines()[0]
     assert len(first_line.split(",")) == 3

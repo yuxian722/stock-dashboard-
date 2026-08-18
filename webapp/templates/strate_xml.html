@@ -52,8 +52,10 @@
   <section class="panel" id="sx-wafer-maps-panel" style="grid-column:1/-1;display:none">
     <h2><span class="step-badge">3</span>Wafer Bin Map資料（WaferStart，共 <span id="sx-wafer-map-count">0</span> 筆）</h2>
     <p class="hint" style="font-size:0.78rem;color:var(--muted)">
-      「顯示/複製座標文字」展開的內容，格式是「x,y,bin」每行一顆，跟「①補資料」頁面wafer bin輸入框格式
-      完全一樣，可以直接複製貼上過去。
+      每片wafer的圖上，會用不同顏色＋字母標出上面第2步驟哪些基板(StrateMap)是從這片wafer的哪些位置
+      撿取的，跟圖下方的圖例對照就知道格子屬於哪一枚基板；沒有標色的綠色/紫色格子代表這片wafer上還沒
+      被log記錄到的任何基板使用過。「顯示/複製座標文字」展開的內容，格式是「x,y,bin」每行一顆，跟
+      「①補資料」頁面wafer bin輸入框格式完全一樣，可以直接複製貼上過去。
     </p>
     <div id="sx-wafer-maps-list"></div>
   </section>

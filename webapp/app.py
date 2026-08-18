@@ -628,6 +628,20 @@ def _decode_uploaded_log(data: dict) -> tuple[str | None, tuple[dict, int] | Non
     return decode_secs_log(raw), None
 
 
+def _substrate_die_positions(sf: StrateFile) -> list[dict]:
+    """Every wafer coordinate this substrate consumed, across DIE_INFO and
+    DIE_INFO_OTHER_LAYER — used to draw this substrate's footprint on its
+    source wafer's bin map (see the wafer-map overlay in strate_xml.js)."""
+    positions = []
+    for d in sf.die_info + sf.other_layer_die_info:
+        x_str, _, y_str = d.wafer_xy.partition(":")
+        try:
+            positions.append({"x": int(x_str), "y": int(y_str)})
+        except ValueError:
+            continue
+    return positions
+
+
 def _substrate_summary(sf: StrateFile, index: int) -> dict:
     last_ts = max((d.timestamp for d in sf.die_info), default="")
     wafer_ring = sf.die_info[0].wafer_ring if sf.die_info else ""
@@ -644,6 +658,7 @@ def _substrate_summary(sf: StrateFile, index: int) -> dict:
         "last_timestamp": last_ts,
         "filename": f"{base_name}_{last_ts}.strate" if last_ts else f"{base_name}.strate",
         "text": sf.to_text(),
+        "die_positions": _substrate_die_positions(sf),
     }
 
 
@@ -657,6 +672,7 @@ def _wafer_map_summary(wm, index: int) -> dict:
         "columns": wm.wafer_map.columns,
         "rows": wm.wafer_map.rows,
         "num_cells": len(cells),
+        "cells": [{"x": x, "y": y, "bin": bin_} for (x, y), bin_ in cells.items()],
         "paste_text": paste_text,
     }
 
