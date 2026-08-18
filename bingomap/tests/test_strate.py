@@ -20,6 +20,23 @@ def test_round_trip_matches_real_sample_byte_for_byte():
     assert parsed.to_text().encode("ascii") == original
 
 
+def test_parse_accepts_bare_lf_line_endings():
+    # Reproduces the real bug: a <textarea>'s .value normalizes CRLF to
+    # LF on read (confirmed live in a browser), so the webapp's "貼上
+    # 檔案內容"/複製既有.strate為範本 path can hand parse() perfectly
+    # valid content with LF-only line endings. It must not be rejected
+    # with the misleading "Missing [DIE_INFO_BEG] marker".
+    crlf_text = _read_fixture()
+    lf_only_text = crlf_text.replace("\r\n", "\n")
+    assert "\r" not in lf_only_text  # sanity-check the test setup itself
+
+    parsed = StrateFile.parse(lf_only_text)
+    assert parsed.assy_lot == "V27NVJH"
+    assert len(parsed.die_info) == 75
+    # output is unaffected — always CRLF regardless of what parse() accepted
+    assert parsed.to_text().encode("ascii") == FIXTURE.read_bytes()
+
+
 def test_header_fields_parsed_correctly():
     parsed = StrateFile.parse(_read_fixture())
     assert parsed.assy_lot == "V27NVJH"

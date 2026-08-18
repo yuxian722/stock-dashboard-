@@ -1,10 +1,20 @@
 """Read/write .strate substrate-map files (SUBSTRATE MAP format used by EAS/BINGO MAP).
 
 File layout (verified byte-for-byte against a real single-layer sample):
-- CRLF line endings throughout
+- CRLF line endings throughout — `to_text()` always writes this
 - 16 header `KEY=VALUE` lines
 - `[DIE_INFO_BEG]` / `[DIE_INFO_END]` bracketing one CSV line per die
 - two trailing blank lines after the last section
+
+`parse()` itself accepts either CRLF or bare LF line endings (normalizing
+before splitting) even though real files are always CRLF — a browser
+`<textarea>` silently normalizes CRLF to LF when its `.value` is read back
+(the webapp's "貼上檔案內容"/複製既有.strate為範本 path goes through one),
+so a strict CRLF-only parser rejects perfectly valid pasted content with a
+misleading "Missing [DIE_INFO_BEG] marker" error that has nothing to do
+with the file actually being malformed. Confirmed live: setting a
+textarea's `.value` to a CRLF string and reading `.value` back yields LF
+only. Output is unaffected — to_text() is untouched, still always CRLF.
 
 Each DIE_INFO line has 9 comma-separated fields:
     index, wafer_ring, wafer_xy, sub_pos, bin, f6, f7, timestamp, f9
@@ -148,7 +158,12 @@ class StrateFile:
 
     @classmethod
     def parse(cls, text: str) -> "StrateFile":
-        lines = text.split("\r\n")
+        # Accept bare LF too — see module docstring for why (textarea
+        # value normalization strips the \r before it ever reaches here).
+        # A no-op for genuinely CRLF input: replacing "\r\n" with "\n"
+        # then splitting on "\n" yields the exact same list a straight
+        # split("\r\n") would.
+        lines = text.replace("\r\n", "\n").split("\n")
         header: dict[str, str] = {}
         i = 0
         while i < len(lines) and lines[i] != DIE_INFO_BEG:
