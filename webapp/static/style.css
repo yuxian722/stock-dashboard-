@@ -147,6 +147,20 @@ button.secondary.active-layer:hover{background:#0c7550}
   color:#fff;cursor:not-allowed;
 }
 .wafer-cell.referenced:hover{filter:none}
+/* T點 (Reference Point): a fixed anchor mark on the wafer image, confirmed
+   2026/08/18 against a real .frm file (bingomap/tests/fixtures/
+   8P964000_K8_4E13.frm) — it's the FRM header's own reference_point_x/y
+   field, not a real die (it sits outside the actual die area in that real
+   sample) and not tied to mouse hover. Drawn with a diagonal-stripe
+   texture layered ON TOP of whatever else the cell shows (bin color, own
+   pick digit, staged/referenced marker) via background-image rather than
+   background, since it's an overlay mark, not a replacement for the
+   cell's other state. */
+.wafer-cell.ref-point{
+  background-image:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);
+  outline:2px solid #1e293b;outline-offset:-2px;
+}
+.wafer-cell.ref-point:not(.picked):not(.referenced){color:#fff}
 
 #bingo-maps-wrap{display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start}
 .bingo-map-block{min-width:0}

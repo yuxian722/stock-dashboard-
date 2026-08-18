@@ -7,6 +7,9 @@ from webapp.app import app
 REAL_FRM_FIXTURE = (
     Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "8P065800A1_T3_DA62.frm"
 )
+REAL_FRM_WITH_REF_POINT_FIXTURE = (
+    Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "8P964000_K8_4E13.frm"
+)
 REAL_STRATE_FIXTURE = (
     Path(__file__).parent.parent.parent
     / "bingomap"
@@ -168,11 +171,11 @@ def test_api_generate_bad_start_time_returns_400(client):
     assert res.status_code == 400
 
 
-def _fake_frm_root(tmp_path, lot_no, barcode_id):
+def _fake_frm_root(tmp_path, lot_no, barcode_id, fixture=REAL_FRM_FIXTURE):
     # Mirrors WaferCoordinate.exe's own layout: {root}\{LotNo}\{barcode[0:2]}\{barcode[2:6]}
     d = tmp_path / lot_no / barcode_id[0:2]
     d.mkdir(parents=True)
-    (d / barcode_id[2:6]).write_bytes(REAL_FRM_FIXTURE.read_bytes())
+    (d / barcode_id[2:6]).write_bytes(fixture.read_bytes())
     return str(tmp_path)
 
 
@@ -192,6 +195,30 @@ def test_api_frm_loads_real_file_end_to_end(client, tmp_path):
     bins = [c["bin"] for c in data["cells"]]
     assert bins.count("1") == 1635
     assert bins.count("7") == 379
+
+
+def test_api_frm_returns_reference_point_from_real_file(client, tmp_path):
+    # Real file the user sent 2026/08/18 to pin down what "T點" in
+    # WaferCoordinate.exe's status bar actually is: confirmed (via the
+    # MAP INFORMATION AREA panel matching bin1=1746/bin7=268 exactly) to be
+    # the FRM header's own reference_point_x/y field, a fixed per-wafer
+    # anchor mark — not a die, not tied to mouse hover. See webapp/README.md.
+    root = _fake_frm_root(tmp_path, "8P964000", "K84E13", fixture=REAL_FRM_WITH_REF_POINT_FIXTURE)
+    res = client.post(
+        "/api/frm",
+        json={"lot_no": "8P964000", "barcode_id": "K84E13", "frm_path": root},
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["lot_no"] == "8P964000"
+    assert data["wafer_id"] == "8P9640"
+    assert data["reference_point_x"] == 5
+    assert data["reference_point_y"] == 5
+    bins = [c["bin"] for c in data["cells"]]
+    assert bins.count("1") == 1746
+    assert bins.count("7") == 268
+    # The reference point itself isn't a real die.
+    assert not any(c["x"] == 5 and c["y"] == 5 for c in data["cells"])
 
 
 def test_api_frm_missing_file_returns_404_with_helpful_message(client, tmp_path):
