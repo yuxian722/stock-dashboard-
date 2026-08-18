@@ -133,6 +133,20 @@ button.secondary.active-layer:hover{background:#0c7550}
    "already written" outline, since it's a temporary pending state. */
 .wafer-cell.staged{outline:2px dashed #f5900f;outline-offset:-2px}
 .wafer-cell.focus{outline:3px solid #f97316;outline-offset:-3px;z-index:1;position:relative}
+/* Reference cells: wafer coordinates already used by OTHER, already-
+   completed substrates loaded via "參考同一片wafer的其他基板" — read-only,
+   just here to stop the operator re-picking a site someone else already
+   consumed. Each loaded reference file gets its own color (set inline via
+   --ref-color, cycled from a palette in app.js) and its own letter badge
+   (A, B, C…) so overlapping reference files stay distinguishable, per the
+   user's explicit request to "分辨是哪一枚" (tell which substrate a
+   reference cell belongs to) rather than one generic "occupied" marker.
+   Own picks/staged always take visual priority — see renderWaferPanel(). */
+.wafer-cell.referenced{
+  background:var(--ref-color,#9ca3af);outline:2px solid var(--ref-color,#6b7280);outline-offset:-2px;
+  color:#fff;cursor:not-allowed;
+}
+.wafer-cell.referenced:hover{filter:none}
 
 #bingo-maps-wrap{display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start}
 .bingo-map-block{min-width:0}
@@ -172,9 +186,9 @@ table.lyr-pick-table tbody tr:hover{background:#fafbfd}
 #qty-status.bad,.badge.bad{color:var(--red);background:var(--red-bg)}
 .badge:empty{display:none}
 
-#generate-status,.lyr-frm-status{font-size:0.85rem;margin-top:0.5rem}
-#generate-status.error,.lyr-frm-status.error{color:var(--red);white-space:pre-wrap}
-#generate-status.ok,.lyr-frm-status.ok{color:var(--green)}
+#generate-status,.lyr-frm-status,#reference-status{font-size:0.85rem;margin-top:0.5rem}
+#generate-status.error,.lyr-frm-status.error,#reference-status.error{color:var(--red);white-space:pre-wrap}
+#generate-status.ok,.lyr-frm-status.ok,#reference-status.ok{color:var(--green)}
 #blank-status{font-size:0.85rem;color:var(--muted);margin-top:0.5rem}
 
 /* Generic reusable status/table classes (mispick page and future pages) */

@@ -31,6 +31,34 @@ let usingTemplate = false; // true once a template .strate has been loaded via l
 let skippedPositions = new Set(); // "col:row" substrate positions marked "不上片" — excluded from the fill order
 let skipModeEnabled = false; // true = clicking a substrate cell toggles skip instead of commit/reverse-lookup
 
+// Reference substrates: other, already-completed .strate files loaded
+// purely as a read-only overlay on the (shared, panel 0) wafer map — "同一
+// 片wafer的其他基板". Each entry's `positions` set already occupies wafer
+// coordinates; per the user's confirmed answers, those coordinates must be
+// blocked from being staged again ("要，直接降選取"), and each file must
+// stay visually distinguishable on the grid ("分辨是哪一枚") rather than
+// collapsing into one generic "occupied" marker — hence the per-file
+// letter + color instead of reusing the layer-number digit badge.
+const REFERENCE_COLORS = ["#e04b4b", "#0ea5a5", "#a855f7", "#ca8a04", "#059669", "#e0459e", "#0891b2", "#65a30d"];
+let referenceSubstrates = []; // { label, color, positions: Set("x,y") }[]
+
+function referenceLetter(i) {
+  return i < 26 ? String.fromCharCode(65 + i) : `R${i + 1}`;
+}
+
+function isReferencedAt(panelIndex, x, y) {
+  // Reference files carry no notion of "which physical wafer panel" any
+  // more than a loaded template does (see loadTemplate()) — they describe
+  // coordinates on THE physical wafer being referenced, which is always
+  // panel 0 (the shared/first wafer that "跨兩片wafer" branches off of).
+  if (panelIndex !== 0) return null;
+  const key = `${x},${y}`;
+  for (const ref of referenceSubstrates) {
+    if (ref.positions.has(key)) return ref;
+  }
+  return null;
+}
+
 function effectiveNumLayers() {
   return multiLayerEnabled ? numLayers : 1;
 }
@@ -295,6 +323,75 @@ async function loadTemplate(text) {
   setStepFlow(4, { done: [1, 2, 3] });
 }
 
+// ---- Reference substrates (read-only overlay, see state comment above) --
+function allPicksFromParsedFile(data) {
+  // data.layer_picks is already [layer0picks, layer1picks, ..., currentLayerPicks]
+  // (see webapp/app.py:_split_into_layer_picks) — flattening it gives every
+  // wafer coordinate the file occupies, across every stacked layer it has.
+  const positions = new Set();
+  for (const layerPicks of data.layer_picks) {
+    for (const p of layerPicks) positions.add(`${p.x},${p.y}`);
+  }
+  return positions;
+}
+
+async function loadReferenceFiles(files) {
+  const status = document.getElementById("reference-status");
+  status.className = "";
+  status.textContent = "讀取中...";
+  const loaded = [];
+  const errors = [];
+  for (const file of files) {
+    const text = await file.text();
+    try {
+      const res = await fetch("/api/parse_strate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errors.push(`${file.name}：${data.error}`);
+        continue;
+      }
+      loaded.push({ name: data.substrate_id || file.name, positions: allPicksFromParsedFile(data) });
+    } catch (err) {
+      errors.push(`${file.name}：讀取失敗`);
+    }
+  }
+  referenceSubstrates = referenceSubstrates.concat(
+    loaded.map((entry, i) => {
+      const idx = referenceSubstrates.length + i;
+      return { label: referenceLetter(idx), name: entry.name, color: REFERENCE_COLORS[idx % REFERENCE_COLORS.length], positions: entry.positions };
+    })
+  );
+  renderReferenceLegend();
+  status.className = errors.length ? "error" : loaded.length ? "ok" : "";
+  const parts = [];
+  if (loaded.length) parts.push(`已載入 ${loaded.length} 枚參考基板（共${referenceSubstrates.length}枚），佔用座標已不能再選取`);
+  if (errors.length) parts.push(`失敗：${errors.join("；")}`);
+  status.textContent = parts.join("　") || "沒有選擇任何檔案";
+  document.getElementById("btn-clear-references").style.display = referenceSubstrates.length ? "" : "none";
+  renderAll();
+}
+
+function renderReferenceLegend() {
+  const el = document.getElementById("reference-legend");
+  el.innerHTML = referenceSubstrates
+    .map((ref) => `<span><i style="background:${ref.color};border-color:${ref.color}"></i>${ref.label} = ${ref.name}（${ref.positions.size}顆）</span>`)
+    .join("");
+}
+
+function clearReferenceSubstrates() {
+  referenceSubstrates = [];
+  renderReferenceLegend();
+  document.getElementById("btn-clear-references").style.display = "none";
+  document.getElementById("reference-status").textContent = "已清除所有參考基板";
+  document.getElementById("reference-status").className = "";
+  document.getElementById("reference-files").value = "";
+  renderAll();
+}
+
 function computeSubstrateBounds(positions) {
   if (!positions.length) return null;
   let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
@@ -506,6 +603,7 @@ function toggleStagePick(panelIndex, x, y, bin) {
   }
   if (bin !== "1") return false;
   if (isCommittedOnPanel(panelIndex, x, y)) return false;
+  if (isReferencedAt(panelIndex, x, y)) return false;
   stagedPicks.push({ x, y, bin, panel: panelIndex });
   return true;
 }
@@ -513,6 +611,7 @@ function toggleStagePick(panelIndex, x, y, bin) {
 function stagePickIfNew(panelIndex, x, y, bin) {
   if (bin !== "1") return false;
   if (isCommittedOnPanel(panelIndex, x, y) || isStagedOnPanel(panelIndex, x, y)) return false;
+  if (isReferencedAt(panelIndex, x, y)) return false;
   stagedPicks.push({ x, y, bin, panel: panelIndex });
   return true;
 }
@@ -576,11 +675,17 @@ function renderWaferPanel(panelIndex) {
           break;
         }
       }
+      const ref = committedLayer === null ? isReferencedAt(panelIndex, x, y) : null;
       if (committedLayer !== null) {
         cell.classList.add("picked");
         cell.textContent = String(committedLayer + 1);
       } else if (isStagedOnPanel(panelIndex, x, y)) {
         cell.classList.add("staged");
+      } else if (ref) {
+        cell.classList.add("referenced");
+        cell.style.setProperty("--ref-color", ref.color);
+        cell.textContent = ref.label;
+        cell.title = `${x}:${y} — 已被參考基板「${ref.name}」占用`;
       }
       const isFocused = focusedWaferXYByLayer.some((f) => f && f.panel === panelIndex && f.x === x && f.y === y);
       if (isFocused) cell.classList.add("focus");
@@ -784,8 +889,13 @@ function wireGridDragEvents(containerId, hoverStatusId, tooltipId, panelIndex) {
   });
   container.addEventListener("mouseover", (e) => {
     if (!e.target.classList.contains("wafer-cell")) return;
-    hoverStatus.textContent = `Wafer座標：${e.target.dataset.x}:${e.target.dataset.y}`;
-    showGridTooltip(tooltip, e.target, `${e.target.dataset.x}:${e.target.dataset.y}`);
+    const x = e.target.dataset.x, y = e.target.dataset.y;
+    const ref = isReferencedAt(panelIndex, parseInt(x, 10), parseInt(y, 10));
+    const label = ref && !e.target.classList.contains("picked") && !e.target.classList.contains("staged")
+      ? `${x}:${y}（已被參考基板「${ref.name}」占用，不能選）`
+      : `Wafer座標：${x}:${y}`;
+    hoverStatus.textContent = label;
+    showGridTooltip(tooltip, e.target, label);
   });
   container.addEventListener("mouseleave", () => {
     hoverStatus.textContent = "滑鼠移到格子上會顯示座標";
@@ -961,6 +1071,12 @@ document.getElementById("template-file").addEventListener("change", async (e) =>
 document.getElementById("btn-load-template").addEventListener("click", () => {
   loadTemplate(document.getElementById("template-text").value);
 });
+document.getElementById("reference-files").addEventListener("change", (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  loadReferenceFiles(files);
+});
+document.getElementById("btn-clear-references").addEventListener("click", clearReferenceSubstrates);
 document.getElementById("btn-clear").addEventListener("click", () => {
   resetLayerState();
   renderAll();

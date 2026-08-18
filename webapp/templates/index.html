@@ -36,6 +36,19 @@
     </label>
     <button class="secondary" id="btn-load-template">載入範本</button>
     <p id="template-status"></p>
+
+    <hr style="margin:1rem 0;border:none;border-top:1px solid var(--line)">
+    <h3 style="margin-bottom:0.4rem">參考同一片wafer的其他基板（選用，可多選）</h3>
+    <div class="notice">
+      如果同一片wafer已經切了好幾枚基板、各自都產生過.strate了，這裡可以<b>多選</b>那些已完成的檔案 ——
+      純粹當「參考」畫在下面wafer圖上，<b>不會</b>被編輯或合併進正在做的這一枚。參考檔案占用過的座標會直接
+      不能再被選取（避免跟其他基板選到重複的wafer座標），wafer圖上會用不同顏色＋字母標示是哪一枚參考基板
+      占用的，滑鼠移過去也會顯示是哪個檔案。
+    </div>
+    <label>選擇 .strate 檔案（可多選） <input type="file" id="reference-files" accept=".strate,.txt" multiple></label>
+    <p id="reference-status"></p>
+    <div id="reference-legend" class="legend"></div>
+    <button class="secondary" id="btn-clear-references" style="display:none;margin-top:0.4rem">清除參考基板</button>
   </section>
 
   <section class="panel" id="header-panel">
@@ -124,7 +137,7 @@
       <svg id="wafer-overlay" class="lyr-wafer-overlay"></svg>
       <div class="grid-tooltip" id="wafer-tooltip"></div>
     </div>
-    <p class="hint" style="font-size:0.78rem;color:var(--muted)" id="wafer-hint">點一格＝選取一顆(待寫入)；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。選好座標後，點下方任一層的BINGO MAP就會把待寫入的座標整批寫入那一層——不用先選層，點哪層就進哪層。再點一次已選取的格子可以取消該格。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。同一片wafer上已經寫入過的座標(不論哪一層)不能重複選取。</p>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)" id="wafer-hint">點一格＝選取一顆(待寫入)；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。選好座標後，點下方任一層的BINGO MAP就會把待寫入的座標整批寫入那一層——不用先選層，點哪層就進哪層。再點一次已選取的格子可以取消該格。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。同一片wafer上已經寫入過的座標(不論哪一層)不能重複選取；上面如果有載入「參考同一片wafer的其他基板」，那些檔案占用過的座標也一樣不能選(格子會顯示字母＋該檔案的顏色)。</p>
   </section>
 
   <div id="wafer-panels-extra"></div>
