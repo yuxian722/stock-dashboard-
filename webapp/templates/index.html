@@ -75,10 +75,12 @@
         <label style="max-width:160px">疊幾層 <input id="num_layers" type="number" value="2" min="2" max="16"></label>
         <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.4rem 0 0">
           每層的f9會自動編號1~N(最後一層＝目前層，寫入DIE_INFO；其餘各層寫入DIE_INFO_OTHER_LAYER)，不用手動填。
+          Wafer片數(下面的「跨兩片wafer」)跟疊幾層無關——不管疊幾層，選wafer座標之後都是點進哪一層的
+          BINGO MAP才決定寫入哪一層。
         </p>
       </div>
       <label id="multi-wafer-field" style="flex-direction:row;align-items:center;gap:0.5rem;font-weight:700;margin-top:0.6rem;display:none">
-        <input type="checkbox" id="multi_wafer_enabled" style="width:auto"> 各層來自不同的wafer（跨多片wafer）
+        <input type="checkbox" id="multi_wafer_enabled" style="width:auto"> 跨兩片wafer（兩片wafer都可以點選，選完座標後點哪一層的BINGO MAP就寫入哪一層）
       </label>
     </div>
     <button id="btn-blank">產生空白骨架</button>
@@ -103,9 +105,12 @@
     <div class="legend">
       <span><i style="background:#4fb84a"></i>Bin 1（可選）</span>
       <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
-      <span id="wafer-legend-picked"><i style="background:#fff;border-color:#1a3fd6"></i>已點選（格內數字＝第幾層）</span>
+      <span id="wafer-legend-picked"><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層（格內數字＝第幾層）</span>
+      <span id="wafer-legend-staged"><i style="background:#fff;border-color:#f5900f;border-style:dashed"></i>已選取、待寫入</span>
     </div>
-    <div id="layer-switch" style="display:none;margin:0.4rem 0"></div>
+    <div id="stage-controls" style="display:none;margin:0.4rem 0">
+      <button type="button" class="secondary" id="btn-clear-staged">清除待寫入的座標</button>
+    </div>
     <p id="layer-status" style="font-size:0.82rem;color:var(--muted)"></p>
     <p id="wafer-hover-status" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
     <div id="wafer-wrap" class="lyr-wafer-wrap">
@@ -113,7 +118,7 @@
       <svg id="wafer-overlay" class="lyr-wafer-overlay"></svg>
       <div class="grid-tooltip" id="wafer-tooltip"></div>
     </div>
-    <p class="hint" style="font-size:0.78rem;color:var(--muted)" id="wafer-hint">點一格＝加選一顆；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。已經點過的座標(不論哪一層)不能重複點選。</p>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)" id="wafer-hint">點一格＝選取一顆(待寫入)；拖曳一個矩形＝依序自動選取範圍內所有綠色(bin1)的格子，跳過其他顏色。選好座標後，點下方任一層的BINGO MAP就會把待寫入的座標整批寫入那一層——不用先選層，點哪層就進哪層。再點一次已選取的格子可以取消該格。藍色橢圓/十字線只是依格子範圍畫出的參考線，不是精確的wafer邊界。同一片wafer上已經寫入過的座標(不論哪一層)不能重複選取。</p>
   </section>
 
   <div id="wafer-panels-extra"></div>
@@ -127,7 +132,8 @@
       <span><i style="background:#fde047;border-color:#b7791f"></i>不上片(跳過)</span>
     </div>
     <button type="button" class="secondary" id="btn-skip-mode">標記「不上片」模式：關閉</button>
-    <div class="notice" id="substrate-mode-hint">點基板圖上任一格，可以反查它對應到哪個wafer座標（會在下方wafer圖上用橘框標示出來）。</div>
+    <div class="notice" id="substrate-mode-hint">如果上方wafer圖有選取「待寫入」的座標，點這裡任一格＝把那些座標整批寫入這一層。
+      沒有待寫入座標時，點任一格可以反查它對應到哪個wafer座標（會在上方wafer圖上用橘框標示出來）。</div>
     <p id="lookup-status"></p>
 
     <div id="bingo-maps-wrap">

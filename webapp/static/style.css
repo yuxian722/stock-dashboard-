@@ -128,6 +128,10 @@ button.secondary.active-layer:hover{background:#0c7550}
    the cell's own text content (set in JS) is the layer number, so any N
    layers stay distinguishable without needing N different colors. */
 .wafer-cell.picked{outline:2px solid #1a3fd6;outline-offset:-2px}
+/* Staged = selected on the wafer grid but not yet written into any
+   layer's BINGO MAP — dashed orange, distinct from the solid blue
+   "already written" outline, since it's a temporary pending state. */
+.wafer-cell.staged{outline:2px dashed #f5900f;outline-offset:-2px}
 .wafer-cell.focus{outline:3px solid #f97316;outline-offset:-3px;z-index:1;position:relative}
 
 #bingo-maps-wrap{display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start}

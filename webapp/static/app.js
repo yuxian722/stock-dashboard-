@@ -1,41 +1,49 @@
 // ---- State ----------------------------------------------------------------
-// N-layer (一次上N顆) model: layer i is 0-indexed internally but always
-// displayed as "第(i+1)層", and its f9 in the generated .strate is always
-// str(i+1) — confirmed against a real 8-layer sample (see
-// bingomap/tests/test_strate_eight_layer_real_sample.py): DIE_INFO always
-// holds only the LAST layer (highest f9), everything else goes into one
-// combined DIE_INFO_OTHER_LAYER section grouped by f9. Layer 0 always uses
-// the original static DOM elements (ids with no suffix, or the
-// "-primary"/no-suffix ones that predate this generalization); layers
-// 1..N-1 are built dynamically with a "_L{i}" id suffix — see waferIds()/
-// bingoIds() below. Changing multi_layer_enabled/num_layers/
-// multi_wafer_enabled always fully resets picks and wafer data (see
-// resetLayerState()) rather than trying to remap old per-layer state onto
-// a new layer count — simpler and safer than guessing an intent-preserving
-// remap for a rarely-changed, one-time-per-job setting.
+// Two independent axes, on purpose (2026/08/18 redesign — see
+// bingomap/CLAUDE.md): how many STACKED LAYERS (numLayers, f9=1..N) vs how
+// many PHYSICAL WAFERS (1 shared, or 2 in "跨兩片wafer" mode) are in play.
+// They used to be wired 1:1 (wafer panel i fed layer i only) — wrong: the
+// user stacks N layers from the SAME wafer, and "跨兩片wafer" means both
+// wafers should be able to feed ANY layer, not one wafer per layer.
+//
+// New interaction: clicking/dragging on a wafer grid STAGES coordinates
+// (pending, not yet in any layer) rather than committing them directly.
+// Clicking into a layer's BINGO MAP (when something is staged) COMMITS the
+// whole staged queue into that layer, in order. This is what actually
+// fixes the original "容易點錯層" complaint — the destination is chosen at
+// the moment of commit (by clicking the layer you can see filling up),
+// not via a separate switch button that's easy to leave on the wrong
+// layer. Single click stages one coordinate; drag-select stages a batch —
+// both routes converge on the same staging queue.
 let targetQty = null;
 let multiLayerEnabled = false;
 let numLayers = 2; // only meaningful when multiLayerEnabled
-let multiWaferEnabled = false; // true = every layer has its own physical wafer
-let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin}[]
-let currentLayerIndex = 0; // which layer new picks on the SHARED wafer grid go to
-let waferCellsByLayer = [new Map()]; // waferCellsByLayer[i]: "x,y" -> bin
-let waferBoundsByLayer = [null];
+let multiWaferEnabled = false; // true = a second, independent physical wafer panel exists
+let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin, panel}[] — panel = which wafer panel it was staged from (0 or 1), for dedup/rendering only; stripped before /api/generate
+let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not yet written into any layer
+let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -> bin (index 1 only used when multiWaferEnabled)
+let waferBoundsByPanel = [null, null];
 let substratePositions = []; // ["col:row", ...] in blank_generator's own machine-type order — shared by every layer
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 let focusedSubstratePosByLayer = [null]; // "col:row" clicked in that layer's BINGO MAP, for reverse lookup
-let focusedWaferXYByLayer = [null]; // {x, y} that focused position maps to, if filled
+let focusedWaferXYByLayer = [null]; // {x, y, panel} that focused position maps to, if filled
 let usingTemplate = false; // true once a template .strate has been loaded via loadTemplate()
 let skippedPositions = new Set(); // "col:row" substrate positions marked "不上片" — excluded from the fill order
-let skipModeEnabled = false; // true = clicking a substrate cell toggles skip instead of reverse-lookup
+let skipModeEnabled = false; // true = clicking a substrate cell toggles skip instead of commit/reverse-lookup
 
 function effectiveNumLayers() {
   return multiLayerEnabled ? numLayers : 1;
 }
 
-// ---- Per-layer DOM id helpers ----------------------------------------------
+function numWaferPanels() {
+  return multiWaferEnabled ? 2 : 1;
+}
+
+// ---- DOM id helpers ---------------------------------------------------
+// Wafer panels are indexed by PHYSICAL WAFER (0 or 1), independent of
+// layer index — see the state comment above.
 function waferIds(i) {
-  const s = i === 0 ? "" : `_L${i}`;
+  const s = i === 0 ? "" : `_W${i}`;
   return {
     panel: `wafer-panel${s}`,
     frmLotNo: `frm_lot_no${s}`,
@@ -76,13 +84,15 @@ function bingoIds(i) {
   };
 }
 
-// ---- Dynamic HTML for layers 1..N-1 ---------------------------------------
-function buildExtraWaferPanelHtml(i) {
-  const ids = waferIds(i);
+// ---- Dynamic HTML: wafer panel 1 (only ever a second panel — "跨兩片
+// wafer" is always exactly 2 physical wafers, decoupled from layer count) ---
+function buildExtraWaferPanelHtml() {
+  const ids = waferIds(1);
   return `
     <section class="panel" id="${ids.panel}" style="grid-column:1/-1">
-      <h2><span class="step-badge">2</span>Wafer Bin 資料 — 第${i + 1}層（不同wafer）</h2>
-      <div class="notice">第${i + 1}層使用自己的wafer，這裡獨立讀取/貼上第${i + 1}層自己的wafer bin資料。</div>
+      <h2><span class="step-badge">2</span>Wafer Bin 資料 — 第二片wafer</h2>
+      <div class="notice">跨兩片wafer時，這裡讀取/貼上第二片wafer自己的wafer bin資料。兩片wafer選出來的座標都是先「待寫入」，
+        點哪一層的BINGO MAP就寫入哪一層，跟這是第幾片wafer沒有關係。</div>
       <div class="grid2">
         <label>FRM Lot No <input id="${ids.frmLotNo}" value=""></label>
         <label>Barcode ID <input id="${ids.frmBarcodeId}" value=""></label>
@@ -90,13 +100,14 @@ function buildExtraWaferPanelHtml(i) {
       <label style="margin-bottom:0.6rem">FRM根路徑 <input id="${ids.frmPath}" value="F:\\SMAP\\FRM\\"></label>
       <button id="${ids.btnLoadFrm}">自動讀取FRM檔案</button>
       <p id="${ids.frmStatus}" class="lyr-frm-status"></p>
-      <div class="notice" style="margin-top:1rem">或手動貼上第${i + 1}層wafer bin資料（每行 <code>x,y,bin</code>）</div>
+      <div class="notice" style="margin-top:1rem">或手動貼上第二片wafer bin資料（每行 <code>x,y,bin</code>）</div>
       <textarea id="${ids.waferInput}" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
-      <button class="secondary" id="${ids.btnLoadWafer}">載入第${i + 1}層Wafer地圖(文字)</button>
+      <button class="secondary" id="${ids.btnLoadWafer}">載入第二片Wafer地圖(文字)</button>
       <div class="legend">
         <span><i style="background:#4fb84a"></i>Bin 1（可選）</span>
         <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
-        <span><i style="background:#fff;border-color:#1a3fd6"></i>已點選（第${i + 1}層）</span>
+        <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
+        <span><i style="background:#fff;border-color:#f5900f;border-style:dashed"></i>已選取、待寫入</span>
       </div>
       <p id="${ids.hoverStatus}" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
       <div id="${ids.wrap}" class="lyr-wafer-wrap">
@@ -127,45 +138,27 @@ function buildExtraBingoMapBlockHtml(i) {
   `;
 }
 
-// ---- UI rebuild on layer-config change --------------------------------
+// ---- UI rebuild on layer/wafer-config change --------------------------
 function resetLayerState() {
   const n = effectiveNumLayers();
   picksByLayer = Array.from({ length: n }, () => []);
-  waferCellsByLayer = Array.from({ length: n }, () => new Map());
-  waferBoundsByLayer = Array.from({ length: n }, () => null);
+  stagedPicks = [];
+  waferCellsByPanel = [waferCellsByPanel[0] || new Map(), new Map()];
+  waferBoundsByPanel = [waferBoundsByPanel[0] || null, null];
   focusedSubstratePosByLayer = Array.from({ length: n }, () => null);
   focusedWaferXYByLayer = Array.from({ length: n }, () => null);
-  currentLayerIndex = 0;
   document.getElementById("lookup-status").textContent = "";
 }
 
 function rebuildLayerUi() {
   const n = effectiveNumLayers();
 
-  // --- wafer panels (layer 0 is the static #wafer-panel; 1..n-1 dynamic) ---
+  // --- wafer panels: 1, or exactly 2 in "跨兩片wafer" mode — independent of n ---
   const extraWaferContainer = document.getElementById("wafer-panels-extra");
   extraWaferContainer.innerHTML = "";
-  if (multiWaferEnabled && n > 1) {
-    for (let i = 1; i < n; i++) {
-      extraWaferContainer.insertAdjacentHTML("beforeend", buildExtraWaferPanelHtml(i));
-      wireWaferPanelEvents(i);
-    }
-  }
-
-  // --- layer-switch buttons (shared-wafer mode only) ---
-  const switchContainer = document.getElementById("layer-switch");
-  switchContainer.innerHTML = "";
-  switchContainer.style.display = n > 1 && !multiWaferEnabled ? "" : "none";
-  if (n > 1 && !multiWaferEnabled) {
-    for (let i = 0; i < n; i++) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "secondary" + (i === currentLayerIndex ? " active-layer" : "");
-      btn.textContent = `第${i + 1}層 (f9=${i + 1})`;
-      btn.dataset.layerIndex = String(i);
-      btn.addEventListener("click", () => setActiveLayer(i));
-      switchContainer.appendChild(btn);
-    }
+  if (multiWaferEnabled) {
+    extraWaferContainer.insertAdjacentHTML("beforeend", buildExtraWaferPanelHtml());
+    wireWaferPanelEvents(1);
   }
 
   // --- BINGO MAP blocks (layer 0 is the static block; 1..n-1 dynamic) ---
@@ -177,9 +170,10 @@ function rebuildLayerUi() {
   }
 
   document.getElementById("bingo-map-title-primary").textContent = n > 1 ? "第1層 BINGO MAP" : "BINGO MAP";
-  document.getElementById("wafer-panel-title-suffix").textContent =
-    n > 1 ? (multiWaferEnabled ? " — 第1層" : `（共${n}層共用同一片wafer，點選會加入下方選定的層）`) : "";
-  document.getElementById("wafer-legend-picked").style.display = n > 1 ? "" : "none";
+  document.getElementById("wafer-panel-title-suffix").textContent = multiWaferEnabled ? " — 第一片wafer" : "";
+  document.getElementById("wafer-legend-picked").style.display = n > 1 || multiWaferEnabled ? "" : "none";
+  document.getElementById("wafer-legend-staged").style.display = "";
+  document.getElementById("stage-controls").style.display = "";
 }
 
 // ---- Header / blank / template -----------------------------------------
@@ -280,7 +274,11 @@ async function loadTemplate(text) {
   document.getElementById("multi_wafer_enabled").checked = false;
 
   resetLayerState();
-  picksByLayer = data.layer_picks.length ? data.layer_picks.map((picks) => picks.slice()) : [[]];
+  // A template file carries no notion of "which physical wafer panel" —
+  // treat every loaded pick as panel 0 (the default single-wafer source).
+  picksByLayer = data.layer_picks.length
+    ? data.layer_picks.map((picks) => picks.map((p) => ({ ...p, panel: 0 })))
+    : [[]];
   rebuildLayerUi();
   renderAll();
 
@@ -317,11 +315,11 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
   if (!container) return;
   container.innerHTML = "";
   if (!substrateBounds) return;
-  // First N picks (in click/scan order) fill the first N *fillable*
-  // positions of the blank skeleton's own order (skipping any marked
-  // "不上片") — this mirrors exactly what assign_dies()/assign_layers()
-  // does at generate time, so this preview is never out of sync with the
-  // real output.
+  // First N picks (in commit order) fill the first N *fillable* positions
+  // of the blank skeleton's own order (skipping any marked "不上片") —
+  // this mirrors exactly what assign_dies()/assign_layers() does at
+  // generate time, so this preview is never out of sync with the real
+  // output.
   const fillable = fillablePositions();
   const filled = new Set(fillable.slice(0, layerPicks.length));
   const nextPos = fillable[layerPicks.length];
@@ -387,12 +385,10 @@ function reverseLookupSubstratePos(pos, layerIndex) {
   }
   const index = fillablePositions().indexOf(pos);
   const isFilled = index >= 0 && index < layerPicks.length;
-  const targetPanelIndex = multiWaferEnabled ? layerIndex : 0;
-  const targetGridId = waferIds(targetPanelIndex).grid;
   if (isFilled) {
     const pick = layerPicks[index];
-    focusedWaferXYByLayer[layerIndex] = { x: pick.x, y: pick.y };
-    status.textContent = `${layerLabel}基板位置 ${pos} ↔ Wafer座標 ${pick.x}:${pick.y}（第 ${index + 1} 顆）`;
+    focusedWaferXYByLayer[layerIndex] = { x: pick.x, y: pick.y, panel: pick.panel };
+    status.textContent = `${layerLabel}基板位置 ${pos} ↔ Wafer座標 ${pick.x}:${pick.y}${multiWaferEnabled ? `（第${pick.panel + 1}片wafer）` : ""}（第 ${index + 1} 顆）`;
     status.className = "notice";
   } else {
     focusedWaferXYByLayer[layerIndex] = null;
@@ -400,6 +396,7 @@ function reverseLookupSubstratePos(pos, layerIndex) {
     status.className = "notice";
   }
   renderAll();
+  const targetGridId = isFilled ? waferIds(layerPicks[index].panel).grid : waferIds(0).grid;
   const waferCellEl = document.querySelector(`#${targetGridId} .wafer-cell.focus`);
   if (waferCellEl) waferCellEl.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
 }
@@ -453,8 +450,8 @@ async function loadFrmIntoPanel(panelIndex) {
     return;
   }
   const { cells, bounds } = waferCellsFromApiCells(data.cells);
-  waferCellsByLayer[panelIndex] = cells;
-  waferBoundsByLayer[panelIndex] = bounds;
+  waferCellsByPanel[panelIndex] = cells;
+  waferBoundsByPanel[panelIndex] = bounds;
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   renderAll();
@@ -466,28 +463,50 @@ function cellClass(bin) {
   return "bin-other";
 }
 
-function isPickedInLayer(layerIndex, x, y) {
-  return picksByLayer[layerIndex].some((p) => p.x === x && p.y === y);
+// ---- Staging (wafer grid selections not yet written into a layer) ------
+// A coordinate on a given physical wafer panel can only ever be consumed
+// once, regardless of which layer it eventually lands in — this is the
+// dedup rule that actually matters now that any panel can feed any layer.
+function isCommittedOnPanel(panelIndex, x, y) {
+  return picksByLayer.some((layerPicks) => layerPicks.some((p) => p.panel === panelIndex && p.x === x && p.y === y));
 }
 
-// Whether (x,y) is already used by ANY layer sharing the one physical
-// wafer — the fix for "很容易點錯...座標不要重複": a given die site can
-// only ever be consumed once, so it must not be pickable twice under two
-// different layers. Only meaningful outside multi-wafer mode.
-function isPickedAcrossSharedLayers(x, y) {
-  const n = effectiveNumLayers();
-  for (let i = 0; i < n; i++) {
-    if (isPickedInLayer(i, x, y)) return true;
+function isStagedOnPanel(panelIndex, x, y) {
+  return stagedPicks.some((p) => p.panel === panelIndex && p.x === x && p.y === y);
+}
+
+function stageIndexOnPanel(panelIndex, x, y) {
+  return stagedPicks.findIndex((p) => p.panel === panelIndex && p.x === x && p.y === y);
+}
+
+// Toggling: clicking an already-staged cell un-stages it (lets you correct
+// a mis-click before committing); clicking a fresh bin-1, unused cell
+// stages it.
+function toggleStagePick(panelIndex, x, y, bin) {
+  const existingIdx = stageIndexOnPanel(panelIndex, x, y);
+  if (existingIdx >= 0) {
+    stagedPicks.splice(existingIdx, 1);
+    return true;
   }
-  return false;
+  if (bin !== "1") return false;
+  if (isCommittedOnPanel(panelIndex, x, y)) return false;
+  stagedPicks.push({ x, y, bin, panel: panelIndex });
+  return true;
 }
 
-function addPickToLayer(layerIndex, x, y, bin) {
+function stagePickIfNew(panelIndex, x, y, bin) {
   if (bin !== "1") return false;
-  const blocked = multiWaferEnabled ? isPickedInLayer(layerIndex, x, y) : isPickedAcrossSharedLayers(x, y);
-  if (blocked) return false;
-  picksByLayer[layerIndex].push({ x, y, bin });
+  if (isCommittedOnPanel(panelIndex, x, y) || isStagedOnPanel(panelIndex, x, y)) return false;
+  stagedPicks.push({ x, y, bin, panel: panelIndex });
   return true;
+}
+
+function commitStagedPicksToLayer(layerIndex) {
+  if (!stagedPicks.length) return 0;
+  picksByLayer[layerIndex].push(...stagedPicks);
+  const count = stagedPicks.length;
+  stagedPicks = [];
+  return count;
 }
 
 const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style.css
@@ -497,8 +516,8 @@ function renderWaferPanel(panelIndex) {
   const container = document.getElementById(ids.grid);
   if (!container) return;
   container.innerHTML = "";
-  const cells = waferCellsByLayer[panelIndex];
-  const bounds = waferBoundsByLayer[panelIndex];
+  const cells = waferCellsByPanel[panelIndex];
+  const bounds = waferBoundsByPanel[panelIndex];
   if (!bounds) {
     renderWaferOverlayInto(ids.overlay, ids.grid, null);
     return;
@@ -523,12 +542,6 @@ function renderWaferPanel(panelIndex) {
   }
   container.appendChild(headerRow);
 
-  // In shared-wafer mode this one panel shows every layer's picks
-  // overlaid (a cell can belong to at most one layer, since picks are
-  // deduped across all of them); in multi-wafer mode this panel only
-  // shows its own dedicated layer's picks.
-  const layersOnThisPanel = multiWaferEnabled ? [panelIndex] : Array.from({ length: effectiveNumLayers() }, (_, i) => i);
-
   for (let y = minY; y <= maxY; y++) {
     const row = document.createElement("div");
     row.className = "wafer-row";
@@ -540,18 +553,21 @@ function renderWaferPanel(panelIndex) {
       const bin = cells.get(`${x},${y}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell " + cellClass(bin);
-      let pickedLayer = null;
-      let focusedLayer = null;
-      for (const li of layersOnThisPanel) {
-        if (pickedLayer === null && isPickedInLayer(li, x, y)) pickedLayer = li;
-        const f = focusedWaferXYByLayer[li];
-        if (focusedLayer === null && f && f.x === x && f.y === y) focusedLayer = li;
+      let committedLayer = null;
+      for (let li = 0; li < picksByLayer.length; li++) {
+        if (picksByLayer[li].some((p) => p.panel === panelIndex && p.x === x && p.y === y)) {
+          committedLayer = li;
+          break;
+        }
       }
-      if (pickedLayer !== null) {
+      if (committedLayer !== null) {
         cell.classList.add("picked");
-        cell.textContent = String(pickedLayer + 1);
+        cell.textContent = String(committedLayer + 1);
+      } else if (isStagedOnPanel(panelIndex, x, y)) {
+        cell.classList.add("staged");
       }
-      if (focusedLayer !== null) cell.classList.add("focus");
+      const isFocused = focusedWaferXYByLayer.some((f) => f && f.panel === panelIndex && f.x === x && f.y === y);
+      if (isFocused) cell.classList.add("focus");
       cell.dataset.x = x;
       cell.dataset.y = y;
       cell.dataset.bin = bin === undefined ? "" : bin;
@@ -592,22 +608,16 @@ function renderWaferOverlayInto(overlayId, containerId, bounds) {
 }
 
 function renderWaferGrid() {
-  const n = effectiveNumLayers();
-  if (multiWaferEnabled) {
-    for (let i = 0; i < n; i++) renderWaferPanel(i);
-  } else {
-    renderWaferPanel(0);
-  }
+  for (let i = 0; i < numWaferPanels(); i++) renderWaferPanel(i);
 }
 
 function scanRectangle(x1, x2, y1, y2, panelIndex) {
   const xLo = Math.min(x1, x2), xHi = Math.max(x1, x2);
   const yLo = Math.min(y1, y2), yHi = Math.max(y1, y2);
-  const cells = waferCellsByLayer[panelIndex];
-  const layerIndex = multiWaferEnabled ? panelIndex : currentLayerIndex;
+  const cells = waferCellsByPanel[panelIndex];
   for (let x = xLo; x <= xHi; x++) {
     for (let y = yLo; y <= yHi; y++) {
-      addPickToLayer(layerIndex, x, y, cells.get(`${x},${y}`));
+      stagePickIfNew(panelIndex, x, y, cells.get(`${x},${y}`));
     }
   }
 }
@@ -633,9 +643,7 @@ function renderPickTableInto(tableId, layerPicks) {
 
 function renderPickTable() {
   // Each BINGO MAP block owns its own table, driven directly by its own
-  // layer's picks — not by the "active layer" alias, so every layer stays
-  // visible and manageable at once regardless of which layer new wafer
-  // clicks are currently routed to.
+  // layer's picks, so every layer stays visible and manageable at once.
   const n = effectiveNumLayers();
   for (let i = 0; i < n; i++) {
     const ids = bingoIds(i);
@@ -674,7 +682,7 @@ function renderQtyStatus() {
     if (effTarget === null) return;
     if (doneFlags.every(Boolean)) {
       setStepFlow(4, { done: [1, 2, 3] });
-    } else if (picksByLayer.slice(0, n).some((p) => p.length > 0) || waferBoundsByLayer[0]) {
+    } else if (picksByLayer.slice(0, n).some((p) => p.length > 0) || waferBoundsByPanel[0]) {
       setStepFlow(3, { done: [1, 2] });
     }
     return;
@@ -692,25 +700,22 @@ function renderQtyStatus() {
   if (effTarget === null) return;
   if (matched) {
     setStepFlow(4, { done: [1, 2, 3] });
-  } else if (picks.length > 0 || waferBoundsByLayer[0]) {
+  } else if (picks.length > 0 || waferBoundsByPanel[0]) {
     setStepFlow(3, { done: [1, 2] });
   }
 }
 
 function renderLayerStatus() {
   const status = document.getElementById("layer-status");
-  const n = effectiveNumLayers();
-  if (n <= 1) {
-    status.textContent = "";
-    return;
-  }
-  const effTarget = effectiveTargetQty();
-  const target = effTarget === null ? "?" : effTarget;
-  const counts = picksByLayer.slice(0, n).map((p, i) => `第${i + 1}層 ${p.length}/${target}`).join("，");
-  if (multiWaferEnabled) {
-    status.textContent = `多wafer模式：每張wafer圖點選只會加入自己那一層（${counts}）`;
+  const clearBtn = document.getElementById("btn-clear-staged");
+  if (stagedPicks.length) {
+    status.textContent = `已選取 ${stagedPicks.length} 顆wafer座標，尚未寫入：點下方任一層的BINGO MAP即可整批寫入該層。`;
+    status.className = "notice";
+    clearBtn.textContent = `清除待寫入的座標 (${stagedPicks.length})`;
   } else {
-    status.textContent = `目前wafer圖點選會加入：第${currentLayerIndex + 1}層（${counts}）`;
+    status.textContent = "";
+    status.className = "";
+    clearBtn.textContent = "清除待寫入的座標";
   }
 }
 
@@ -754,8 +759,7 @@ function wireGridDragEvents(containerId, hoverStatusId, tooltipId, panelIndex) {
     if (!e.target.classList.contains("wafer-cell") || !localDragStart) return;
     const end = { x: parseInt(e.target.dataset.x, 10), y: parseInt(e.target.dataset.y, 10) };
     if (end.x === localDragStart.x && end.y === localDragStart.y) {
-      const layerIndex = multiWaferEnabled ? panelIndex : currentLayerIndex;
-      addPickToLayer(layerIndex, end.x, end.y, e.target.dataset.bin);
+      toggleStagePick(panelIndex, end.x, end.y, e.target.dataset.bin);
     } else {
       scanRectangle(localDragStart.x, end.x, localDragStart.y, end.y, panelIndex);
     }
@@ -786,6 +790,11 @@ function wireSubstrateGridClicks(containerId, hoverStatusId, tooltipId, layerInd
       renderAll();
       return;
     }
+    if (stagedPicks.length) {
+      commitStagedPicksToLayer(layerIndex);
+      renderAll();
+      return;
+    }
     reverseLookupSubstratePos(pos, layerIndex);
   });
   if (hoverStatus) {
@@ -806,8 +815,8 @@ function wireWaferPanelEvents(panelIndex) {
   document.getElementById(ids.btnLoadFrm).addEventListener("click", () => loadFrmIntoPanel(panelIndex));
   document.getElementById(ids.btnLoadWafer).addEventListener("click", () => {
     const { cells, bounds } = parseWaferText(document.getElementById(ids.waferInput).value);
-    waferCellsByLayer[panelIndex] = cells;
-    waferBoundsByLayer[panelIndex] = bounds;
+    waferCellsByPanel[panelIndex] = cells;
+    waferBoundsByPanel[panelIndex] = bounds;
     renderAll();
   });
   wireGridDragEvents(ids.grid, ids.hoverStatus, ids.tooltip, panelIndex);
@@ -826,15 +835,7 @@ function setSkipMode(enabled) {
   btn.classList.toggle("skip-mode-on", enabled);
   document.getElementById("substrate-mode-hint").textContent = enabled
     ? "目前是「不上片」標記模式：點基板圖上任一格＝標記/取消該格不上片（黃色＝跳過，不會被wafer座標填入）。"
-    : "點基板圖上任一格，可以反查它對應到哪個wafer座標（會在下方wafer圖上用橘框標示出來）。";
-}
-
-function setActiveLayer(layerIndex) {
-  currentLayerIndex = layerIndex;
-  document.querySelectorAll("#layer-switch button").forEach((btn) => {
-    btn.classList.toggle("active-layer", parseInt(btn.dataset.layerIndex, 10) === layerIndex);
-  });
-  renderAll();
+    : "如果上方wafer圖有選取「待寫入」的座標，點這裡任一格＝把那些座標整批寫入這一層。沒有待寫入座標時，點任一格可以反查它對應到哪個wafer座標（會在上方wafer圖上用橘框標示出來）。";
 }
 
 // ---- Generate -----------------------------------------------------------
@@ -851,10 +852,13 @@ async function generateStrate() {
     interval_seconds: document.getElementById("interval_seconds").value,
     skip_positions: Array.from(skippedPositions),
   };
+  // `panel` is frontend-only bookkeeping (which physical wafer a pick came
+  // from, for dedup/rendering) — the backend only wants {x, y, bin}.
+  const stripPanel = (picks) => picks.map(({ x, y, bin }) => ({ x, y, bin }));
   if (multiLayerEnabled) {
-    payload.layers = picksByLayer.slice(0, numLayers);
+    payload.layers = picksByLayer.slice(0, numLayers).map(stripPanel);
   } else {
-    payload.selections = picksByLayer[0];
+    payload.selections = stripPanel(picksByLayer[0]);
   }
   if (usingTemplate) {
     // Send the template's own position order verbatim so the backend
@@ -906,6 +910,10 @@ document.getElementById("btn-load-template").addEventListener("click", () => {
 });
 document.getElementById("btn-clear").addEventListener("click", () => {
   resetLayerState();
+  renderAll();
+});
+document.getElementById("btn-clear-staged").addEventListener("click", () => {
+  stagedPicks = [];
   renderAll();
 });
 document.getElementById("btn-generate").addEventListener("click", generateStrate);
