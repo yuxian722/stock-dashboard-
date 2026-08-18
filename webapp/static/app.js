@@ -309,6 +309,18 @@ function fillablePositions() {
   return substratePositions.filter((pos) => !skippedPositions.has(pos));
 }
 
+// Bulk shortcut for "this run won't fill the whole tray" — keep the first
+// N positions (in the blank skeleton's own fill order) fillable, and mark
+// everything after that "不上片" in one action instead of manually
+// clicking/dragging each trailing cell. This recomputes skippedPositions
+// from scratch each time it's applied (any individually-marked skips from
+// before are replaced), matching the notice text shown next to the button.
+function applyEffectiveQty(n) {
+  if (!Number.isFinite(n) || n < 0 || !substratePositions.length) return null;
+  skippedPositions = new Set(substratePositions.slice(n));
+  return { kept: substratePositions.length - skippedPositions.size, skipped: skippedPositions.size };
+}
+
 // ---- BINGO MAP (substrate grid) rendering ---------------------------------
 function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
   const container = document.getElementById(containerId);
@@ -777,25 +789,62 @@ function wireGridDragEvents(containerId, hoverStatusId, tooltipId, panelIndex) {
   });
 }
 
+function skipRectangleBetween(pos1, pos2) {
+  // Drag-select for "不上片": mark every valid substrate position in the
+  // rectangle, skipping cells that fall outside the actual substrate
+  // shape (the bounding-box grid renders a plain cell for those, not a
+  // real fillable position) — those must never end up counted in
+  // skippedPositions.size, or effectiveTargetQty() would undercount.
+  const [c1, r1] = pos1.split(":").map(Number);
+  const [c2, r2] = pos2.split(":").map(Number);
+  const colLo = Math.min(c1, c2), colHi = Math.max(c1, c2);
+  const rowLo = Math.min(r1, r2), rowHi = Math.max(r1, r2);
+  const validPositions = new Set(substratePositions);
+  for (let col = colLo; col <= colHi; col++) {
+    for (let row = rowLo; row <= rowHi; row++) {
+      const pos = `${col}:${row}`;
+      if (validPositions.has(pos)) skippedPositions.add(pos);
+    }
+  }
+}
+
+function handleSubstrateCellClick(pos, layerIndex) {
+  if (skipModeEnabled) {
+    if (skippedPositions.has(pos)) skippedPositions.delete(pos);
+    else skippedPositions.add(pos);
+    renderAll();
+    return;
+  }
+  if (stagedPicks.length) {
+    commitStagedPicksToLayer(layerIndex);
+    renderAll();
+    return;
+  }
+  reverseLookupSubstratePos(pos, layerIndex);
+}
+
 function wireSubstrateGridClicks(containerId, hoverStatusId, tooltipId, layerIndex) {
   const container = document.getElementById(containerId);
   const hoverStatus = document.getElementById(hoverStatusId);
   const tooltip = document.getElementById(tooltipId);
-  container.addEventListener("click", (e) => {
+  let localDragStart = null;
+  container.addEventListener("mousedown", (e) => {
     if (!e.target.classList.contains("substrate-cell")) return;
-    const pos = e.target.dataset.pos;
-    if (skipModeEnabled) {
-      if (skippedPositions.has(pos)) skippedPositions.delete(pos);
-      else skippedPositions.add(pos);
+    localDragStart = e.target.dataset.pos;
+  });
+  container.addEventListener("mouseup", (e) => {
+    if (!e.target.classList.contains("substrate-cell") || !localDragStart) return;
+    const endPos = e.target.dataset.pos;
+    if (endPos === localDragStart) {
+      handleSubstrateCellClick(endPos, layerIndex);
+    } else if (skipModeEnabled) {
+      // Only skip-mode has a defined bulk action for a drag; outside skip
+      // mode a drag across the BINGO MAP does nothing (commit/reverse-
+      // lookup are single-target actions).
+      skipRectangleBetween(localDragStart, endPos);
       renderAll();
-      return;
     }
-    if (stagedPicks.length) {
-      commitStagedPicksToLayer(layerIndex);
-      renderAll();
-      return;
-    }
-    reverseLookupSubstratePos(pos, layerIndex);
+    localDragStart = null;
   });
   if (hoverStatus) {
     container.addEventListener("mouseover", (e) => {
@@ -948,6 +997,20 @@ document.getElementById("multi_wafer_enabled").addEventListener("change", (e) =>
 wireWaferPanelEvents(0);
 wireBingoBlockEvents(0);
 document.getElementById("btn-skip-mode").addEventListener("click", () => setSkipMode(!skipModeEnabled));
+document.getElementById("btn-apply-effective-qty").addEventListener("click", () => {
+  const n = parseInt(document.getElementById("effective_qty_input").value, 10);
+  const result = applyEffectiveQty(n);
+  const status = document.getElementById("effective-qty-status");
+  if (!result) {
+    status.textContent = "請先產生空白骨架，並輸入一個不小於0的數量";
+    return;
+  }
+  status.textContent =
+    result.skipped > 0
+      ? `已套用：前 ${result.kept} 格維持可上片，後面 ${result.skipped} 格已標記「不上片」。`
+      : `已套用：設定的數量 ≥ 理論總數 ${substratePositions.length}，全部維持可上片，沒有格子被標記。`;
+  renderAll();
+});
 setSkipMode(false);
 rebuildLayerUi();
 renderQtyStatus();

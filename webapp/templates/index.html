@@ -133,7 +133,19 @@
     </div>
     <button type="button" class="secondary" id="btn-skip-mode">標記「不上片」模式：關閉</button>
     <div class="notice" id="substrate-mode-hint">如果上方wafer圖有選取「待寫入」的座標，點這裡任一格＝把那些座標整批寫入這一層。
-      沒有待寫入座標時，點任一格可以反查它對應到哪個wafer座標（會在上方wafer圖上用橘框標示出來）。</div>
+      沒有待寫入座標時，點任一格可以反查它對應到哪個wafer座標（會在上方wafer圖上用橘框標示出來）。
+      開啟「不上片」模式後，點一格＝標記/取消該格；拖曳一個矩形＝整批標記範圍內所有格子不上片。</div>
+    <div class="notice">
+      <label style="max-width:260px">實際要上片的數量(結尾若上不滿可以少於理論總數)
+        <input id="effective_qty_input" type="number" min="0" placeholder="例如 100">
+      </label>
+      <button type="button" class="secondary" id="btn-apply-effective-qty">套用（自動把結尾多的格子標記不上片）</button>
+      <p id="effective-qty-status" style="font-size:0.82rem;font-weight:700;color:var(--blue);min-height:1.2em;margin:0.4rem 0 0"></p>
+      <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.4rem 0 0">
+        套用後，基板填入順序的前面N格維持可上片，後面的格子會自動整批標記「不上片」（黃色）；
+        這個動作會重新計算，之前手動標記的不上片格子會被取代。之後仍可以用上面的手動標記/拖曳矩形調整個別格子。
+      </p>
+    </div>
     <p id="lookup-status"></p>
 
     <div id="bingo-maps-wrap">
