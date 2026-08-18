@@ -24,19 +24,28 @@ let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not 
 let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -> bin (index 1 only used when multiWaferEnabled)
 let waferBoundsByPanel = [null, null];
 // T點 (Reference Point) — a fixed anchor mark WaferCoordinate.exe draws on
-// the wafer image with a special texture. 2026/08/18: first guessed this
-// was the FRM header's own reference_point_x/y field — WRONG, the user
-// showed a side-by-side photo proving that field sits well outside the
-// wafer's actual die area, nowhere near the real on-screen crosshair. The
-// user then clicked directly on the real T點 cell and reported the
-// coordinate readout (X -19, Y 1) while a clear photo showed the crosshair
-// sitting near the grid's geometric middle (~row 28 of 56, horizontally
-// centered) — consistent with T點 simply being the wafer grid's own center,
-// (columns//2, rows//2), not a value stored anywhere in the file. Only
-// known when loaded via FRM (manually-pasted "x,y,bin" text has no
-// columns/rows header to compute a center from, so this stays null then).
-// NOT pixel-calibrated against the real tool — only visually cross-checked
-// against a photo, so treat as a best-effort mark, not a guarantee.
+// the wafer image with a special texture. 2026/08/18, three guesses before
+// landing here:
+//   1. reference_point_x/y taken as a direct grid coordinate — wrong, a
+//      photo showed that cell sitting well outside the wafer's actual die
+//      area, nowhere near the real on-screen crosshair.
+//   2. plain grid center (columns//2, rows//2) — wrong for a different
+//      wafer/photo: the user pointed at the real T點 cell (hovering our
+//      own grid) and read off "Wafer座標：18:0", nowhere near the center.
+//   3. (current) the user explained the real tool's crosshair is a
+//      180°-mirrored view of our DB-oriented rendering, and described the
+//      correct cell in OUR coordinates directly: "上方中心線往右第五顆，
+//      第一排" (top row, 5 cells right of the horizontal center line).
+//      That "5" is exactly this file's own reference_point_x (5) — so
+//      T點 = (columns//2 - reference_point_x, 0): an offset from the
+//      wafer's horizontal center, along its own row 0 (the flat/notch
+//      edge in this rendering), by reference_point_x cells. Verified
+//      against the real file: gives exactly (18, 0) as reported.
+// reference_point_y is NOT used — row 0 is fixed, not derived from it;
+// unconfirmed whether that holds for a wafer whose notch/flat sits on a
+// different edge. Only known when loaded via FRM (manually-pasted
+// "x,y,bin" text has no columns/reference_point header to compute this
+// from, so this stays null then).
 let refPointByPanel = [null, null]; // {x, y} | null
 let substratePositions = []; // ["col:row", ...] in blank_generator's own machine-type order — shared by every layer
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
@@ -151,7 +160,7 @@ function buildExtraWaferPanelHtml() {
         <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
         <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
         <span><i style="background:#fff;border-color:#f5900f;border-style:dashed"></i>已選取、待寫入</span>
-        <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（wafer幾何中心，不能選取）</span>
+        <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（不能選取）</span>
       </div>
       <p id="${ids.hoverStatus}" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
       <div id="${ids.wrap}" class="lyr-wafer-wrap">
@@ -583,10 +592,12 @@ async function loadFrmIntoPanel(panelIndex) {
   waferCellsByPanel[panelIndex] = cells;
   waferBoundsByPanel[panelIndex] = bounds;
   refPointByPanel[panelIndex] =
-    data.columns && data.rows ? { x: Math.floor(data.columns / 2), y: Math.floor(data.rows / 2) } : null;
+    data.columns && data.reference_point_x !== undefined
+      ? { x: Math.floor(data.columns / 2) - data.reference_point_x, y: 0 }
+      : null;
   status.className = "ok";
   const refNote = refPointByPanel[panelIndex]
-    ? `，T點＝${refPointByPanel[panelIndex].x}:${refPointByPanel[panelIndex].y}（wafer圖上會用斜紋標示，這是用wafer尺寸推算出的幾何中心，麻煩比對一下跟WaferCoordinate.exe看到的是不是同一格）`
+    ? `，T點＝${refPointByPanel[panelIndex].x}:${refPointByPanel[panelIndex].y}（wafer圖上會用斜紋標示，是wafer水平中心線往右偏reference_point_x格、第一排的位置，麻煩比對一下跟WaferCoordinate.exe看到的是不是同一格）`
     : "";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）${refNote}`;
   renderAll();
@@ -717,7 +728,7 @@ function renderWaferPanel(panelIndex) {
         cell.classList.add("ref-point");
         cell.dataset.refPoint = "1";
         if (!cell.textContent) cell.textContent = "T";
-        cell.title = `${x}:${y} — T點(wafer幾何中心)`;
+        cell.title = `${x}:${y} — T點`;
       }
       cell.dataset.x = x;
       cell.dataset.y = y;
@@ -921,7 +932,7 @@ function wireGridDragEvents(containerId, hoverStatusId, tooltipId, panelIndex) {
     if (!e.target.classList.contains("wafer-cell")) return;
     const x = e.target.dataset.x, y = e.target.dataset.y;
     const ref = isReferencedAt(panelIndex, parseInt(x, 10), parseInt(y, 10));
-    const refPointNote = e.target.dataset.refPoint ? "（T點/wafer幾何中心）" : "";
+    const refPointNote = e.target.dataset.refPoint ? "（T點）" : "";
     const label = ref && !e.target.classList.contains("picked") && !e.target.classList.contains("staged")
       ? `${x}:${y}（已被參考基板「${ref.name}」占用，不能選）${refPointNote}`
       : `Wafer座標：${x}:${y}${refPointNote}`;

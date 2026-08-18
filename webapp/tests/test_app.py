@@ -222,6 +222,14 @@ def test_api_frm_returns_reference_point_from_real_file(client, tmp_path):
     assert bins.count("7") == 268
     # The reference point itself isn't a real die.
     assert not any(c["x"] == 5 and c["y"] == 5 for c in data["cells"])
+    # T點 itself (computed client-side in app.js, see refPointByPanel) is
+    # (columns//2 - reference_point_x, 0) — confirmed against this same
+    # file: the user pointed at the real T點 cell in WaferCoordinate.exe
+    # and reported (18, 0). Pinning the inputs to that formula here so a
+    # future change to reference_point_x/columns parsing can't silently
+    # break it without a test noticing.
+    t_point_x = data["columns"] // 2 - data["reference_point_x"]
+    assert (t_point_x, 0) == (18, 0)
 
 
 def test_api_frm_missing_file_returns_404_with_helpful_message(client, tmp_path):

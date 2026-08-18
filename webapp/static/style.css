@@ -147,17 +147,14 @@ button.secondary.active-layer:hover{background:#0c7550}
   color:#fff;cursor:not-allowed;
 }
 .wafer-cell.referenced:hover{filter:none}
-/* T點: a fixed anchor mark on the wafer image. 2026/08/18: first guessed
-   this was the FRM header's own reference_point_x/y field — wrong, a
-   photo from the user showed that field sits outside the actual die area,
-   nowhere near the real on-screen crosshair. Landed on "wafer grid's own
-   geometric center" (columns//2, rows//2) after the user clicked the real
-   T點 cell directly and a clear photo showed the crosshair near the
-   middle of the grid — see app.js's refPointByPanel comment for the full
-   trail. Drawn with a diagonal-stripe texture layered ON TOP of whatever
-   else the cell shows (bin color, own pick digit, staged/referenced
-   marker) via background-image rather than background, since it's an
-   overlay mark, not a replacement for the cell's other state. */
+/* T點: a fixed anchor mark on the wafer image — an offset from the
+   wafer's horizontal center by reference_point_x cells, on row 0. Took
+   three tries to land on this; see app.js's refPointByPanel comment for
+   the full trail (two earlier guesses were shown wrong via real photos).
+   Drawn with a diagonal-stripe texture layered ON TOP of whatever else
+   the cell shows (bin color, own pick digit, staged/referenced marker)
+   via background-image rather than background, since it's an overlay
+   mark, not a replacement for the cell's other state. */
 .wafer-cell.ref-point{
   background-image:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);
   outline:2px solid #1e293b;outline-offset:-2px;
