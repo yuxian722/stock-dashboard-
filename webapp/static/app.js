@@ -269,7 +269,9 @@ async function loadTemplate(text) {
   document.getElementById("multi_layer_enabled").checked = multiLayerEnabled;
   document.getElementById("num_layers").value = numLayers;
   document.getElementById("multi-layer-fields").style.display = multiLayerEnabled ? "" : "none";
-  document.getElementById("multi-wafer-field").style.display = multiLayerEnabled ? "" : "none";
+  // "跨兩片wafer" is independent of layer count (see the change handler
+  // below) — a template carries no notion of "which physical wafer panel"
+  // either way, so it always resets to the single-wafer default on load.
   multiWaferEnabled = false;
   document.getElementById("multi_wafer_enabled").checked = false;
 
@@ -970,11 +972,10 @@ document.getElementById("btn-generate").addEventListener("click", generateStrate
 document.getElementById("multi_layer_enabled").addEventListener("change", (e) => {
   multiLayerEnabled = e.target.checked;
   document.getElementById("multi-layer-fields").style.display = multiLayerEnabled ? "" : "none";
-  document.getElementById("multi-wafer-field").style.display = multiLayerEnabled ? "" : "none";
-  if (!multiLayerEnabled) {
-    multiWaferEnabled = false;
-    document.getElementById("multi_wafer_enabled").checked = false;
-  }
+  // "跨兩片wafer" (multiWaferEnabled) is deliberately NOT touched here —
+  // it's independent of layer count (see the header notice text): even a
+  // plain single-layer (第1層 only, no stacking) job can need two
+  // physical wafers if one alone doesn't have enough good die.
   resetLayerState();
   rebuildLayerUi();
   renderAll();

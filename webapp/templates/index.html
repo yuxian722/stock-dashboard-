@@ -75,13 +75,19 @@
         <label style="max-width:160px">疊幾層 <input id="num_layers" type="number" value="2" min="2" max="16"></label>
         <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.4rem 0 0">
           每層的f9會自動編號1~N(最後一層＝目前層，寫入DIE_INFO；其餘各層寫入DIE_INFO_OTHER_LAYER)，不用手動填。
-          Wafer片數(下面的「跨兩片wafer」)跟疊幾層無關——不管疊幾層，選wafer座標之後都是點進哪一層的
-          BINGO MAP才決定寫入哪一層。
         </p>
       </div>
-      <label id="multi-wafer-field" style="flex-direction:row;align-items:center;gap:0.5rem;font-weight:700;margin-top:0.6rem;display:none">
-        <input type="checkbox" id="multi_wafer_enabled" style="width:auto"> 跨兩片wafer（兩片wafer都可以點選，選完座標後點哪一層的BINGO MAP就寫入哪一層）
+    </div>
+    <div class="notice" style="margin-top:0.6rem">
+      <label id="multi-wafer-field" style="flex-direction:row;align-items:center;gap:0.5rem;font-weight:700">
+        <input type="checkbox" id="multi_wafer_enabled" style="width:auto"> 跨兩片wafer（座標來源橫跨兩片實體wafer時勾選）
       </label>
+      <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.4rem 0 0">
+        跟上面「疊幾層」完全無關、不需要先勾選疊層——即使只有第1層(沒有疊層)，座標也可能要跨兩片
+        wafer才夠用(例如第一片wafer好的顆數不夠填滿，要換第二片wafer繼續選)。勾選後兩片wafer都可以
+        選取(待寫入)座標，選完點哪一層的BINGO MAP(疊層時) — 或唯一的BINGO MAP(沒疊層時) — 就寫入
+        那裡，跟座標原本是從哪片wafer選的無關。
+      </p>
     </div>
     <button id="btn-blank">產生空白骨架</button>
     <p id="blank-status"></p>
