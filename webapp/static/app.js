@@ -922,6 +922,118 @@ function renderAll() {
   renderPickTable();
   renderQtyStatus();
   renderLayerStatus();
+  saveState();
+}
+
+// ---- Persistence (2026/08/19 ask: "每個分頁在切換的時候資料不要不見" —
+// only STRATE補檔/SECS格式化參數頁 had this so far; extending the same
+// localStorage convention to this, the busiest page). renderAll() is the
+// one funnel every state-changing action on this page already runs
+// through (loadBlank/loadTemplate/clicking a wafer or substrate cell/
+// clearing staged picks/toggling multi-layer or multi-wafer/…) — hooking
+// saveState() there instead of at each of those ~20 call sites means a
+// future new mutation path can't silently forget to persist. Reference
+// files (`<input type=file multiple>`) can't be restored any more than
+// any other file input can, so — same as loadReferenceFiles() itself —
+// what's actually saved is the ALREADY-PARSED positions, not the files.
+const APP_STORAGE_KEY = "bingomap_main_state";
+const APP_FIELD_IDS = [
+  "assy_lot", "mapping_lot", "eqpid", "oper", "substrate_id", "substrate_row",
+  "substrate_column", "substrate_block", "notch", "ref", "convention", "machine_type",
+  "wafer_ring", "start_time", "interval_seconds",
+];
+
+function serializeWaferCells(cellsMap) {
+  return [...cellsMap.entries()].map(([key, bin]) => {
+    const [x, y] = key.split(",").map(Number);
+    return { x, y, bin };
+  });
+}
+
+function saveState() {
+  try {
+    const fields = {};
+    for (const id of APP_FIELD_IDS) {
+      const el = document.getElementById(id);
+      if (el) fields[id] = el.value;
+    }
+    const state = {
+      fields,
+      multiLayerEnabled,
+      numLayers,
+      multiWaferEnabled,
+      targetQty,
+      substratePositions,
+      usingTemplate,
+      skippedPositions: [...skippedPositions],
+      picksByLayer,
+      stagedPicks,
+      waferCells: waferCellsByPanel.map(serializeWaferCells),
+      refPointByPanel,
+      referenceSubstrates: referenceSubstrates.map((r) => ({ ...r, positions: [...r.positions] })),
+    };
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
+  } catch (err) {
+    // localStorage unavailable or quota exceeded — just don't persist
+  }
+}
+
+function restoreState() {
+  const raw = localStorage.getItem(APP_STORAGE_KEY);
+  if (!raw) return;
+  let saved;
+  try {
+    saved = JSON.parse(raw);
+  } catch (err) {
+    return;
+  }
+  if (!saved.substratePositions || !saved.substratePositions.length) return;
+
+  for (const id of APP_FIELD_IDS) {
+    if (saved.fields && saved.fields[id] !== undefined) {
+      const el = document.getElementById(id);
+      if (el) el.value = saved.fields[id];
+    }
+  }
+
+  multiLayerEnabled = !!saved.multiLayerEnabled;
+  numLayers = saved.numLayers || 2;
+  multiWaferEnabled = !!saved.multiWaferEnabled;
+  document.getElementById("multi_layer_enabled").checked = multiLayerEnabled;
+  document.getElementById("multi-layer-fields").style.display = multiLayerEnabled ? "" : "none";
+  document.getElementById("num_layers").value = numLayers;
+  document.getElementById("multi_wafer_enabled").checked = multiWaferEnabled;
+
+  targetQty = saved.targetQty ?? null;
+  substratePositions = saved.substratePositions;
+  substrateBounds = computeSubstrateBounds(substratePositions);
+  usingTemplate = !!saved.usingTemplate;
+  skippedPositions = new Set(saved.skippedPositions || []);
+  picksByLayer = saved.picksByLayer && saved.picksByLayer.length ? saved.picksByLayer : [[]];
+  stagedPicks = saved.stagedPicks || [];
+
+  const savedCells = saved.waferCells || [[], []];
+  waferCellsByPanel = [new Map(), new Map()];
+  waferBoundsByPanel = [null, null];
+  for (let i = 0; i < 2; i++) {
+    const { cells, bounds } = waferCellsFromApiCells(savedCells[i] || []);
+    waferCellsByPanel[i] = cells;
+    waferBoundsByPanel[i] = bounds;
+  }
+  refPointByPanel = saved.refPointByPanel || [null, null];
+
+  referenceSubstrates = (saved.referenceSubstrates || []).map((r) => ({ ...r, positions: new Set(r.positions) }));
+
+  focusedSubstratePosByLayer = Array.from({ length: effectiveNumLayers() }, () => null);
+  focusedWaferXYByLayer = Array.from({ length: effectiveNumLayers() }, () => null);
+
+  rebuildLayerUi();
+  renderReferenceLegend();
+  document.getElementById("btn-clear-references").style.display = referenceSubstrates.length ? "" : "none";
+  renderAll();
+
+  document.getElementById("blank-status").textContent = `已還原上次的資料：共 ${substratePositions.length} 個基板位置。`;
+  setStepFlow(4, { done: [1, 2, 3] });
 }
 
 // ---- Floating tooltip -------------------------------------------------
@@ -1214,3 +1326,4 @@ document.getElementById("btn-apply-effective-qty").addEventListener("click", () 
 setSkipMode(false);
 rebuildLayerUi();
 renderQtyStatus();
+restoreState();

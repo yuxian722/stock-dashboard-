@@ -60,6 +60,7 @@ async function analyze() {
   renderWaferGrid(data.scatter);
   renderCrackTable(data.crack_table);
   document.getElementById("ck-btn-download-csv").style.display = data.crack_table.length ? "" : "none";
+  saveState();
 }
 
 function renderDocSelect(data) {
@@ -234,10 +235,12 @@ document.getElementById("ck-btn-reset").addEventListener("click", () => {
   document.getElementById("ck-wafer-info").textContent = "";
   document.getElementById("ck-table-wrap").innerHTML = "";
   document.getElementById("ck-btn-download-csv").style.display = "none";
+  clearState();
 });
 document.getElementById("ck_doc_select").addEventListener("change", (e) => {
   currentDocIndex = Number(e.target.value);
   if (lastData) renderStripGrid(lastData.docs[currentDocIndex]);
+  saveState();
 });
 document.getElementById("ck_wafer_select").addEventListener("change", (e) => {
   focusWaferId = e.target.value;
@@ -262,3 +265,59 @@ document.getElementById("ck_machine_type").addEventListener("change", () => {
   if (strateFiles.length) analyze(); // re-derive everything under the new machine_type
 });
 updateEsecWarning();
+
+// ---- Persistence (2026/08/19 ask: "每個分頁在切換的時候資料不要不見" —
+// only STRATE補檔/SECS格式化參數頁 had this so far; extending the same
+// localStorage convention here). .strate files are plain text (unlike the
+// STRATE補檔頁's UTF-16LE SECS log), so the raw file content itself is
+// stored directly, no base64/re-parse-on-server round trip needed —
+// analyze() already re-derives everything else from strateFiles+
+// markedKeys+focusWaferId+currentDocIndex. ----
+const CK_STORAGE_KEY = "bingomap_crack_state";
+
+function saveState() {
+  try {
+    localStorage.setItem(
+      CK_STORAGE_KEY,
+      JSON.stringify({
+        strateFiles,
+        markedKeys,
+        focusWaferId,
+        currentDocIndex,
+        machineType: document.getElementById("ck_machine_type").value,
+      })
+    );
+  } catch (err) {
+    // localStorage unavailable or quota exceeded — just don't persist
+  }
+}
+
+function clearState() {
+  try {
+    localStorage.removeItem(CK_STORAGE_KEY);
+  } catch (err) {
+    // ignore
+  }
+}
+
+function restoreState() {
+  const raw = localStorage.getItem(CK_STORAGE_KEY);
+  if (!raw) return;
+  let saved;
+  try {
+    saved = JSON.parse(raw);
+  } catch (err) {
+    return;
+  }
+  if (!saved.strateFiles || !saved.strateFiles.length) return;
+
+  strateFiles = saved.strateFiles;
+  markedKeys = saved.markedKeys || [];
+  focusWaferId = saved.focusWaferId || null;
+  currentDocIndex = saved.currentDocIndex || 0;
+  if (saved.machineType) document.getElementById("ck_machine_type").value = saved.machineType;
+  updateEsecWarning();
+  analyze();
+}
+
+restoreState();

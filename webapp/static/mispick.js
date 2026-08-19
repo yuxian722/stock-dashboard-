@@ -1,4 +1,11 @@
 let lastCsv = null;
+// Kept so nudge buttons (which re-run analyze() without the user touching
+// the file input again) and a restored session both keep working — a
+// plain <input type=file> can never be re-populated by JS after a page
+// reload (browser security), so the actual file CONTENTS are cached here
+// instead the first time they're read, and reused whenever the input
+// itself is empty. See analyze()'s file-reading block below.
+let lastStrateFiles = [];
 
 // ---- Visual grids (added 2026/08/18: user asked to see the actual wafer
 // MAP here too, not just a table — and to have force-delete positions
@@ -210,14 +217,19 @@ async function analyze() {
   lastCsv = null;
 
   const files = [...(document.getElementById("mp_strate_files").files || [])];
-  if (!files.length) {
+  let strateFiles;
+  if (files.length) {
+    strateFiles = [];
+    for (const f of files) {
+      strateFiles.push({ name: f.name, text: await f.text() });
+    }
+    lastStrateFiles = strateFiles;
+  } else if (lastStrateFiles.length) {
+    strateFiles = lastStrateFiles; // nudge button, or a restored session — see the comment at lastStrateFiles' declaration
+  } else {
     status.className = "error";
     status.textContent = "請至少選擇一份STRATE檔案";
     return;
-  }
-  const strateFiles = [];
-  for (const f of files) {
-    strateFiles.push({ name: f.name, text: await f.text() });
   }
 
   const payload = {
@@ -254,6 +266,7 @@ async function analyze() {
   updateOffsetDisplay();
   status.className = "ok";
   status.textContent = `分析完成，共 ${data.substrates.length} 份STRATE。`;
+  saveState();
 }
 
 function downloadCsv() {
@@ -316,3 +329,48 @@ document.getElementById("mp-btn-nudge-left").addEventListener("click", () => nud
 document.getElementById("mp-btn-nudge-right").addEventListener("click", () => nudgeOffset("X", 1));
 updateEsecWarning();
 updateOffsetDisplay();
+
+// ---- Persistence (2026/08/19 ask: "每個分頁在切換的時候資料不要不見" —
+// only STRATE補檔/SECS格式化參數頁 had this so far; extending the same
+// localStorage convention here). Saves the already-read STRATE file
+// contents (lastStrateFiles) plus every form field; a restored session
+// re-runs analyze() against them rather than re-deriving results
+// client-side, same principle as the other pages' restoreState(). ----
+const MP_STORAGE_KEY = "bingomap_mispick_state";
+const MP_FIELD_IDS = [
+  "mp_frm_lot_no", "mp_frm_barcode_id", "mp_frm_path", "mp_wafer_ring",
+  "mp_machine_type", "mp_offset_axis", "mp_offset_value",
+  "mp_good_bins", "mp_ng_bins", "mp_review_bins",
+];
+
+function saveState() {
+  try {
+    const fields = {};
+    for (const id of MP_FIELD_IDS) fields[id] = document.getElementById(id).value;
+    localStorage.setItem(MP_STORAGE_KEY, JSON.stringify({ strateFiles: lastStrateFiles, fields }));
+  } catch (err) {
+    // localStorage unavailable or quota exceeded — just don't persist
+  }
+}
+
+function restoreState() {
+  const raw = localStorage.getItem(MP_STORAGE_KEY);
+  if (!raw) return;
+  let saved;
+  try {
+    saved = JSON.parse(raw);
+  } catch (err) {
+    return;
+  }
+  if (!saved.strateFiles || !saved.strateFiles.length) return;
+
+  lastStrateFiles = saved.strateFiles;
+  for (const id of MP_FIELD_IDS) {
+    if (saved.fields && saved.fields[id] !== undefined) document.getElementById(id).value = saved.fields[id];
+  }
+  updateEsecWarning();
+  updateOffsetDisplay();
+  analyze();
+}
+
+restoreState();
