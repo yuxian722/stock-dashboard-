@@ -41,54 +41,69 @@ const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style
 // positions: Set("x,y")}] — already-assigned colors/letters for the
 // substrates that came from this same wafer (matched by wafer_ring ===
 // frame_id in renderWaferMaps()).
+// 2026/08/18: the user reported a batch of substrates' overlaid positions
+// rendering outside the wafer's visible boundary and suspected an axis
+// mix-up — pointed back at the real .frm-file convention as "the correct
+// one" to follow. Checked: the FRM tool's own status bar (see the T點
+// investigation in the main page) confirms COL is the HORIZONTAL axis,
+// ROW is VERTICAL — but bingomap/secs_log.py's wafer_map_from_element()
+// stores cells keyed by DIE_INFO's own "X:Y" labels directly (x = row
+// index 0..RowCount-1, y = column-position-within-row 0..ColCount-1, see
+// its own module docstring) — DIE_INFO's "X" and "Y" labels do NOT line
+// up with which axis is horizontal vs vertical on screen. This function
+// must render whichever field actually has ColCount's cardinality (y,
+// here) horizontally and RowCount's cardinality (x) vertically — NOT
+// just "x horizontal" by name, or the whole picture renders rotated 90°
+// with overlay dots landing in the (real, populated-shape-shaped) blank
+// corners of that rotated rectangle, exactly matching what was reported.
 function renderWaferGrid(containerId, wm, matchedSubstrates) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
   if (!wm.cells.length) return;
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
-  const xs = wm.cells.map((c) => c.x);
-  const ys = wm.cells.map((c) => c.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const rowVals = wm.cells.map((c) => c.x); // RowCount-sized axis -> vertical
+  const colVals = wm.cells.map((c) => c.y); // ColCount-sized axis -> horizontal
+  const minRow = Math.min(...rowVals), maxRow = Math.max(...rowVals);
+  const minCol = Math.min(...colVals), maxCol = Math.max(...colVals);
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let x = maxX; x >= minX; x--) {
+  for (let col = maxCol; col >= minCol; col--) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
-    label.textContent = x;
+    label.textContent = col;
     headerRow.appendChild(label);
   }
   container.appendChild(headerRow);
 
-  for (let y = minY; y <= maxY; y++) {
-    const row = document.createElement("div");
-    row.className = "wafer-row";
+  for (let row = minRow; row <= maxRow; row++) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
-    rowLabel.textContent = y;
-    row.appendChild(rowLabel);
-    for (let x = maxX; x >= minX; x--) {
-      const bin = cellMap.get(`${x},${y}`);
+    rowLabel.textContent = row;
+    rowEl.appendChild(rowLabel);
+    for (let col = maxCol; col >= minCol; col--) {
+      const bin = cellMap.get(`${row},${col}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell " + cellClass(bin);
-      const key = `${x},${y}`;
+      const key = `${row},${col}`;
       const owner = matchedSubstrates.find((s) => s.positions.has(key));
       if (owner) {
         cell.classList.add("referenced");
         cell.style.setProperty("--ref-color", owner.color);
         cell.textContent = owner.label;
-        cell.title = `${x}:${y} — 基板「${owner.name}」`;
+        cell.title = `${row}:${col} — 基板「${owner.name}」`;
       } else {
-        cell.title = `${x}:${y}`;
+        cell.title = `${row}:${col}`;
       }
-      row.appendChild(cell);
+      rowEl.appendChild(cell);
     }
-    container.appendChild(row);
+    container.appendChild(rowEl);
   }
 }
 
@@ -223,9 +238,65 @@ async function extractLog() {
 
   renderSubstrates(data.substrates);
   renderWaferMaps(data.wafer_maps, data.substrates);
+  saveState(file.name, lastLogBase64, data);
 
   status.className = "ok";
   status.textContent = `解析完成：共找到 ${data.substrates.length} 筆基板資料、${data.wafer_maps.length} 筆wafer bin map資料。`;
+}
+
+// ---- Persistence (2026/08/18 ask: "我切換分頁的時候檔案不要不見") ----
+// This is a plain multi-page app (each nav tab is a full page load, not
+// an SPA) — navigating away and back always re-runs this script from
+// scratch. Since the actual File the user picked can't be restored (the
+// browser won't let a page re-populate a file input for security
+// reasons), what's saved instead is the EXTRACTED RESULT (small — mostly
+// text — even for the real 29-substrate/10-wafer log) so the page can
+// redraw itself immediately without asking for a re-upload. The raw log
+// itself (base64, potentially several MB) is saved too on a best-effort
+// basis so "全部下載(.zip)" keeps working after a restore — if it doesn't
+// fit under localStorage's quota, everything else still restores, only
+// the zip button then needs a fresh upload (explained in the status
+// text). localStorage (not sessionStorage) so a reload or coming back
+// tomorrow still finds it, not just a same-session tab switch.
+const SX_STORAGE_RESULT = "bingomap_strate_xml_result";
+const SX_STORAGE_LOG = "bingomap_strate_xml_log_base64";
+const SX_STORAGE_FILENAME = "bingomap_strate_xml_filename";
+
+function saveState(filename, logBase64, data) {
+  try {
+    localStorage.setItem(SX_STORAGE_RESULT, JSON.stringify(data));
+    localStorage.setItem(SX_STORAGE_FILENAME, filename);
+  } catch (err) {
+    return; // localStorage unavailable entirely (private mode etc.) — just don't persist
+  }
+  try {
+    localStorage.setItem(SX_STORAGE_LOG, logBase64);
+  } catch (err) {
+    localStorage.removeItem(SX_STORAGE_LOG); // too large for quota — drop it, keep the rest
+  }
+}
+
+function restoreState() {
+  const raw = localStorage.getItem(SX_STORAGE_RESULT);
+  if (!raw) return;
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    return;
+  }
+  lastLogBase64 = localStorage.getItem(SX_STORAGE_LOG); // may be null — see saveState()
+  const filename = localStorage.getItem(SX_STORAGE_FILENAME) || "";
+
+  renderSubstrates(data.substrates);
+  renderWaferMaps(data.wafer_maps, data.substrates);
+
+  const status = document.getElementById("sx-status");
+  status.className = "ok";
+  const zipNote = lastLogBase64 ? "" : "（檔案內容太大沒能一起保留，「全部下載zip」要重新選一次同一個log檔案才能用）";
+  status.textContent =
+    `已還原上次解析過的結果${filename ? `（${filename}）` : ""}：共 ${data.substrates.length} 筆基板資料、` +
+    `${data.wafer_maps.length} 筆wafer bin map資料。${zipNote}`;
 }
 
 async function downloadZip() {
@@ -259,3 +330,4 @@ async function downloadZip() {
 
 document.getElementById("sx-btn-extract").addEventListener("click", extractLog);
 document.getElementById("sx-btn-download-zip").addEventListener("click", downloadZip);
+restoreState();
