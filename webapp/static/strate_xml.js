@@ -42,68 +42,72 @@ const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style
 // substrates that came from this same wafer (matched by wafer_ring ===
 // frame_id in renderWaferMaps()).
 // 2026/08/18: the user reported a batch of substrates' overlaid positions
-// rendering outside the wafer's visible boundary and suspected an axis
-// mix-up — pointed back at the real .frm-file convention as "the correct
-// one" to follow. Checked: the FRM tool's own status bar (see the T點
-// investigation in the main page) confirms COL is the HORIZONTAL axis,
-// ROW is VERTICAL — but bingomap/secs_log.py's wafer_map_from_element()
-// stores cells keyed by DIE_INFO's own "X:Y" labels directly (x = row
-// index 0..RowCount-1, y = column-position-within-row 0..ColCount-1, see
-// its own module docstring) — DIE_INFO's "X" and "Y" labels do NOT line
-// up with which axis is horizontal vs vertical on screen. This function
-// must render whichever field actually has ColCount's cardinality (y,
-// here) horizontally and RowCount's cardinality (x) vertically — NOT
-// just "x horizontal" by name, or the whole picture renders rotated 90°
-// with overlay dots landing in the (real, populated-shape-shaped) blank
-// corners of that rotated rectangle, exactly matching what was reported.
+// rendering outside the wafer's visible boundary. First guess (WRONG,
+// reverted): assumed the SECS log's own ColCount/RowCount field NAMES
+// line up with WaferCoordinate.exe's own "COL"/"ROW" status-bar fields
+// the same way they do for real .frm files, and swapped this function to
+// render ColCount's axis horizontally — that assumption doesn't hold: a
+// real WaferCoordinate.exe screenshot of this exact wafer (layout EU014,
+// barcode FC2643) shows "COL 24 ROW 46", the OPPOSITE of the SECS log's
+// own <ColCount>46</ColCount>/<RowCount>24</RowCount> for the same wafer
+// — i.e. the two systems' field names for "column count" vs "row count"
+// are swapped relative to each other, not consistent. DIE_INFO's own "X"
+// field (0..23, 24 values) matches WaferCoordinate.exe's real COL=24,
+// and DIE_INFO's "Y" (0..45, 46 values) matches its real ROW=46 — so
+// DIE_INFO's X/Y labels DO line up directly with WaferCoordinate.exe's
+// own X(直/行)/Y(橫/列) axes (consistent with DB being an identity
+// mapping, no transform) — rendering DIE_INFO's X horizontally and Y
+// vertically (the ORIGINAL, pre-"fix" code) was correct all along. Root
+// cause of the reported bug is still open — see bingomap/secs_log.py /
+// webapp/README.md's running notes; it wasn't this rotation.
 function renderWaferGrid(containerId, wm, matchedSubstrates) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
   if (!wm.cells.length) return;
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
-  const rowVals = wm.cells.map((c) => c.x); // RowCount-sized axis -> vertical
-  const colVals = wm.cells.map((c) => c.y); // ColCount-sized axis -> horizontal
-  const minRow = Math.min(...rowVals), maxRow = Math.max(...rowVals);
-  const minCol = Math.min(...colVals), maxCol = Math.max(...colVals);
+  const xs = wm.cells.map((c) => c.x);
+  const ys = wm.cells.map((c) => c.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let col = maxCol; col >= minCol; col--) {
+  for (let x = maxX; x >= minX; x--) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
-    label.textContent = col;
+    label.textContent = x;
     headerRow.appendChild(label);
   }
   container.appendChild(headerRow);
 
-  for (let row = minRow; row <= maxRow; row++) {
-    const rowEl = document.createElement("div");
-    rowEl.className = "wafer-row";
+  for (let y = minY; y <= maxY; y++) {
+    const row = document.createElement("div");
+    row.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
-    rowLabel.textContent = row;
-    rowEl.appendChild(rowLabel);
-    for (let col = maxCol; col >= minCol; col--) {
-      const bin = cellMap.get(`${row},${col}`);
+    rowLabel.textContent = y;
+    row.appendChild(rowLabel);
+    for (let x = maxX; x >= minX; x--) {
+      const bin = cellMap.get(`${x},${y}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell " + cellClass(bin);
-      const key = `${row},${col}`;
+      const key = `${x},${y}`;
       const owner = matchedSubstrates.find((s) => s.positions.has(key));
       if (owner) {
         cell.classList.add("referenced");
         cell.style.setProperty("--ref-color", owner.color);
         cell.textContent = owner.label;
-        cell.title = `${row}:${col} — 基板「${owner.name}」`;
+        cell.title = `${x}:${y} — 基板「${owner.name}」`;
       } else {
-        cell.title = `${row}:${col}`;
+        cell.title = `${x}:${y}`;
       }
-      rowEl.appendChild(cell);
+      row.appendChild(cell);
     }
-    container.appendChild(rowEl);
+    container.appendChild(row);
   }
 }
 

@@ -296,19 +296,28 @@ wafer圖檔的資料」。跟前三頁完全不同的地方：**不需要重新�
    log原始內容(base64)也盡量一起存，讓「全部下載zip」能繼續用；但真實log可能有幾MB，超過
    `localStorage`容量上限時就只保留解析結果，跳出提示「zip要重新選一次同一個log檔案才能用」——不是
    靜默失敗。
-2. **修正wafer bin map疊圖的座標軸方向(90度轉錯)**：使用者回報「有一批strate檔案跑出來的座標超出
-   wafer外圍」，懷疑角度轉向錯誤，並提示應該比照原本`.frm`檔案(`bingomap/frm_reader.py`)那一套已經
-   驗證過的方向。查證：真實.frm檔案的慣例是**COL(欄數)＝水平軸、ROW(列數)＝垂直軸**(T點調查時從
-   WaferCoordinate.exe狀態列的「COL/ROW」欄位驗證過)。但`secs_log.py`的`wafer_map_from_element()`
-   是直接照DIE_INFO自己的`wafer_xy`「X:Y」欄位命名存成`cells[(x,y)]`——而這份log裡DIE_INFO的X欄位
-   實際數值範圍對得上`RowCount`(垂直軸應該的大小)，Y欄位對得上`ColCount`(水平軸應該的大小)，
-   跟FRM慣例的x=col/y=row欄位命名剛好相反。前端`renderWaferGrid()`原本直接把DIE_INFO的「x」畫成
-   水平軸，等於整張圖轉了90度——圖本身因為資料本身有對稱性，看起來還是像個wafer形狀，不容易發現，
-   但基板疊圖的位置跟著整張圖一起轉了90度，於是疊圖疊到（轉過90度後）矩形邊界內、但wafer實際形狀
-   外的空白角落，就是使用者看到的「超出wafer外圍」。已修正：改成畫「數值範圍對得上ColCount的那個
-   欄位」水平、「對得上RowCount的那個」垂直，不是直接按DIE_INFO的X/Y欄位名稱來畫。這是純畫面呈現
-   的修正，`.strate`檔案輸出本身(`wafer_xy`欄位)完全沒有被這個bug影響，一直都是log裡的原始值，
-   沒有經過任何轉換。
+2. **wafer bin map疊圖的座標軸方向——猜錯又改回來，過程記下來避免重蹈覆轍**：使用者回報「有一批
+   strate檔案跑出來的座標超出wafer外圍」，懷疑角度轉向錯誤，並提示應該比照原本`.frm`檔案
+   (`bingomap/frm_reader.py`)那一套已經驗證過的方向。
+   - **第一次猜(錯)**：以為真實`.frm`檔案的「COL＝水平軸、ROW＝垂直軸」這個命名規則，可以直接套用到
+     SECS log自己的`<ColCount>`/`<RowCount>`欄位上——改成把「數值範圍對得上ColCount的欄位」畫成水平
+     軸。**結果使用者傳了一張WaferCoordinate.exe的真實截圖(layout EU014、barcode FC2643)**，狀態列
+     明白寫著「COL 24 ROW 46」——這片wafer的SECS log自己是`<ColCount>46</ColCount>
+     <RowCount>24</RowCount>`，剛好完全相反！也就是說**SECS log裡「ColCount」這個XML欄位名稱，
+     跟WaferCoordinate.exe自己畫面上的「COL」不是同一件事**，兩個系統對「欄/列」的命名剛好對調，
+     不能直接假設欄位名稱一致就套用。
+   - **修正**：DIE_INFO自己的`wafer_xy`「X:Y」欄位，數值範圍剛好直接對得上WaferCoordinate.exe真實的
+     COL=24(X欄位0~23)、ROW=46(Y欄位0~45)——也就是說DIE_INFO的X/Y標籤其實跟WaferCoordinate.exe自己
+     的X(直/行)/Y(橫/列)是**直接對應、不需要轉換**的(這也符合DB機型本來就是identity的既有結論)。
+     `renderWaferGrid()`已經改回原本「DIE_INFO的X畫水平、Y畫垂直」的寫法(24寬x46高，直向的蛋形)，
+     跟WaferCoordinate.exe真實截圖的形狀吻合。
+   - 「超出wafer外圍」這個症狀的真正原因目前還沒有定論(比對真實資料發現整體吻合率仍有94~96%、只有
+     少數幾顆die落在wafer範圍外，不是整批性的問題)——如果之後還有發現，麻煩附截圖具體指出是哪份
+     檔案/哪個位置，比較好排查。
+   - 這整個過程都只影響前端的**畫面呈現**，`.strate`檔案輸出本身(`wafer_xy`欄位)完全沒被動過，
+     一直都是log裡的原始值，沒有經過任何轉換——已經用使用者提供的真實`.strate`參考檔案
+     (`2070_V30EUC6_Z25709007096_20260801024007.strate`)逐行byte-for-byte比對驗證過完全一致
+     (56顆DIE_INFO + 168顆DIE_INFO_OTHER_LAYER + 全部header欄位)。
 
 ## 尚未做的
 
