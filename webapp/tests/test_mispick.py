@@ -184,6 +184,12 @@ def test_analyze_returns_wafer_cells_and_substrate_grid_cells(client, frm_root):
     assert wafer["rows"] == 5
     assert len(wafer["cells"]) == 25  # full 5x5 synthetic wafer map
     assert {"x": 2, "y": 2, "bin": "7"} in wafer["cells"]
+    # T點 fields (2026/08/19 ask: "誤吸的圖檔沒有顯示T點") — same
+    # reference_point_x/y the main page's /api/frm already returns, now
+    # also on this endpoint's wafer dict so the mispick page can draw the
+    # same T點 marker. _build_format_i() above hardcodes both to 0.
+    assert wafer["reference_point_x"] == 0
+    assert wafer["reference_point_y"] == 0
 
     sub = data["substrates"][0]
     assert sub["substrate_column"] == 3

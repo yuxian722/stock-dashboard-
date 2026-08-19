@@ -62,8 +62,6 @@ function renderWaferGrid(wafer) {
     return;
   }
   panel.style.display = "";
-  document.getElementById("mp-wafer-info").textContent =
-    `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
   lastWaferPasteText = wafer.cells
     .slice()
     .sort((a, b) => a.x - b.x || a.y - b.y)
@@ -77,6 +75,22 @@ function renderWaferGrid(wafer) {
   const ys = wafer.cells.map((c) => c.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+  // T點 (2026/08/19 ask: "誤吸的圖檔沒有顯示T點 要補充出來這樣我才知道
+  // 移動的位置在哪裡") — same formula/convention as app.js's own T點
+  // (see that file's refPointByPanel comment for the full derivation
+  // history): an offset from the wafer's horizontal center by
+  // reference_point_x cells, fixed on row 0. Only drawable when the wafer
+  // came from an FRM read (reference_point_x present) — manually-pasted
+  // "x,y,bin" text has no header to compute this from.
+  const refPoint =
+    wafer.columns && wafer.reference_point_x !== undefined
+      ? { x: Math.floor(wafer.columns / 2) - wafer.reference_point_x, y: 0 }
+      : null;
+  document.getElementById("mp-wafer-tpoint-legend").style.display = refPoint ? "" : "none";
+  const refNote = refPoint ? `　T點＝${refPoint.x}:${refPoint.y}（wafer圖上用斜紋標示）` : "";
+  document.getElementById("mp-wafer-info").textContent =
+    `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）${refNote}`;
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
@@ -104,6 +118,11 @@ function renderWaferGrid(wafer) {
       cell.className = "wafer-cell";
       applyBinColor(cell, bin);
       cell.title = `${x}:${y}`;
+      if (refPoint && refPoint.x === x && refPoint.y === y) {
+        cell.classList.add("ref-point");
+        cell.textContent = "T";
+        cell.title = `${x}:${y} — T點`;
+      }
       row.appendChild(cell);
     }
     container.appendChild(row);

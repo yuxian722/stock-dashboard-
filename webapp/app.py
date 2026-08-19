@@ -527,6 +527,8 @@ def api_mispick_analyze():
                 "rows": frm.row,
                 "lot_no": frm.lot_no,
                 "wafer_id": frm.wafer_id,
+                "reference_point_x": frm.reference_point_x,
+                "reference_point_y": frm.reference_point_y,
                 "cells": [{"x": x, "y": y, "bin": str(bin_kind)} for (x, y), bin_kind in frm.die_map.items()],
             },
             "substrates": substrates_out,
