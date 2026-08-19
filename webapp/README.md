@@ -296,22 +296,28 @@ wafer圖檔的資料」。跟前三頁完全不同的地方：**不需要重新�
    log原始內容(base64)也盡量一起存，讓「全部下載zip」能繼續用；但真實log可能有幾MB，超過
    `localStorage`容量上限時就只保留解析結果，跳出提示「zip要重新選一次同一個log檔案才能用」——不是
    靜默失敗。
-2. **wafer bin map疊圖的座標軸方向——猜錯又改回來，過程記下來避免重蹈覆轍**：使用者回報「有一批
+2. **wafer bin map疊圖的座標軸方向——來回猜了兩次，過程記下來避免重蹈覆轍**：使用者回報「有一批
    strate檔案跑出來的座標超出wafer外圍」，懷疑角度轉向錯誤，並提示應該比照原本`.frm`檔案
-   (`bingomap/frm_reader.py`)那一套已經驗證過的方向。
-   - **第一次猜(錯)**：以為真實`.frm`檔案的「COL＝水平軸、ROW＝垂直軸」這個命名規則，可以直接套用到
-     SECS log自己的`<ColCount>`/`<RowCount>`欄位上——改成把「數值範圍對得上ColCount的欄位」畫成水平
-     軸。**結果使用者傳了一張WaferCoordinate.exe的真實截圖(layout EU014、barcode FC2643)**，狀態列
-     明白寫著「COL 24 ROW 46」——這片wafer的SECS log自己是`<ColCount>46</ColCount>
-     <RowCount>24</RowCount>`，剛好完全相反！也就是說**SECS log裡「ColCount」這個XML欄位名稱，
-     跟WaferCoordinate.exe自己畫面上的「COL」不是同一件事**，兩個系統對「欄/列」的命名剛好對調，
-     不能直接假設欄位名稱一致就套用。
-   - **修正**：DIE_INFO自己的`wafer_xy`「X:Y」欄位，數值範圍剛好直接對得上WaferCoordinate.exe真實的
-     COL=24(X欄位0~23)、ROW=46(Y欄位0~45)——也就是說DIE_INFO的X/Y標籤其實跟WaferCoordinate.exe自己
-     的X(直/行)/Y(橫/列)是**直接對應、不需要轉換**的(這也符合DB機型本來就是identity的既有結論)。
-     `renderWaferGrid()`已經改回原本「DIE_INFO的X畫水平、Y畫垂直」的寫法(24寬x46高，直向的蛋形)，
-     跟WaferCoordinate.exe真實截圖的形狀吻合。
-   - 「超出wafer外圍」這個症狀的真正原因目前還沒有定論(比對真實資料發現整體吻合率仍有94~96%、只有
+   (`bingomap/frm_reader.py`，這整個專案的命名由來)那一套已經驗證過的方向。
+   - **第一次猜**：以為真實`.frm`檔案的「COL＝水平軸、ROW＝垂直軸」規則，可以直接套用到SECS log自己
+     的`<ColCount>`/`<RowCount>`欄位上——改成把「數值範圍對得上ColCount的欄位」畫成水平軸。
+   - **一度以為猜錯、改回去**：使用者傳了一張**「2 目視檢查」**這個檢視工具的真實截圖(layout EU014、
+     barcode FC2643)，狀態列寫著「COL 24 ROW 46」，跟SECS log自己的`ColCount=46/RowCount=24`剛好
+     相反，一度改回DIE_INFO原始X/Y欄位方向。
+   - **後來確認第一次猜對了**：使用者又傳了第二張截圖，裡面**同時開著另一個真實工具「WaferCoordinate」
+     (不是「目視檢查」，是這個專案真正對照、`frm_reader.py`反編譯的那個程式本尊)**——它自己的
+     「Size: Columns=46, Rows=24」跟畫面本身呈現的wafer圖形狀(46寬x24高，橫向)，跟第一次猜的方向
+     完全一致。「目視檢查」是另一個獨立的檢視工具，方向本來就跟WaferCoordinate自己不一樣，不該拿它
+     的COL/ROW來對照——這才是問題所在，不是SECS log的欄位命名本身有問題。最終結論：`ColCount`對應的
+     那個欄位(DIE_INFO自己的`Y`)畫水平軸，`RowCount`對應的欄位(`X`)畫垂直軸，跟第一次猜的一樣。
+   - **T點**：這份log沒有記錄T點資料(`WaferStart`的`T2_POINT`欄位永遠是`NA`)。使用者從「WaferCoordinate」
+     工具自己的「position」欄位讀出T點在該工具座標系(1起算，Columns=46/Rows=24)是`(46, 15)`，換算成
+     DIE_INFO的0起算座標(欄位互換、扣1)後是`(X=14, Y=45)`，比對FC2643真實die資料，那個位置剛好是一顆
+     落在wafer邊緣的真實die——使用者已確認正確，`renderWaferGrid()`裡用`SECS_T_POINT`常數畫出斜紋
+     標示。**這個值目前只驗證過FC2643這一片，假設整份log共用同一個layout所以套用到全部10片wafer**
+     (跟主頁面AW191那次的`reference_point_x`一樣，屬於layout層級常數，不是每片wafer各自不同)——如果
+     在別片wafer上看起來對不上，麻煩直接回報。
+   - 「超出wafer外圍」這個症狀本身的確切成因還沒有100%定論(比對真實資料發現整體吻合率94~96%、只有
      少數幾顆die落在wafer範圍外，不是整批性的問題)——如果之後還有發現，麻煩附截圖具體指出是哪份
      檔案/哪個位置，比較好排查。
    - 這整個過程都只影響前端的**畫面呈現**，`.strate`檔案輸出本身(`wafer_xy`欄位)完全沒被動過，

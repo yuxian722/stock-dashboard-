@@ -36,78 +36,100 @@ function cellClass(bin) {
 
 const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style.css
 
+// T點 for this log's own layout (EU014). Not derivable from the log
+// itself (WaferStart's T2_POINT is always "NA" here) — confirmed
+// 2026/08/19 against a real screenshot of the actual "WaferCoordinate"
+// tool (this project's whole namesake, decompiled in frm_reader.py — NOT
+// the separate "目視檢查" viewer, whose own COL/ROW convention turned out
+// to be rotated 90° relative to WaferCoordinate's) for wafer FC2643:
+// its own "position" readout showed X:46, Y:15 (1-based, out of its own
+// Columns=46/Rows=24) while hovering the T點 mark. Converted to 0-based
+// DIE_INFO coordinates (col-axis 46→45, row-axis 15→14, then mapped onto
+// DIE_INFO's own X=row-axis/Y=col-axis labels — see renderWaferGrid's
+// axis-orientation comment) that's (X=14, Y=45) — checked against
+// FC2643's real bin data: a populated die sits right there, at the edge
+// of the wafer, consistent with a registration mark. User-confirmed
+// correct. Only verified for this one wafer; assumed constant across the
+// whole log since every wafer here shares the EU014 layout (same
+// reasoning as the main page's AW191 T點: the FRM/log analogue,
+// reference_point_x/y, was a per-LAYOUT constant there too) — flag it if
+// it turns out wrong on a different wafer.
+const SECS_T_POINT = { x: 14, y: 45 };
+
 // containerId: element to render the grid into. wm: one wafer_maps entry
 // (columns/rows/cells). matchedSubstrates: [{label, color, name,
 // positions: Set("x,y")}] — already-assigned colors/letters for the
 // substrates that came from this same wafer (matched by wafer_ring ===
 // frame_id in renderWaferMaps()).
-// 2026/08/18: the user reported a batch of substrates' overlaid positions
-// rendering outside the wafer's visible boundary. First guess (WRONG,
-// reverted): assumed the SECS log's own ColCount/RowCount field NAMES
-// line up with WaferCoordinate.exe's own "COL"/"ROW" status-bar fields
-// the same way they do for real .frm files, and swapped this function to
-// render ColCount's axis horizontally — that assumption doesn't hold: a
-// real WaferCoordinate.exe screenshot of this exact wafer (layout EU014,
-// barcode FC2643) shows "COL 24 ROW 46", the OPPOSITE of the SECS log's
-// own <ColCount>46</ColCount>/<RowCount>24</RowCount> for the same wafer
-// — i.e. the two systems' field names for "column count" vs "row count"
-// are swapped relative to each other, not consistent. DIE_INFO's own "X"
-// field (0..23, 24 values) matches WaferCoordinate.exe's real COL=24,
-// and DIE_INFO's "Y" (0..45, 46 values) matches its real ROW=46 — so
-// DIE_INFO's X/Y labels DO line up directly with WaferCoordinate.exe's
-// own X(直/行)/Y(橫/列) axes (consistent with DB being an identity
-// mapping, no transform) — rendering DIE_INFO's X horizontally and Y
-// vertically (the ORIGINAL, pre-"fix" code) was correct all along. Root
-// cause of the reported bug is still open — see bingomap/secs_log.py /
-// webapp/README.md's running notes; it wasn't this rotation.
+// 2026/08/18-19: the user reported substrates' overlaid positions
+// rendering outside the wafer's visible boundary and pointed at needing
+// to match "the wafer coordinate file"'s own orientation. Took two tries:
+// first guessed ColCount's axis should be horizontal (matching real .frm
+// files' own COL=horizontal convention) — a real "目視檢查" viewer
+// screenshot of this wafer (EU014/FC2643) showed "COL 24 ROW 46",
+// seemingly the opposite, so that got reverted back to DIE_INFO's raw
+// X horizontal / Y vertical. Then the user sent ANOTHER screenshot with
+// a second real tool open side by side — literally "WaferCoordinate"
+// itself (not "目視檢查") — showing "Columns: 46, Rows: 24" AND its own
+// wafer image rendered landscape (46 wide, 24 tall), matching the FIRST
+// guess after all. "目視檢查" is a different, separately-oriented viewer
+// — not the tool this whole project (frm_reader.py's own docstring) was
+// built to match, so its COL/ROW shouldn't have been trusted over
+// WaferCoordinate's own. Final: ColCount's axis (DIE_INFO's own "y"
+// field, 0..45) horizontal, RowCount's axis ("x", 0..23) vertical.
 function renderWaferGrid(containerId, wm, matchedSubstrates) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
   if (!wm.cells.length) return;
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
-  const xs = wm.cells.map((c) => c.x);
-  const ys = wm.cells.map((c) => c.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const rowVals = wm.cells.map((c) => c.x); // RowCount-sized axis -> vertical
+  const colVals = wm.cells.map((c) => c.y); // ColCount-sized axis -> horizontal
+  const minRow = Math.min(...rowVals), maxRow = Math.max(...rowVals);
+  const minCol = Math.min(...colVals), maxCol = Math.max(...colVals);
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let x = maxX; x >= minX; x--) {
+  for (let col = maxCol; col >= minCol; col--) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
-    label.textContent = x;
+    label.textContent = col;
     headerRow.appendChild(label);
   }
   container.appendChild(headerRow);
 
-  for (let y = minY; y <= maxY; y++) {
-    const row = document.createElement("div");
-    row.className = "wafer-row";
+  for (let row = minRow; row <= maxRow; row++) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
-    rowLabel.textContent = y;
-    row.appendChild(rowLabel);
-    for (let x = maxX; x >= minX; x--) {
-      const bin = cellMap.get(`${x},${y}`);
+    rowLabel.textContent = row;
+    rowEl.appendChild(rowLabel);
+    for (let col = maxCol; col >= minCol; col--) {
+      const bin = cellMap.get(`${row},${col}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell " + cellClass(bin);
-      const key = `${x},${y}`;
+      const key = `${row},${col}`;
       const owner = matchedSubstrates.find((s) => s.positions.has(key));
+      const isTPoint = row === SECS_T_POINT.x && col === SECS_T_POINT.y;
+      if (isTPoint) cell.classList.add("ref-point");
       if (owner) {
         cell.classList.add("referenced");
         cell.style.setProperty("--ref-color", owner.color);
         cell.textContent = owner.label;
-        cell.title = `${x}:${y} — 基板「${owner.name}」`;
+        cell.title = `${row}:${col}${isTPoint ? " — T點" : ""} — 基板「${owner.name}」`;
+      } else if (isTPoint) {
+        cell.textContent = "T";
+        cell.title = `${row}:${col} — T點`;
       } else {
-        cell.title = `${x}:${y}`;
+        cell.title = `${row}:${col}`;
       }
-      row.appendChild(cell);
+      rowEl.appendChild(cell);
     }
-    container.appendChild(row);
+    container.appendChild(rowEl);
   }
 }
 
