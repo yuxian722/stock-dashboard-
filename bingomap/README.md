@@ -81,11 +81,36 @@ map，不用透過FRM檔案或手動重新點座標。這不是SECS-II binary，
 - 真實log的一小段存成`bingomap/tests/fixtures/secs_log_sample.log`(從使用者提供的完整log裁切、重新
   編碼回UTF-16LE)，專屬測試鎖定上面這些結論
 
+**Phase 7：SECS格式化參數（`secs_params.py`）**
+
+2026/08/19：同一份SECS/AFC log裡還有`S7F25FormattedPPRequest`(`Type="Reply"`)事件，記錄機台的一次
+recipe參數快照——`PP_ID`/`MDLN`/`SOFTREV`加上一長串`<Item>`(每個`CCODE`＋固定6個`<PPARM>`：名稱/單位/
+格式/數值/下限/上限)。真實log只有2次快照，各199組參數(不是使用者記憶中的181或計畫中的349，已回報
+使用者)。目前只做了「列出log裡有什麼」，跟Excel參考清單比對的功能還沒做——等使用者提供範例Excel檔案，
+不用猜欄位格式。
+
+**開發過程中發現、修好一個影響`secs_log.py`跟`secs_params.py`共用的解析bug**：兩邊原本各自的
+`_TRANSACTION_RE`正則式`<Transaction\b[^>]*>.*?</Transaction>`沒考慮自我封閉標籤
+`<Transaction ... />`（每個Request那半內容是空的，都用這種寫法）——`[^>]*>`會把`/>`誤認成一般開始
+標籤的`>`，接著非貪婪的`.*?</Transaction>`一路吃到**下一個**Transaction的結束標籤才停，把兩個不相干
+的Transaction黏成一段無效XML，`ET.fromstring`解析失敗、兩個都被跳過、沒有任何錯誤訊息。平常log裡
+Request跟自己的Reply中間通常還夾著別的Transaction(有自己的結束標籤讓正則式提早停下)，不容易踩到；
+但真實log裡第二次S7F25快照(TID=58203)剛好是Request後面緊接著自己的Reply、中間沒有別的Transaction，
+直接把整整199組參數的快照吃掉不留痕跡——如果沒有順手去對真實log的原始筆數(而是照單全收API回應)，
+這個資料遺失不會被發現。修正成`<Transaction\b[^>]*/>|<Transaction\b[^>]*>.*?</Transaction>`(先試著
+整段匹配自我封閉標籤，不行才退回配對結束標籤)，兩個模組都已修好，測試fixture也重建成刻意保留這個
+「Request緊接自己Reply、中間沒有其他Transaction」的真實排列方式，鎖定回歸。
+
+教訓：**用正則式抓「一對開始/結束標籤」時，一定要先確認這個標籤有沒有自我封閉的寫法，沒考慮到的話
+表面上「看起來有解析出東西」也可能是靜默漏資料，不會報錯——尤其是log這種每個Transaction名稱重複
+出現很多次的情況，光看「有抓到幾筆」的數量本身也未必能察覺少了一筆，要跟真實資料的已知數量核對。**
+
 ## 尚未實作
 
 - ESEC以外、DB以外的其他機型(CM700等)排列規則尚未驗證
 - 上片狀態人工確認/修正——ESEC參考工具裡的另一個功能，尚未移植
 - Crack局部分布的PNG視覺化(參考工具的雙canvas對照圖)沒有搬，目前只有HTML表格版的基板圖+散點圖，功能等價但視覺效果較簡單
+- SECS格式化參數：跟Excel參考檔案比對的功能——等使用者提供範例Excel檔案
 
 ## 執行測試
 

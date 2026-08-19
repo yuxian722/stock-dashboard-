@@ -47,6 +47,7 @@ from bingomap.mispick_analysis import (
     parse_bin_set,
 )
 from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_wafer_maps
+from bingomap.secs_params import SecsParamsFormatError, extract_pp_param_snapshots
 from bingomap.strate import StrateFile, StrateFormatError
 
 app = Flask(__name__)
@@ -758,6 +759,55 @@ def api_strate_xml_download_zip():
         buf.getvalue(),
         mimetype="application/zip",
         headers={"Content-Disposition": 'attachment; filename="strate_xml_extract.zip"'},
+    )
+
+
+@app.get("/secs-params")
+def secs_params_page():
+    return render_template("secs_params.html", active_page="secs_params")
+
+
+@app.post("/api/secs_params/extract")
+def api_secs_params_extract():
+    """List every SECS "formatted process program" parameter snapshot
+    (S7F25FormattedPPRequest Reply) found in an uploaded SECS/AFC log —
+    see bingomap/secs_params.py. Excel-comparison is not implemented yet;
+    this is the "list what's actually in the log" half only."""
+    data = request.get_json(force=True)
+    text, err = _decode_uploaded_log(data)
+    if err:
+        return jsonify(err[0]), err[1]
+
+    try:
+        snapshots = extract_pp_param_snapshots(text)
+    except SecsParamsFormatError as exc:
+        return jsonify({"error": f"參數格式解析失敗：{exc}"}), 422
+
+    return jsonify(
+        {
+            "snapshots": [
+                {
+                    "index": i,
+                    "pp_id": s.pp_id,
+                    "mdln": s.mdln,
+                    "softrev": s.softrev,
+                    "tid": s.tid,
+                    "params": [
+                        {
+                            "ccode": p.ccode,
+                            "name": p.name,
+                            "unit": p.unit,
+                            "format": p.format,
+                            "value": p.value,
+                            "min": p.min,
+                            "max": p.max,
+                        }
+                        for p in s.params
+                    ],
+                }
+                for i, s in enumerate(snapshots)
+            ]
+        }
     )
 
 

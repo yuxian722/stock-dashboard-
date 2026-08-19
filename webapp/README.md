@@ -325,7 +325,41 @@ wafer圖檔的資料」。跟前三頁完全不同的地方：**不需要重新�
      (`2070_V30EUC6_Z25709007096_20260801024007.strate`)逐行byte-for-byte比對驗證過完全一致
      (56顆DIE_INFO + 168顆DIE_INFO_OTHER_LAYER + 全部header欄位)。
 
+## SECS格式化參數（`/secs-params`）
+
+2026/08/19使用者要求「機台內secs參數與excel檔案的參數去比較」。目前**只做了「列出log裡實際找到
+的參數」這一半**，跟Excel比對的功能還沒開發——需要使用者提供一份範例Excel檔案才能繼續，欄位/工作表
+格式還沒確認過，照這個專案一貫的原則不用猜的硬做。
+
+`S7F25FormattedPPRequest`（`Type="Reply"`）事件是機台的一次「製程程式/recipe參數快照」：
+`<DataList>`底下有`PP_ID`/`MDLN`/`SOFTREV`（這是哪一組recipe／機型／軟體版本），接著一長串`<Item>`，
+每個`Item`是一項參數——`<CCODE>`(數值編號，同一份快照內唯一)加上固定6個`<PPARM>`欄位(名稱/單位/
+格式代碼/目前數值/下限/上限)。解析邏輯在`bingomap/secs_params.py`，遇到不是剛好6個`PPARM`的Item會
+直接丟例外，不猜哪一欄漏了。
+
+真實log(2026/08/19確認)只有2次快照(TID=58151、58203)，都是同一組recipe`RECIPE@AEU132X2C001A-2070`
+(MDLN=DB800)，每次**199**組參數(逐項比對完全相同)——跟使用者記憶中「目前181組、要擴充到349組」對不上，
+已經在畫面上的說明跟聊天裡都跟使用者說明，不代表哪個數字才「對」，等使用者確認。
+
+畫面：上傳log(跟STRATE補檔頁同一套base64上傳/`localStorage`還原機制)、按「解析Log」，每一次快照各自
+一張表格(CCODE/名稱/單位/格式/數值/下限/上限)，可以個別下載CSV。
+
+**2026/08/19開發途中發現並修正一個解析bug**：`secs_log.py`跟`secs_params.py`原本的
+`_TRANSACTION_RE`正則式`<Transaction\b[^>]*>.*?</Transaction>`沒有考慮自我封閉標籤
+`<Transaction ... />`(每一個Request那半，內容都是空的、用自我封閉標籤寫)——正則式的`[^>]*>`會把
+`/>`誤認成一般開始標籤的`>`，接著非貪婪的`.*?</Transaction>`就會一路吃到**下一個**Transaction的
+結束標籤才停，把兩個不相干的Transaction黏成一段無效XML，`ET.fromstring`解析失敗後兩個都被跳過——
+平常log裡Request跟它自己的Reply中間通常還夾著別的Transaction(有自己的結束標籤讓正則式提早停下)，
+不容易踩到，但TID=58203這組偏偏是Request後面緊接著自己的Reply、中間沒有別的Transaction，直接把
+第二筆199組參數的快照整個吃掉、不留任何錯誤訊息(從API回應完全看不出「有一筆不見了」)。修正成
+`<Transaction\b[^>]*/>|<Transaction\b[^>]*>.*?</Transaction>`(先試著整段匹配一個自我封閉標籤，不行
+才退回找配對的結束標籤)，兩個模組都已修好，測試fixture也重建成刻意保留「Request緊接自己Reply、中間
+沒有其他Transaction」這個真實排列方式，鎖定這個bug不會再發生。這個bug理論上也可能在STRATE補檔頁的
+`StrateMap`/`WaferStart`資料上發生(同一份`_TRANSACTION_RE`)，只是這份真實log剛好沒踩到(每次都有別的
+Transaction夾在中間)——已經修好，不用等真的漏資料才發現。
+
 ## 尚未做的
 
 - 上片狀態人工確認/修正——ESEC參考工具裡的另一個功能，尚未移植
 - Crack局部分布的PNG匯出
+- SECS格式化參數：跟Excel參考檔案比對的功能——等使用者提供範例Excel檔案

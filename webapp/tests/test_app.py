@@ -27,6 +27,9 @@ REAL_EIGHT_LAYER_STRATE_FIXTURE = (
 REAL_SECS_LOG_FIXTURE = (
     Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "secs_log_sample.log"
 )
+REAL_SECS_PARAMS_FIXTURE = (
+    Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "secs_params_sample.log"
+)
 
 BASE_HEADER = dict(
     assy_lot="V27NVJH",
@@ -443,6 +446,46 @@ def test_api_strate_xml_extract_requires_log(client):
 
 def test_api_strate_xml_extract_rejects_bad_base64(client):
     res = client.post("/api/strate_xml/extract", json={"log_base64": "not valid base64!!"})
+    assert res.status_code == 400
+
+
+def _secs_params_log_base64() -> str:
+    import base64
+
+    return base64.b64encode(REAL_SECS_PARAMS_FIXTURE.read_bytes()).decode("ascii")
+
+
+def test_api_secs_params_extract_real_log(client):
+    res = client.post("/api/secs_params/extract", json={"log_base64": _secs_params_log_base64()})
+    assert res.status_code == 200
+    data = res.get_json()
+
+    assert len(data["snapshots"]) == 2
+    snap = data["snapshots"][0]
+    assert snap["pp_id"] == "RECIPE@AEU132X2C001A-2070"
+    assert snap["mdln"] == "DB800"
+    assert snap["softrev"] == "01.172/01"
+    assert snap["tid"] == "58151"
+    assert len(snap["params"]) == 10
+    assert data["snapshots"][1]["tid"] == "58203"
+    assert len(data["snapshots"][1]["params"]) == 3
+
+    first = snap["params"][0]
+    assert first["ccode"] == "285278212"
+    assert first["name"] == "No. of blocks"
+    assert first["format"] == "F8"
+    assert first["value"] == "1"
+    assert first["min"] == "0"
+    assert first["max"] == "999"
+
+
+def test_api_secs_params_extract_requires_log(client):
+    res = client.post("/api/secs_params/extract", json={})
+    assert res.status_code == 400
+
+
+def test_api_secs_params_extract_rejects_bad_base64(client):
+    res = client.post("/api/secs_params/extract", json={"log_base64": "not valid base64!!"})
     assert res.status_code == 400
 
 

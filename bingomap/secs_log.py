@@ -49,7 +49,22 @@ from xml.etree import ElementTree as ET
 from .strate import DieInfo, StrateFile
 from .wafer_map import WaferBinMap
 
-_TRANSACTION_RE = re.compile(r"<Transaction\b[^>]*>.*?</Transaction>", re.S)
+# A self-closing `<Transaction ... />` (e.g. every empty Request half of a
+# Request/Reply pair) has no matching `</Transaction>` of its own. The
+# naive single-alternative pattern `<Transaction\b[^>]*>.*?</Transaction>`
+# still "matches" one — its `[^>]*>` happily consumes the `/>` as if it
+# were a plain opening tag's `>`, then the non-greedy `.*?</Transaction>`
+# swallows everything up to the NEXT transaction's closing tag, silently
+# merging two unrelated transactions into one bogus block (and, since that
+# block is no longer valid XML on its own, ET.fromstring then drops BOTH
+# transactions instead of just the bogus one — found 2026/08/19 via a
+# real log where this genuinely deleted the second of two
+# S7F25FormattedPPRequest Reply captures). The first alternative here
+# matches a self-closing tag on its own (nothing to merge into), so the
+# second alternative only ever fires on a real opening tag.
+_TRANSACTION_RE = re.compile(
+    r"<Transaction\b[^>]*/>|<Transaction\b[^>]*>.*?</Transaction>", re.S
+)
 _NAME_RE = re.compile(r'name="([^"]*)"')
 _TYPE_RE = re.compile(r'Type="([^"]*)"')
 

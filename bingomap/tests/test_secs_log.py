@@ -114,3 +114,26 @@ def test_extract_wafer_maps_skips_events_without_binlist():
     text = _load_text()
     wafer_maps = extract_wafer_maps(text)
     assert all(wm.wafer_map.cells for wm in wafer_maps)
+
+
+def test_iter_transactions_handles_self_closing_tag_immediately_before_real_one():
+    # Regression test for a bug found 2026/08/19: a self-closing
+    # `<Transaction ... />` (every empty Request half of a pair) has no
+    # `</Transaction>` of its own. A naive single-alternative regex still
+    # "matched" one by treating the `/>` as a plain `>` and then consuming
+    # everything up to the NEXT transaction's closing tag — merging two
+    # unrelated transactions into one invalid XML blob that ET.fromstring
+    # then rejected, silently dropping BOTH. This only shows up when there
+    # is no OTHER transaction's closing tag in between (as there normally
+    # is in a busy real log) — reproduced here directly.
+    text = (
+        'INFO some log line\r\n'
+        '<Transaction name="Foo" TID="1" Type="Request" DEID="X" />\r\n'
+        '<Transaction name="Foo" TID="1" Type="Reply" DEID="X"><A>1</A></Transaction>\r\n'
+    )
+    results = list(iter_transactions(text))
+    names_types = [(n, t) for n, t, _ in results]
+    assert ("Foo", "Request") in names_types
+    assert ("Foo", "Reply") in names_types
+    reply_elem = next(e for n, t, e in results if t == "Reply")
+    assert reply_elem.find("A").text == "1"
