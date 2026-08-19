@@ -25,8 +25,12 @@ function csvEscape(v) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function downloadText(filename, text) {
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+// BOM prefix so Excel opens it as UTF-8 rather than guessing Big5 (garbled
+// Chinese column headers) — same fix already applied to the mispick CSV
+// export server-side (webapp/app.py's _csv_text); this one is generated
+// client-side so the BOM has to go into the Blob's text content itself.
+function downloadText(filename, text, withBom) {
+  const blob = new Blob([withBom ? "﻿" + text : text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -44,6 +48,52 @@ function snapshotToCsv(snap) {
     lines.push([p.ccode, p.name, p.unit, p.format, p.value, p.min, p.max].map(csvEscape).join(","));
   });
   return lines.join("\r\n") + "\r\n";
+}
+
+// ---- 全部快照匯出TXT/Excel(.xlsx) (2026/08/19 ask: "這些後續要可以匯出
+// excel或者txt檔") — unlike the per-snapshot CSV button above (built
+// client-side from the already-parsed result), these two re-send the
+// original log to the server and re-parse it there, same principle as
+// STRATE補檔頁的「全部下載zip」：never trust client-held result data for
+// a download when the source log is still available, re-derive it. Needs
+// lastLogBase64, which (like STRATE補檔頁) is best-effort persisted —
+// large logs may not fit localStorage's quota, in which case these two
+// buttons need a fresh upload after a page restore. ----
+async function downloadFromServer(path, filename, mimetype) {
+  const status = document.getElementById("sp-status");
+  if (!lastLogBase64) {
+    status.className = "error";
+    status.textContent = "請先重新選擇log檔案（上次的log內容太大，沒能一起保留，需要重新上傳一次才能匯出）";
+    return;
+  }
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ log_base64: lastLogBase64 }),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    status.className = "error";
+    status.textContent = data.error;
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadAllTxt() {
+  downloadFromServer("/api/secs_params/download_txt", "secs_params.txt");
+}
+
+function downloadAllExcel() {
+  downloadFromServer("/api/secs_params/download_excel", "secs_params.xlsx");
 }
 
 function renderSnapshots(snapshots) {
@@ -77,7 +127,7 @@ function renderSnapshots(snapshots) {
 
     box.querySelector(".sp-btn-download-csv").addEventListener("click", () => {
       const name = (snap.pp_id || `snapshot_${snap.index + 1}`).replace(/[\\/:*?"<>|]/g, "_");
-      downloadText(`${name}_TID${snap.tid}.csv`, snapshotToCsv(snap));
+      downloadText(`${name}_TID${snap.tid}.csv`, snapshotToCsv(snap), true);
     });
 
     list.appendChild(box);
@@ -113,7 +163,7 @@ async function extractLog() {
   }
 
   renderSnapshots(data.snapshots);
-  saveState(file.name, data);
+  saveState(file.name, lastLogBase64, data);
 
   status.className = "ok";
   const total = data.snapshots.reduce((sum, s) => sum + s.params.length, 0);
@@ -123,13 +173,19 @@ async function extractLog() {
 // ---- Persistence (同STRATE補檔頁的做法："我切換分頁的時候檔案不要不見") ----
 const SP_STORAGE_RESULT = "bingomap_secs_params_result";
 const SP_STORAGE_FILENAME = "bingomap_secs_params_filename";
+const SP_STORAGE_LOG = "bingomap_secs_params_log_base64";
 
-function saveState(filename, data) {
+function saveState(filename, logBase64, data) {
   try {
     localStorage.setItem(SP_STORAGE_RESULT, JSON.stringify(data));
     localStorage.setItem(SP_STORAGE_FILENAME, filename);
   } catch (err) {
-    // localStorage unavailable (private mode etc.) — just don't persist
+    return; // localStorage unavailable entirely (private mode etc.) — just don't persist
+  }
+  try {
+    localStorage.setItem(SP_STORAGE_LOG, logBase64);
+  } catch (err) {
+    localStorage.removeItem(SP_STORAGE_LOG); // too large for quota — drop it, keep the rest
   }
 }
 
@@ -142,6 +198,7 @@ function restoreState() {
   } catch (err) {
     return;
   }
+  lastLogBase64 = localStorage.getItem(SP_STORAGE_LOG); // may be null — see saveState()
   const filename = localStorage.getItem(SP_STORAGE_FILENAME) || "";
 
   renderSnapshots(data.snapshots);
@@ -149,10 +206,13 @@ function restoreState() {
   const status = document.getElementById("sp-status");
   status.className = "ok";
   const total = data.snapshots.reduce((sum, s) => sum + s.params.length, 0);
+  const logNote = lastLogBase64 ? "" : "（檔案內容太大沒能一起保留，匯出TXT/Excel要重新選一次同一個log檔案才能用）";
   status.textContent =
     `已還原上次解析過的結果${filename ? `（${filename}）` : ""}：共 ${data.snapshots.length} 筆參數快照，` +
-    `合計 ${total} 項參數。`;
+    `合計 ${total} 項參數。${logNote}`;
 }
 
 document.getElementById("sp-btn-extract").addEventListener("click", extractLog);
+document.getElementById("sp-btn-download-all-txt").addEventListener("click", downloadAllTxt);
+document.getElementById("sp-btn-download-all-excel").addEventListener("click", downloadAllExcel);
 restoreState();

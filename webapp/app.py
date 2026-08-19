@@ -18,10 +18,12 @@ import binascii
 import csv
 import io
 import os
+import re
 import zipfile
 from datetime import datetime
 
 from flask import Flask, Response, jsonify, render_template, request
+from openpyxl import Workbook
 
 from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_layers
 from bingomap.blank_generator import blank_from_positions, generate_blank
@@ -808,6 +810,112 @@ def api_secs_params_extract():
                 for i, s in enumerate(snapshots)
             ]
         }
+    )
+
+
+_SECS_PARAMS_HEADER = ["CCODE", "名稱", "單位", "格式", "數值", "下限", "上限"]
+
+
+def _secs_params_rows(snap) -> list[list[str]]:
+    return [[p.ccode, p.name, p.unit, p.format, p.value, p.min, p.max] for p in snap.params]
+
+
+def _extract_snapshots_or_error(data: dict):
+    """Shared by the two export endpoints below: re-decode+re-parse the
+    uploaded log server-side (same principle as /api/strate_xml/download_zip
+    — never trust client-supplied result data for a download, re-derive it
+    from the source). Returns (snapshots, None) or (None, (json, status))."""
+    text, err = _decode_uploaded_log(data)
+    if err:
+        return None, err
+    try:
+        snapshots = extract_pp_param_snapshots(text)
+    except SecsParamsFormatError as exc:
+        return None, ({"error": f"參數格式解析失敗：{exc}"}, 422)
+    if not snapshots:
+        return None, ({"error": "這份log裡沒有找到S7F25FormattedPPRequest參數快照"}, 400)
+    return snapshots, None
+
+
+@app.post("/api/secs_params/download_txt")
+def api_secs_params_download_txt():
+    data = request.get_json(force=True)
+    snapshots, err = _extract_snapshots_or_error(data)
+    if err:
+        return jsonify(err[0]), err[1]
+
+    lines = []
+    for i, snap in enumerate(snapshots):
+        lines.append(
+            f"# 快照{i + 1}\tPP_ID={snap.pp_id}\tMDLN={snap.mdln}\tSOFTREV={snap.softrev}\t"
+            f"TID={snap.tid}\t參數數量={len(snap.params)}"
+        )
+        lines.append("\t".join(_SECS_PARAMS_HEADER))
+        for row in _secs_params_rows(snap):
+            lines.append("\t".join(str(v) for v in row))
+        lines.append("")
+    content = "\r\n".join(lines) + "\r\n"
+
+    return Response(
+        content.encode("utf-8-sig"),  # BOM so Excel/記事本 opens it as UTF-8, not Big5
+        mimetype="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="secs_params.txt"'},
+    )
+
+
+def _safe_sheet_name(name: str, used: set[str]) -> str:
+    # Excel sheet names: max 31 chars, can't contain \ / * ? : [ ]
+    cleaned = re.sub(r'[\\/*?:\[\]]', "_", name).strip() or "snapshot"
+    cleaned = cleaned[:31]
+    candidate = cleaned
+    n = 2
+    while candidate in used:
+        suffix = f"_{n}"
+        candidate = cleaned[: 31 - len(suffix)] + suffix
+        n += 1
+    used.add(candidate)
+    return candidate
+
+
+@app.post("/api/secs_params/download_excel")
+def api_secs_params_download_excel():
+    data = request.get_json(force=True)
+    snapshots, err = _extract_snapshots_or_error(data)
+    if err:
+        return jsonify(err[0]), err[1]
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    used_names: set[str] = set()
+    for i, snap in enumerate(snapshots):
+        # TID first: Excel's 31-char sheet-name limit would otherwise often
+        # truncate off the TID entirely when multiple snapshots share the
+        # same (long) PP_ID, leaving indistinguishable names that only
+        # differ by the dedup suffix _safe_sheet_name() adds — found
+        # 2026/08/19 with the real log's two RECIPE@AEU132X2C001A-2070
+        # captures, which both truncated to the same 31 chars.
+        tid_label = f"TID{snap.tid}" if snap.tid else f"snapshot{i + 1}"
+        sheet_name = _safe_sheet_name(f"{tid_label}_{snap.pp_id}", used_names)
+        ws = wb.create_sheet(sheet_name)
+        ws.append([f"PP_ID={snap.pp_id}", f"MDLN={snap.mdln}", f"SOFTREV={snap.softrev}", f"TID={snap.tid}"])
+        ws.append(_SECS_PARAMS_HEADER)
+        rows = _secs_params_rows(snap)
+        for row in rows:
+            ws.append(row)
+        for col_idx, header in enumerate(_SECS_PARAMS_HEADER, start=1):
+            width = len(header)
+            for row in rows:
+                width = max(width, len(str(row[col_idx - 1])))
+            ws.column_dimensions[chr(64 + col_idx)].width = min(width + 2, 60)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="secs_params.xlsx"'},
     )
 
 

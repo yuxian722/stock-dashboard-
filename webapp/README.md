@@ -149,6 +149,26 @@ wafer圖跟基板圖(bingomap)滑鼠移到格子上時，除了原本上方的�
 顯示。已經修好並用Playwright驗證錯誤訊息會正確顯示紅字、成功載入也會正確渲染出wafer圖；這次
 N層重構把每個wafer面板的id都改成統一規則產生，不會再有這種手動組id漏改的風險。）
 
+## Wafer圖bin顏色（依實際出現的bin code動態上色）
+
+原本wafer圖只分兩色：綠色＝Bin 1、粉紅色＝「其他所有bin」全部同一色，這是最早只用單層/雙層測試資料
+時順手寫的簡化版本。2026/08/19使用者用STRATE補檔頁跑真實SECS log的wafer圖，發現「應該依據下載下來
+有什麼bin code就出現，不能只有Bin 1 Bin 7」——真實資料裡同一片wafer常常同時有好幾種bin(例如
+2/6/7)，全部混在「其他」同一個粉紂色看不出差異。
+
+改成依實際bin code動態上色：固定一份0~9的10色調色盤（bin值一律是單一ASCII數字——見
+`bingomap/frm_reader.py`的`_decode_bin_kind()`，`int(chr(value))`只有單一十進位數字才會成功，這是從
+反編譯`WaferCoordinate.exe`得到的格式規格，不是猜的），bin 1維持原本綠色、bin 7維持原本粉紅色（沿用
+使用者已經熟悉的顏色），2~6/8/9另外配色，圖例只列出**目前這份資料實際出現過的bin code**（不是固定
+列出全部10種），三個有wafer圖的頁面（①補資料、②誤吸偏移／BIN點除、④STRATE補檔）都是同一套
+`BIN_COLORS`/`binColor()`/`applyBinColor()`(各自檔案裡各自維護一份，是這個專案一貫的小工具函式重複
+慣例，不是共用模組)。CSS層面把原本`.wafer-cell.bin-1`/`.wafer-cell.bin-other`兩條固定規則，換成
+一條讀取`--bin-color`自訂屬性的通用規則`.wafer-cell.bin-cell`，顏色本身完全由JS決定要不要蓋上去。
+
+這個改動只影響**畫面呈現**，不影響哪些bin可以被選取/待寫入——①補資料頁「只有bin=1能選」的判斷邏輯
+(`toggleStagePick()`/`stagePickIfNew()`)一直是直接比對原始bin字串`"1"`，跟這次改的CSS類別完全無關，
+沒有被動到。
+
 ## T點標示
 
 使用者提供了真實wafer目視檢查畫面的照片，指出畫面下方座標列有一個「T點」欄位，畫面上wafer圖也有一個
@@ -343,6 +363,19 @@ wafer圖檔的資料」。跟前三頁完全不同的地方：**不需要重新�
 
 畫面：上傳log(跟STRATE補檔頁同一套base64上傳/`localStorage`還原機制)、按「解析Log」，每一次快照各自
 一張表格(CCODE/名稱/單位/格式/數值/下限/上限)，可以個別下載CSV。
+
+**2026/08/19新增匯出功能**（使用者要求「這些後續要可以匯出excel或者txt檔」）：
+- 每個快照自己的「下載CSV」按鈕：純前端從已經解析好的結果直接產生，不用重新連線後端
+- 「全部匯出TXT」/「全部匯出Excel(.xlsx)」：整份log的所有快照一次匯出成一個檔案(Excel是每個快照
+  各自一個工作表)——跟「STRATE補檔頁」的「全部下載zip」同一個設計原則：**不信任前端已經解析好的
+  結果，重新把原始log(base64)送回後端、後端重新解析一次再產生檔案**，避免前端顯示的資料跟實際匯出
+  的資料不小心不一致。Excel產生用`openpyxl`(`webapp/requirements.txt`已加`openpyxl>=3.1`)，工作表
+  命名故意把TID放在PP_ID前面——因為Excel工作表名稱上限31字元，這份真實log兩次快照的PP_ID一模一樣
+  又很長，如果PP_ID放前面會兩個都被截到一樣的字串、只能看流水號分辨，看不出是哪個TID
+- 匯出用的原始log(base64)也跟解析結果一起存進`localStorage`(同STRATE補檔頁的作法)，太大存不下時
+  只有這兩個「全部匯出」按鈕需要重新上傳一次log，個別的「下載CSV」不受影響(不需要原始log)
+- CSV/TXT都加了UTF-8 BOM前綴，避免Excel用Big5猜編碼把中文欄位名稱(名稱/單位/格式...)開成亂碼——
+  跟「誤吸偏移／BIN點除」頁CSV匯出(`webapp/app.py`的`_csv_text()`)已經在用的做法一致
 
 **2026/08/19開發途中發現並修正一個解析bug**：`secs_log.py`跟`secs_params.py`原本的
 `_TRANSACTION_RE`正則式`<Transaction\b[^>]*>.*?</Transaction>`沒有考慮自我封閉標籤

@@ -489,6 +489,52 @@ def test_api_secs_params_extract_rejects_bad_base64(client):
     assert res.status_code == 400
 
 
+def test_api_secs_params_download_txt_real_log(client):
+    res = client.post("/api/secs_params/download_txt", json={"log_base64": _secs_params_log_base64()})
+    assert res.status_code == 200
+    assert "attachment" in res.headers["Content-Disposition"]
+    text = res.get_data().decode("utf-8-sig")
+    assert "PP_ID=RECIPE@AEU132X2C001A-2070" in text
+    assert "TID=58151" in text
+    assert "TID=58203" in text
+    assert "285278212\tNo. of blocks" in text
+
+
+def test_api_secs_params_download_txt_requires_log(client):
+    res = client.post("/api/secs_params/download_txt", json={})
+    assert res.status_code == 400
+
+
+def test_api_secs_params_download_excel_real_log(client):
+    import io
+
+    import openpyxl
+
+    res = client.post("/api/secs_params/download_excel", json={"log_base64": _secs_params_log_base64()})
+    assert res.status_code == 200
+    assert res.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert "attachment" in res.headers["Content-Disposition"]
+
+    wb = openpyxl.load_workbook(io.BytesIO(res.get_data()))
+    assert len(wb.sheetnames) == 2
+    # Regression check for a real bug (2026/08/19): both snapshots share
+    # the same long PP_ID, which used to make Excel's 31-char sheet-name
+    # limit truncate away the only distinguishing part (TID) — see
+    # app.py's _safe_sheet_name call site comment.
+    assert "58151" in wb.sheetnames[0]
+    assert "58203" in wb.sheetnames[1]
+    ws = wb[wb.sheetnames[0]]
+    assert "PP_ID=RECIPE@AEU132X2C001A-2070" in ws.cell(row=1, column=1).value
+    assert ws.cell(row=2, column=1).value == "CCODE"
+    assert ws.cell(row=3, column=1).value == "285278212"
+    assert ws.cell(row=3, column=2).value == "No. of blocks"
+
+
+def test_api_secs_params_download_excel_requires_log(client):
+    res = client.post("/api/secs_params/download_excel", json={})
+    assert res.status_code == 400
+
+
 def test_api_strate_xml_download_zip_real_log(client):
     res = client.post("/api/strate_xml/download_zip", json={"log_base64": _secs_log_base64()})
     assert res.status_code == 200

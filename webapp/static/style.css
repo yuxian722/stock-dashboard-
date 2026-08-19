@@ -7,7 +7,6 @@
   --green:#0f8f5f; --green-bg:#ecfdf5;
   --yellow:#b7791f; --yellow-bg:#fffbeb;
   --red:#b42318; --red-bg:#fff1f2;
-  --bin1:#4fb84a; --bin-other:#d867d8;
 }
 *{box-sizing:border-box}
 body{
@@ -122,8 +121,11 @@ button.secondary.active-layer:hover{background:#0c7550}
   font-size:9px;font-weight:800;color:#0b1220;user-select:none;
 }
 .wafer-cell:hover{filter:brightness(.93)}
-.wafer-cell.bin-1{background:var(--bin1);border-color:rgba(0,0,0,.06)}
-.wafer-cell.bin-other{background:var(--bin-other);border-color:rgba(0,0,0,.06)}
+/* Bin color: set per-cell via --bin-color (JS, one shared palette per page
+   — see e.g. app.js's BIN_COLORS) rather than a fixed bin-1/bin-other pair,
+   since real wafers can carry any of bin 0-9, not just bin 1 (good) and
+   bin 7 — 2026/08/19 ask: "應該依據下載下來有什麼bin code就出現". */
+.wafer-cell.bin-cell{background:var(--bin-color,#fff);border-color:rgba(0,0,0,.06)}
 /* Picked cells all share one outline color regardless of which layer —
    the cell's own text content (set in JS) is the layer number, so any N
    layers stay distinguishable without needing N different colors. */

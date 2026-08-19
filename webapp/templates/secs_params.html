@@ -33,6 +33,12 @@
 
   <section class="panel" id="sp-snapshots-panel" style="grid-column:1/-1;display:none">
     <h2><span class="step-badge">2</span>參數快照（共 <span id="sp-snapshot-count">0</span> 筆）</h2>
+    <button class="secondary" id="sp-btn-download-all-txt">全部匯出TXT</button>
+    <button class="secondary" id="sp-btn-download-all-excel">全部匯出Excel(.xlsx)</button>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">
+      「全部匯出」是整份log的所有快照一次匯出成一個檔案(Excel是每個快照各自一個工作表)；下面每個快照
+      自己也有「下載CSV」，只匯出那一筆快照。
+    </p>
     <div id="sp-snapshots-list"></div>
   </section>
 </div>

@@ -28,10 +28,32 @@ function substrateLetter(i) {
   return i < 26 ? String.fromCharCode(65 + i) : `S${i + 1}`;
 }
 
-function cellClass(bin) {
-  if (bin === "1") return "bin-1";
-  if (bin === undefined) return "";
-  return "bin-other";
+// Bin color palette — same convention as app.js's BIN_COLORS/renderBinLegend
+// (see that comment for why bin codes are always a single ASCII digit):
+// 2026/08/19 ask "應該依據下載下來有什麼bin code就出現不能只有Bin 1 Bin 7".
+const BIN_COLORS = {
+  "0": "#94a3b8", "1": "#4fb84a", "2": "#f59e0b", "3": "#ef4444",
+  "4": "#8b5cf6", "5": "#3b82f6", "6": "#14b8a6", "7": "#d867d8",
+  "8": "#92400e", "9": "#ca8a04",
+};
+const BIN_COLOR_FALLBACK = "#64748b";
+
+function binColor(bin) {
+  return BIN_COLORS[bin] !== undefined ? BIN_COLORS[bin] : BIN_COLOR_FALLBACK;
+}
+
+function applyBinColor(cell, bin) {
+  if (bin === undefined) return;
+  cell.classList.add("bin-cell");
+  cell.style.setProperty("--bin-color", binColor(bin));
+}
+
+function renderBinLegend(containerId, cells) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const bins = new Set(cells.values());
+  const sorted = [...bins].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  el.innerHTML = sorted.map((b) => `<span><i style="background:${binColor(b)}"></i>Bin ${b}</span>`).join("");
 }
 
 const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style.css
@@ -83,6 +105,7 @@ function renderWaferGrid(containerId, wm, matchedSubstrates) {
   if (!wm.cells.length) return;
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
+  renderBinLegend(`${containerId}-bin-legend`, cellMap);
   const rowVals = wm.cells.map((c) => c.x); // RowCount-sized axis -> vertical
   const colVals = wm.cells.map((c) => c.y); // ColCount-sized axis -> horizontal
   const minRow = Math.min(...rowVals), maxRow = Math.max(...rowVals);
@@ -111,7 +134,8 @@ function renderWaferGrid(containerId, wm, matchedSubstrates) {
     for (let col = maxCol; col >= minCol; col--) {
       const bin = cellMap.get(`${row},${col}`);
       const cell = document.createElement("div");
-      cell.className = "wafer-cell " + cellClass(bin);
+      cell.className = "wafer-cell";
+      applyBinColor(cell, bin);
       const key = `${row},${col}`;
       const owner = matchedSubstrates.find((s) => s.positions.has(key));
       const isTPoint = row === SECS_T_POINT.x && col === SECS_T_POINT.y;
@@ -204,7 +228,8 @@ function renderWaferMaps(waferMaps, substrates) {
       `<button type="button" class="secondary sx-btn-toggle-text">顯示/複製座標文字</button>` +
       `<button type="button" class="secondary sx-btn-copy-text" style="display:none">複製到剪貼簿</button>` +
       `<textarea id="${textareaId}" rows="6" readonly style="display:none;width:100%;margin-top:0.4rem"></textarea>` +
-      `<div class="legend" id="${legendId}" style="margin-top:0.6rem"></div>` +
+      `<div class="legend" id="${gridId}-bin-legend" style="margin-top:0.6rem"></div>` +
+      `<div class="legend" id="${legendId}" style="margin-top:0.2rem"></div>` +
       `<div class="lyr-wafer-wrap"><div id="${gridId}" class="lyr-wafer-grid"></div></div>`;
     const textarea = box.querySelector(`#${textareaId}`);
     textarea.value = wm.paste_text;

@@ -105,6 +105,7 @@ function waferIds(i) {
     frmStatus: `frm-status${s}`,
     waferInput: `wafer-input${s}`,
     btnLoadWafer: `btn-load-wafer${s}`,
+    binLegend: `wafer-bin-legend${s}`,
     hoverStatus: `wafer-hover-status${s}`,
     wrap: `wafer-wrap${s}`,
     grid: `wafer-grid${s}`,
@@ -156,8 +157,7 @@ function buildExtraWaferPanelHtml() {
       <textarea id="${ids.waferInput}" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
       <button class="secondary" id="${ids.btnLoadWafer}">載入第二片Wafer地圖(文字)</button>
       <div class="legend">
-        <span><i style="background:#4fb84a"></i>Bin 1（可選）</span>
-        <span><i style="background:#d867d8"></i>Bin 7（不可選）</span>
+        <span id="${ids.binLegend}" style="display:contents"></span>
         <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
         <span><i style="background:#fff;border-color:#f5900f;border-style:dashed"></i>已選取、待寫入</span>
         <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（不能選取）</span>
@@ -603,10 +603,43 @@ async function loadFrmIntoPanel(panelIndex) {
   renderAll();
 }
 
-function cellClass(bin) {
-  if (bin === "1") return "bin-1";
-  if (bin === undefined) return "";
-  return "bin-other";
+// Bin color palette — 2026/08/19 ask: "應該依據下載下來有什麼bin code就出現
+// 不能只有Bin 1 Bin 7". Real wafer bin codes are always a single ASCII
+// digit (bingomap/frm_reader.py's _decode_bin_kind does `int(chr(value))`,
+// which only ever succeeds for one decimal digit) — a fixed 10-entry
+// palette covers every real value; anything unexpected falls back to one
+// shared gray rather than crashing or silently reusing another bin's color.
+const BIN_COLORS = {
+  "0": "#94a3b8", "1": "#4fb84a", "2": "#f59e0b", "3": "#ef4444",
+  "4": "#8b5cf6", "5": "#3b82f6", "6": "#14b8a6", "7": "#d867d8",
+  "8": "#92400e", "9": "#ca8a04",
+};
+const BIN_COLOR_FALLBACK = "#64748b";
+
+function binColor(bin) {
+  return BIN_COLORS[bin] !== undefined ? BIN_COLORS[bin] : BIN_COLOR_FALLBACK;
+}
+
+function applyBinColor(cell, bin) {
+  if (bin === undefined) return;
+  cell.classList.add("bin-cell");
+  cell.style.setProperty("--bin-color", binColor(bin));
+}
+
+// Only lists bin codes actually present in `cells` (a Map of "x,y" -> bin)
+// instead of a hardcoded Bin1/Bin7-only legend, since a real wafer can
+// carry other bin codes too. `containerId` is expected to be a
+// `display:contents` span so its children lay out as direct flex items of
+// the surrounding `.legend` div (see index.html/app.js's
+// buildExtraWaferPanelHtml).
+function renderBinLegend(containerId, cells) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const bins = new Set(cells.values());
+  const sorted = [...bins].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  el.innerHTML = sorted
+    .map((b) => `<span><i style="background:${binColor(b)}"></i>Bin ${b}${b === "1" ? "（可選）" : "（不可選）"}</span>`)
+    .join("");
 }
 
 // ---- Staging (wafer grid selections not yet written into a layer) ------
@@ -666,6 +699,7 @@ function renderWaferPanel(panelIndex) {
   container.innerHTML = "";
   const cells = waferCellsByPanel[panelIndex];
   const bounds = waferBoundsByPanel[panelIndex];
+  renderBinLegend(ids.binLegend, cells);
   if (!bounds) {
     renderWaferOverlayInto(ids.overlay, ids.grid, null);
     return;
@@ -700,7 +734,8 @@ function renderWaferPanel(panelIndex) {
     for (let x = maxX; x >= minX; x--) {
       const bin = cells.get(`${x},${y}`);
       const cell = document.createElement("div");
-      cell.className = "wafer-cell " + cellClass(bin);
+      cell.className = "wafer-cell";
+      applyBinColor(cell, bin);
       let committedLayer = null;
       for (let li = 0; li < picksByLayer.length; li++) {
         if (picksByLayer[li].some((p) => p.panel === panelIndex && p.x === x && p.y === y)) {

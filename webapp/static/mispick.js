@@ -5,10 +5,32 @@ let lastCsv = null;
 // shown as a red outline directly on each substrate's own BINGO MAP,
 // updating live as the offset is nudged with direction buttons). Reuses
 // the same .wafer-cell/.substrate-cell CSS the main 補資料 page uses. ----
-function cellClass(bin) {
-  if (bin === "1") return "bin-1";
-  if (bin === undefined) return "";
-  return "bin-other";
+// Bin color palette — same convention as app.js's BIN_COLORS/renderBinLegend
+// (see that comment for why bin codes are always a single ASCII digit):
+// 2026/08/19 ask "應該依據下載下來有什麼bin code就出現不能只有Bin 1 Bin 7".
+const BIN_COLORS = {
+  "0": "#94a3b8", "1": "#4fb84a", "2": "#f59e0b", "3": "#ef4444",
+  "4": "#8b5cf6", "5": "#3b82f6", "6": "#14b8a6", "7": "#d867d8",
+  "8": "#92400e", "9": "#ca8a04",
+};
+const BIN_COLOR_FALLBACK = "#64748b";
+
+function binColor(bin) {
+  return BIN_COLORS[bin] !== undefined ? BIN_COLORS[bin] : BIN_COLOR_FALLBACK;
+}
+
+function applyBinColor(cell, bin) {
+  if (bin === undefined) return;
+  cell.classList.add("bin-cell");
+  cell.style.setProperty("--bin-color", binColor(bin));
+}
+
+function renderBinLegend(containerId, cells) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const bins = new Set(cells.values());
+  const sorted = [...bins].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  el.innerHTML = sorted.map((b) => `<span><i style="background:${binColor(b)}"></i>Bin ${b}</span>`).join("");
 }
 
 function renderWaferGrid(wafer) {
@@ -24,6 +46,7 @@ function renderWaferGrid(wafer) {
     `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
 
   const cellMap = new Map(wafer.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
+  renderBinLegend("mp-wafer-bin-legend", cellMap);
   const xs = wafer.cells.map((c) => c.x);
   const ys = wafer.cells.map((c) => c.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
@@ -52,7 +75,8 @@ function renderWaferGrid(wafer) {
     for (let x = maxX; x >= minX; x--) {
       const bin = cellMap.get(`${x},${y}`);
       const cell = document.createElement("div");
-      cell.className = "wafer-cell " + cellClass(bin);
+      cell.className = "wafer-cell";
+      applyBinColor(cell, bin);
       cell.title = `${x}:${y}`;
       row.appendChild(cell);
     }
