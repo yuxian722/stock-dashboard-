@@ -362,15 +362,28 @@ function restoreState() {
   } catch (err) {
     return;
   }
-  if (!saved.strateFiles || !saved.strateFiles.length) return;
 
-  lastStrateFiles = saved.strateFiles;
+  // Field values are restored unconditionally, even with no STRATE files
+  // loaded yet — see app.js's identical fix (2026/08/19: saveState() was
+  // only ever reached through analyze(), so filling in wafer_ring/FRM
+  // lot no/offset settings before ever selecting a STRATE file silently
+  // lost those values when switching tabs). A direct 'input'/'change'
+  // listener on every field (wired below) now saves immediately too.
   for (const id of MP_FIELD_IDS) {
     if (saved.fields && saved.fields[id] !== undefined) document.getElementById(id).value = saved.fields[id];
   }
   updateEsecWarning();
   updateOffsetDisplay();
+
+  if (!saved.strateFiles || !saved.strateFiles.length) return;
+  lastStrateFiles = saved.strateFiles;
   analyze();
+}
+
+for (const id of MP_FIELD_IDS) {
+  const el = document.getElementById(id);
+  el.addEventListener("input", saveState);
+  el.addEventListener("change", saveState); // belt-and-suspenders for <select> (machine_type/offset_axis)
 }
 
 restoreState();

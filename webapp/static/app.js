@@ -987,8 +987,20 @@ function restoreState() {
   } catch (err) {
     return;
   }
-  if (!saved.substratePositions || !saved.substratePositions.length) return;
 
+  // Field values (header inputs) are restored unconditionally — even
+  // before "產生空白骨架"/a template has ever been loaded — since typing
+  // into a field is itself an action worth not losing. This is
+  // deliberately separate from the "session" restore below (positions/
+  // picks/wafer data), which still requires substratePositions to exist:
+  // 2026/08/19 bug found via the user still reporting lost data after the
+  // first persistence pass — turned out saveState() was only ever reached
+  // through renderAll(), which nothing calls just from editing a text
+  // field, so filling in ASSY_LOT etc. and switching tabs before ever
+  // touching the wafer grid silently lost those field values. Fixed by
+  // also wiring a direct 'input' listener on every field (see bottom of
+  // file) that calls saveState() itself, and by no longer gating field
+  // restoration behind "is there a full session to restore".
   for (const id of APP_FIELD_IDS) {
     if (saved.fields && saved.fields[id] !== undefined) {
       const el = document.getElementById(id);
@@ -996,6 +1008,8 @@ function restoreState() {
     }
   }
 
+  // Same reasoning as the fields above — restore these checkbox/number
+  // settings unconditionally too, not just as part of a full session.
   multiLayerEnabled = !!saved.multiLayerEnabled;
   numLayers = saved.numLayers || 2;
   multiWaferEnabled = !!saved.multiWaferEnabled;
@@ -1003,6 +1017,9 @@ function restoreState() {
   document.getElementById("multi-layer-fields").style.display = multiLayerEnabled ? "" : "none";
   document.getElementById("num_layers").value = numLayers;
   document.getElementById("multi_wafer_enabled").checked = multiWaferEnabled;
+  rebuildLayerUi(); // rebuild extra wafer/BINGO MAP panels to match, even with no session below yet
+
+  if (!saved.substratePositions || !saved.substratePositions.length) return;
 
   targetQty = saved.targetQty ?? null;
   substratePositions = saved.substratePositions;
@@ -1027,7 +1044,6 @@ function restoreState() {
   focusedSubstratePosByLayer = Array.from({ length: effectiveNumLayers() }, () => null);
   focusedWaferXYByLayer = Array.from({ length: effectiveNumLayers() }, () => null);
 
-  rebuildLayerUi();
   renderReferenceLegend();
   document.getElementById("btn-clear-references").style.display = referenceSubstrates.length ? "" : "none";
   renderAll();
@@ -1326,4 +1342,18 @@ document.getElementById("btn-apply-effective-qty").addEventListener("click", () 
 setSkipMode(false);
 rebuildLayerUi();
 renderQtyStatus();
+
+// Save on every keystroke/change in a header field directly — renderAll()
+// alone (the funnel every OTHER mutation goes through) is never triggered
+// just by editing a text field, so without this, filling in ASSY_LOT etc.
+// and switching tabs before ever touching the wafer grid silently lost
+// those values (2026/08/19 bug report, after the first persistence pass
+// only wired saveState() into renderAll()).
+for (const id of APP_FIELD_IDS) {
+  const el = document.getElementById(id);
+  if (!el) continue;
+  el.addEventListener("input", saveState);
+  el.addEventListener("change", saveState); // belt-and-suspenders for <select> (convention/machine_type)
+}
+
 restoreState();

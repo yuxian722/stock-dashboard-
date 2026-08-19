@@ -264,7 +264,18 @@ BIN點除(`/mispick`)、③Crack位置回推(`/crack`)、④STRATE補檔 XML合�
 以上都用真實瀏覽器操作(Playwright)驗證過：填資料→整頁reload→確認欄位值/已選座標/已解析結果都還在，
 不是只測「有沒有寫進localStorage」。
 
-## 誤吸偏移／BIN點除（`/mispick`）
+**2026/08/19修正：只填表單欄位、還沒做任何其他動作就切分頁，欄位值還是會不見。** 使用者做完上面這輪
+持久化之後又回報「分頁切換不要不見」——追出原因：①③三頁的`saveState()`都只掛在`renderAll()`(①)或
+`analyze()`(②/③)裡，但單純在欄位打字**不會**觸發這兩個函式(沒有對應的input/change監聽器)，所以
+「只填ASSY_LOT/SUBSTRATE_ID等欄位、還沒點過wafer格子或按過分析」就切分頁，這些欄位值會遺失，回來
+看到的是預設值——這正是使用者當下的操作方式，很容易踩到。已修正：
+- 每個表單欄位都額外直接掛上`input`/`change`監聽器呼叫`saveState()`，不再只靠`renderAll()`/`analyze()`
+  間接觸發
+- `restoreState()`原本是「有完整session(已選座標/已上傳檔案)才還原欄位」的all-or-nothing判斷，改成
+  **欄位還原永遠先做**、跟「有沒有完整session可以還原」脫鉤——即使還沒點過blank骨架/還沒上傳STRATE
+  檔案，單純填過的欄位值也不會不見
+
+用Playwright重新驗證：只填欄位(不做其他任何操作)→切到別頁→切回來，欄位值正確保留，三頁都測過。
 
 移植自使用者提供的ESEC 2100參考工具（STRATE座標偏移點除工具v78）。流程：選機型(DB/ESEC)、填「原始
 wafer MAP」的FRM LotNo+Barcode ID（跟補資料頁共用同一份`frm_reader.py`）、上傳一或多份已上片`.strate`

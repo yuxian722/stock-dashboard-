@@ -309,15 +309,22 @@ function restoreState() {
   } catch (err) {
     return;
   }
-  if (!saved.strateFiles || !saved.strateFiles.length) return;
 
+  // Machine type is restored unconditionally, even with no STRATE files
+  // loaded yet — see app.js/mispick.js's identical fix (2026/08/19:
+  // changing this select before ever loading files didn't call analyze(),
+  // so saveState() never ran, silently losing the choice on tab switch).
+  if (saved.machineType) document.getElementById("ck_machine_type").value = saved.machineType;
+  updateEsecWarning();
+
+  if (!saved.strateFiles || !saved.strateFiles.length) return;
   strateFiles = saved.strateFiles;
   markedKeys = saved.markedKeys || [];
   focusWaferId = saved.focusWaferId || null;
   currentDocIndex = saved.currentDocIndex || 0;
-  if (saved.machineType) document.getElementById("ck_machine_type").value = saved.machineType;
-  updateEsecWarning();
   analyze();
 }
+
+document.getElementById("ck_machine_type").addEventListener("change", saveState);
 
 restoreState();
