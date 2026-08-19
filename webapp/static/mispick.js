@@ -40,6 +40,19 @@ function renderBinLegend(containerId, cells) {
   el.innerHTML = sorted.map((b) => `<span><i style="background:${binColor(b)}"></i>Bin ${b}</span>`).join("");
 }
 
+// 2026/08/19 ask "誤吸的分頁無法下載wafer mapping" — this page's wafer MAP
+// used to only ever appear as a side effect of running the full mispick
+// analysis (which needs a STRATE file AND the完整Wafer ID filled in first).
+// Added a standalone "預覽/讀取wafer MAP" button (see previewWaferMap()
+// below) that hits the same /api/frm endpoint the main page's own "自動
+// 讀取FRM檔案" uses, so the wafer bin map can be checked/copied out on its
+// own — plus the "顯示/複製座標文字" affordance STRATE補檔頁 already has,
+// which is the more literal reading of "下載" (there's nothing to actually
+// download as a file here, same as the main page's own wafer grid, but
+// copy-to-clipboard text in the established x,y,bin format covers the
+// same need — paste-able straight into the main page's manual textarea).
+let lastWaferPasteText = "";
+
 function renderWaferGrid(wafer) {
   const panel = document.getElementById("mispick-wafer-panel");
   const container = document.getElementById("mp-wafer-grid");
@@ -51,6 +64,12 @@ function renderWaferGrid(wafer) {
   panel.style.display = "";
   document.getElementById("mp-wafer-info").textContent =
     `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
+  lastWaferPasteText = wafer.cells
+    .slice()
+    .sort((a, b) => a.x - b.x || a.y - b.y)
+    .map((c) => `${c.x},${c.y},${c.bin}`)
+    .join("\n");
+  document.getElementById("mp-wafer-text").value = lastWaferPasteText;
 
   const cellMap = new Map(wafer.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
   renderBinLegend("mp-wafer-bin-legend", cellMap);
@@ -317,6 +336,57 @@ function nudgeOffset(axis, delta) {
   updateOffsetDisplay();
   analyze();
 }
+
+async function previewWaferMap() {
+  const status = document.getElementById("mp-preview-status");
+  status.className = "";
+  status.textContent = "讀取中...";
+
+  const payload = {
+    lot_no: document.getElementById("mp_frm_lot_no").value,
+    barcode_id: document.getElementById("mp_frm_barcode_id").value,
+    frm_path: document.getElementById("mp_frm_path").value,
+  };
+  const res = await fetch("/api/frm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    status.className = "error";
+    status.textContent = data.error;
+    return;
+  }
+
+  renderWaferGrid(data);
+  status.className = "ok";
+  status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
+  saveState();
+}
+
+document.getElementById("mp-btn-preview-wafer").addEventListener("click", previewWaferMap);
+document.getElementById("mp-btn-toggle-wafer-text").addEventListener("click", () => {
+  const textarea = document.getElementById("mp-wafer-text");
+  const copyBtn = document.getElementById("mp-btn-copy-wafer-text");
+  const showing = textarea.style.display !== "none";
+  textarea.style.display = showing ? "none" : "";
+  copyBtn.style.display = showing ? "none" : "";
+});
+document.getElementById("mp-btn-copy-wafer-text").addEventListener("click", async () => {
+  const copyBtn = document.getElementById("mp-btn-copy-wafer-text");
+  const textarea = document.getElementById("mp-wafer-text");
+  try {
+    await navigator.clipboard.writeText(lastWaferPasteText);
+    copyBtn.textContent = "已複製！";
+  } catch (err) {
+    textarea.select();
+    copyBtn.textContent = "複製失敗，請手動選取文字複製";
+  }
+  setTimeout(() => {
+    copyBtn.textContent = "複製到剪貼簿";
+  }, 2000);
+});
 
 document.getElementById("mp-btn-analyze").addEventListener("click", analyze);
 document.getElementById("mp-btn-download-csv").addEventListener("click", downloadCsv);

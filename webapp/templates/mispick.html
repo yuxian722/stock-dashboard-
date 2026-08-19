@@ -37,6 +37,12 @@
     <label>要比對的完整Wafer ID（跟STRATE DIE_INFO第2欄比對，不符的會被排除不分析）
       <input id="mp_wafer_ring" value="">
     </label>
+    <button type="button" class="secondary" id="mp-btn-preview-wafer">預覽/讀取wafer MAP</button>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">
+      只是先看一下這片wafer的bin圖、跟複製座標文字用，不需要先選STRATE檔案——按「④分析」時還是會重新
+      用上面的Lot No/Barcode ID自動讀取一次，不用擔心兩邊資料對不上。
+    </p>
+    <p id="mp-preview-status"></p>
   </section>
 
   <section class="panel" id="strate-panel">
@@ -86,6 +92,9 @@
   <section class="panel" id="mispick-wafer-panel" style="grid-column:1/-1;display:none">
     <h2>原始 wafer MAP</h2>
     <p id="mp-wafer-info" class="small"></p>
+    <button type="button" class="secondary" id="mp-btn-toggle-wafer-text">顯示/複製座標文字</button>
+    <button type="button" class="secondary" id="mp-btn-copy-wafer-text" style="display:none">複製到剪貼簿</button>
+    <textarea id="mp-wafer-text" rows="6" readonly style="display:none;width:100%;margin-top:0.4rem"></textarea>
     <div class="legend">
       <span id="mp-wafer-bin-legend" style="display:contents"></span>
     </div>
