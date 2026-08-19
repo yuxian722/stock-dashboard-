@@ -23,30 +23,25 @@ let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin, panel}[] — panel = w
 let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not yet written into any layer
 let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -> bin (index 1 only used when multiWaferEnabled)
 let waferBoundsByPanel = [null, null];
-// T點 (Reference Point) — a fixed anchor mark WaferCoordinate.exe draws on
-// the wafer image with a special texture. 2026/08/18, three guesses before
-// landing here:
-//   1. reference_point_x/y taken as a direct grid coordinate — wrong, a
-//      photo showed that cell sitting well outside the wafer's actual die
-//      area, nowhere near the real on-screen crosshair.
-//   2. plain grid center (columns//2, rows//2) — wrong for a different
-//      wafer/photo: the user pointed at the real T點 cell (hovering our
-//      own grid) and read off "Wafer座標：18:0", nowhere near the center.
-//   3. (current) the user explained the real tool's crosshair is a
-//      180°-mirrored view of our DB-oriented rendering, and described the
-//      correct cell in OUR coordinates directly: "上方中心線往右第五顆，
-//      第一排" (top row, 5 cells right of the horizontal center line).
-//      That "5" is exactly this file's own reference_point_x (5) — so
-//      T點 = (columns//2 - reference_point_x, 0): an offset from the
-//      wafer's horizontal center, along its own row 0 (the flat/notch
-//      edge in this rendering), by reference_point_x cells. Verified
-//      against the real file: gives exactly (18, 0) as reported.
-// reference_point_y is NOT used — row 0 is fixed, not derived from it;
-// unconfirmed whether that holds for a wafer whose notch/flat sits on a
-// different edge. Only known when loaded via FRM (manually-pasted
-// "x,y,bin" text has no columns/reference_point header to compute this
-// from, so this stays null then).
-let refPointByPanel = [null, null]; // {x, y} | null
+// T點 (Reference Point) — a cell the user points out themselves as a
+// visual landmark, NOT anything WaferCoordinate.exe marks or highlights on
+// its own. 2026/08/18-19 history: three formula guesses were tried (direct
+// reference_point_x/y as a coordinate; plain grid center; then
+// `columns//2 - reference_point_x, row 0`, which happened to match one
+// real photo). 2026/08/19: decompiled the actual WaferCoordinate.exe (the
+// user provided the .exe itself) and confirmed `ReferencePointX`/
+// `ReferencePointY` are parsed from the FRM file but never referenced
+// anywhere in the drawing code — no formula using them can be "the" T點,
+// because the real tool doesn't compute one at all. The user explained
+// their own method: they eyeball it themselves, cross-referencing the
+// (purely geometric, not data-driven) center crosshair against where
+// bin7/bin1 fall in nearby rows/columns — a manual visual judgment call,
+// not a derivable value. So this is now a MANUAL, per-panel input (see
+// waferIds().tPointX/tPointY, read fresh on every render by
+// currentRefPoint() below) instead of an auto-computed guess — showing a
+// wrong auto-guess labeled "T點" is worse than not showing one at all.
+// The input fields' own values are what persists (see APP_FIELD_IDS) —
+// no separate T點 state variable is needed.
 let substratePositions = []; // ["col:row", ...] in blank_generator's own machine-type order — shared by every layer
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 let focusedSubstratePosByLayer = [null]; // "col:row" clicked in that layer's BINGO MAP, for reverse lookup
@@ -106,6 +101,8 @@ function waferIds(i) {
     waferInput: `wafer-input${s}`,
     btnLoadWafer: `btn-load-wafer${s}`,
     binLegend: `wafer-bin-legend${s}`,
+    tPointX: `t-point-x${s}`,
+    tPointY: `t-point-y${s}`,
     hoverStatus: `wafer-hover-status${s}`,
     wrap: `wafer-wrap${s}`,
     grid: `wafer-grid${s}`,
@@ -156,11 +153,16 @@ function buildExtraWaferPanelHtml() {
       <div class="notice" style="margin-top:1rem">或手動貼上第二片wafer bin資料（每行 <code>x,y,bin</code>）</div>
       <textarea id="${ids.waferInput}" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
       <button class="secondary" id="${ids.btnLoadWafer}">載入第二片Wafer地圖(文字)</button>
+      <div class="notice" style="margin-top:1rem">T點座標（選填，手動輸入，不是自動算出來的——見上方主wafer區塊的說明）</div>
+      <div class="grid2">
+        <label>T點 X <input id="${ids.tPointX}" type="number" placeholder="選填"></label>
+        <label>T點 Y <input id="${ids.tPointY}" type="number" placeholder="選填"></label>
+      </div>
       <div class="legend">
         <span id="${ids.binLegend}" style="display:contents"></span>
         <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
         <span><i style="background:#fff;border-color:#f5900f;border-style:dashed"></i>已選取、待寫入</span>
-        <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（不能選取）</span>
+        <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（上面手動填了X/Y才會標示，不能選取）</span>
       </div>
       <p id="${ids.hoverStatus}" class="grid-hover-status">滑鼠移到格子上會顯示座標</p>
       <div id="${ids.wrap}" class="lyr-wafer-wrap">
@@ -198,7 +200,6 @@ function resetLayerState() {
   stagedPicks = [];
   waferCellsByPanel = [waferCellsByPanel[0] || new Map(), new Map()];
   waferBoundsByPanel = [waferBoundsByPanel[0] || null, null];
-  refPointByPanel = [refPointByPanel[0] || null, null];
   focusedSubstratePosByLayer = Array.from({ length: n }, () => null);
   focusedWaferXYByLayer = Array.from({ length: n }, () => null);
   document.getElementById("lookup-status").textContent = "";
@@ -591,16 +592,23 @@ async function loadFrmIntoPanel(panelIndex) {
   const { cells, bounds } = waferCellsFromApiCells(data.cells);
   waferCellsByPanel[panelIndex] = cells;
   waferBoundsByPanel[panelIndex] = bounds;
-  refPointByPanel[panelIndex] =
-    data.columns && data.reference_point_x !== undefined
-      ? { x: Math.floor(data.columns / 2) - data.reference_point_x, y: 0 }
-      : null;
   status.className = "ok";
-  const refNote = refPointByPanel[panelIndex]
-    ? `，T點＝${refPointByPanel[panelIndex].x}:${refPointByPanel[panelIndex].y}（wafer圖上會用斜紋標示，是wafer水平中心線往右偏reference_point_x格、第一排的位置，麻煩比對一下跟WaferCoordinate.exe看到的是不是同一格）`
-    : "";
-  status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）${refNote}`;
+  status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   renderAll();
+}
+
+// T點 is a manual, per-panel input now (see the big comment at
+// refPointByPanel's declaration for why) — read fresh from the two input
+// fields on every render rather than computed from FRM header data.
+function currentRefPoint(panelIndex) {
+  const ids = waferIds(panelIndex);
+  const xEl = document.getElementById(ids.tPointX);
+  const yEl = document.getElementById(ids.tPointY);
+  if (!xEl || !yEl) return null;
+  const x = parseInt(xEl.value, 10);
+  const y = parseInt(yEl.value, 10);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
 }
 
 // Bin color palette — 2026/08/19 ask: "應該依據下載下來有什麼bin code就出現
@@ -705,6 +713,7 @@ function renderWaferPanel(panelIndex) {
     return;
   }
   const { minX, maxX, minY, maxY } = bounds;
+  const refPoint = currentRefPoint(panelIndex);
 
   // X axis is rendered right-to-left (0 at the right edge) to match the
   // real WaferCoordinate.exe tool's convention, where the wafer's origin
@@ -757,7 +766,6 @@ function renderWaferPanel(panelIndex) {
       }
       const isFocused = focusedWaferXYByLayer.some((f) => f && f.panel === panelIndex && f.x === x && f.y === y);
       if (isFocused) cell.classList.add("focus");
-      const refPoint = refPointByPanel[panelIndex];
       const isRefPoint = refPoint && refPoint.x === x && refPoint.y === y;
       if (isRefPoint) {
         cell.classList.add("ref-point");
@@ -940,7 +948,7 @@ const APP_STORAGE_KEY = "bingomap_main_state";
 const APP_FIELD_IDS = [
   "assy_lot", "mapping_lot", "eqpid", "oper", "substrate_id", "substrate_row",
   "substrate_column", "substrate_block", "notch", "ref", "convention", "machine_type",
-  "wafer_ring", "start_time", "interval_seconds",
+  "wafer_ring", "start_time", "interval_seconds", "t-point-x", "t-point-y",
 ];
 
 function serializeWaferCells(cellsMap) {
@@ -969,7 +977,6 @@ function saveState() {
       picksByLayer,
       stagedPicks,
       waferCells: waferCellsByPanel.map(serializeWaferCells),
-      refPointByPanel,
       referenceSubstrates: referenceSubstrates.map((r) => ({ ...r, positions: [...r.positions] })),
     };
     localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
@@ -1037,8 +1044,6 @@ function restoreState() {
     waferCellsByPanel[i] = cells;
     waferBoundsByPanel[i] = bounds;
   }
-  refPointByPanel = saved.refPointByPanel || [null, null];
-
   referenceSubstrates = (saved.referenceSubstrates || []).map((r) => ({ ...r, positions: new Set(r.positions) }));
 
   focusedSubstratePosByLayer = Array.from({ length: effectiveNumLayers() }, () => null);
@@ -1185,13 +1190,15 @@ function wireWaferPanelEvents(panelIndex) {
     const { cells, bounds } = parseWaferText(document.getElementById(ids.waferInput).value);
     waferCellsByPanel[panelIndex] = cells;
     waferBoundsByPanel[panelIndex] = bounds;
-    // Manually-pasted "x,y,bin" text carries no FRM columns/rows header to
-    // compute a T點/center from — clear any stale marker from a previous
-    // FRM load.
-    refPointByPanel[panelIndex] = null;
     renderAll();
   });
   wireGridDragEvents(ids.grid, ids.hoverStatus, ids.tooltip, panelIndex);
+  // T點 is a manual input — needs a live re-render (not just a save) on
+  // every keystroke so the marker moves as the user types.
+  const xEl = document.getElementById(ids.tPointX);
+  const yEl = document.getElementById(ids.tPointY);
+  if (xEl) xEl.addEventListener("input", renderAll);
+  if (yEl) yEl.addEventListener("input", renderAll);
 }
 
 function wireBingoBlockEvents(layerIndex) {

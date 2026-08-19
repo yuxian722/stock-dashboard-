@@ -121,11 +121,19 @@
     <div class="notice" style="margin-top:1rem">或手動貼上wafer bin資料（每行 <code>x,y,bin</code>）——之後這步可以換成別的資料來源，不影響後面流程。</div>
     <textarea id="wafer-input" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
     <button class="secondary" id="btn-load-wafer">載入Wafer地圖(文字)</button>
+    <div class="notice" style="margin-top:1rem">
+      T點座標（選填，手動輸入）——T點不是WaferCoordinate.exe自動標出來的資料，是靠中心線位置搭配
+      bin7/bin1的分布自己判斷出來的，這裡沒辦法自動算，填了才會在下面wafer圖上用斜紋標示那一格。
+    </div>
+    <div class="grid2">
+      <label>T點 X <input id="t-point-x" type="number" placeholder="選填"></label>
+      <label>T點 Y <input id="t-point-y" type="number" placeholder="選填"></label>
+    </div>
     <div class="legend">
       <span id="wafer-bin-legend" style="display:contents"></span>
       <span id="wafer-legend-picked"><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層（格內數字＝第幾層）</span>
       <span id="wafer-legend-staged"><i style="background:#fff;border-color:#f5900f;border-style:dashed"></i>已選取、待寫入</span>
-      <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（只有用「自動讀取FRM檔案」載入才會有這個標示，不能選取）</span>
+      <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（上面手動填了X/Y才會標示，不能選取）</span>
     </div>
     <div id="stage-controls" style="display:none;margin:0.4rem 0">
       <button type="button" class="secondary" id="btn-clear-staged">清除待寫入的座標</button>

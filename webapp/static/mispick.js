@@ -1,4 +1,5 @@
 let lastCsv = null;
+let lastWaferData = null; // last {columns, rows, lot_no, wafer_id, cells} passed to renderWaferGrid() — so the T點 fields can re-render live on every keystroke without re-fetching
 // Kept so nudge buttons (which re-run analyze() without the user touching
 // the file input again) and a restored session both keep working — a
 // plain <input type=file> can never be re-populated by JS after a page
@@ -61,6 +62,7 @@ function renderWaferGrid(wafer) {
     panel.style.display = "none";
     return;
   }
+  lastWaferData = wafer;
   panel.style.display = "";
   lastWaferPasteText = wafer.cells
     .slice()
@@ -77,20 +79,23 @@ function renderWaferGrid(wafer) {
   const minY = Math.min(...ys), maxY = Math.max(...ys);
 
   // T點 (2026/08/19 ask: "誤吸的圖檔沒有顯示T點 要補充出來這樣我才知道
-  // 移動的位置在哪裡") — same formula/convention as app.js's own T點
-  // (see that file's refPointByPanel comment for the full derivation
-  // history): an offset from the wafer's horizontal center by
-  // reference_point_x cells, fixed on row 0. Only drawable when the wafer
-  // came from an FRM read (reference_point_x present) — manually-pasted
-  // "x,y,bin" text has no header to compute this from.
-  const refPoint =
-    wafer.columns && wafer.reference_point_x !== undefined
-      ? { x: Math.floor(wafer.columns / 2) - wafer.reference_point_x, y: 0 }
-      : null;
+  // 移動的位置在哪裡") — originally computed from reference_point_x via
+  // the same formula as app.js's main-page marker, but 2026/08/19 later
+  // that day: decompiled the real WaferCoordinate.exe (user provided the
+  // .exe itself) and confirmed ReferencePointX/Y are parsed from the FRM
+  // file but never referenced anywhere in its drawing code — the real
+  // tool doesn't compute or mark a T點 from them at all. The user
+  // explained their own method: eyeballing the (purely geometric) center
+  // crosshair against where bin7/bin1 fall nearby — a manual visual call,
+  // not a derivable value. So this is a manual input now (see
+  // #mp-t-point-x/y), read fresh on every render, same as app.js's
+  // currentRefPoint().
+  const tx = parseInt(document.getElementById("mp-t-point-x").value, 10);
+  const ty = parseInt(document.getElementById("mp-t-point-y").value, 10);
+  const refPoint = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : null;
   document.getElementById("mp-wafer-tpoint-legend").style.display = refPoint ? "" : "none";
-  const refNote = refPoint ? `　T點＝${refPoint.x}:${refPoint.y}（wafer圖上用斜紋標示）` : "";
   document.getElementById("mp-wafer-info").textContent =
-    `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）${refNote}`;
+    `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
@@ -430,6 +435,7 @@ const MP_FIELD_IDS = [
   "mp_frm_lot_no", "mp_frm_barcode_id", "mp_frm_path", "mp_wafer_ring",
   "mp_machine_type", "mp_offset_axis", "mp_offset_value",
   "mp_good_bins", "mp_ng_bins", "mp_review_bins",
+  "mp-t-point-x", "mp-t-point-y",
 ];
 
 function saveState() {
@@ -474,5 +480,11 @@ for (const id of MP_FIELD_IDS) {
   el.addEventListener("input", saveState);
   el.addEventListener("change", saveState); // belt-and-suspenders for <select> (machine_type/offset_axis)
 }
+
+// T點 fields need a live re-render (not just a save) on every keystroke,
+// so the marker moves as the user types in wherever they've determined it
+// to be — re-renders whichever wafer is already showing, if any.
+document.getElementById("mp-t-point-x").addEventListener("input", () => renderWaferGrid(lastWaferData));
+document.getElementById("mp-t-point-y").addEventListener("input", () => renderWaferGrid(lastWaferData));
 
 restoreState();

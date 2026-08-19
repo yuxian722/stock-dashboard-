@@ -43,6 +43,15 @@
       用上面的Lot No/Barcode ID自動讀取一次，不用擔心兩邊資料對不上。
     </p>
     <p id="mp-preview-status"></p>
+    <div class="notice" style="margin-top:1rem">
+      T點座標（選填，手動輸入）——T點不是WaferCoordinate.exe自動標出來的資料，是靠中心線位置搭配
+      bin7/bin1的分布自己判斷出來的，這裡沒辦法自動算，填了才會在下面wafer圖上用斜紋標示那一格，
+      方便微調偏移方向時當參考點。
+    </div>
+    <div class="grid2">
+      <label>T點 X <input id="mp-t-point-x" type="number" placeholder="選填"></label>
+      <label>T點 Y <input id="mp-t-point-y" type="number" placeholder="選填"></label>
+    </div>
   </section>
 
   <section class="panel" id="strate-panel">
