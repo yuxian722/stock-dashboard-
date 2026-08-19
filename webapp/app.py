@@ -17,10 +17,12 @@ import base64
 import binascii
 import csv
 import io
+import json
 import os
 import re
 import zipfile
 from datetime import datetime
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
 from openpyxl import Workbook
@@ -60,6 +62,19 @@ app = Flask(__name__)
 # env var, or the frm_path field in a /api/frm request body, for other
 # deployments.
 DEFAULT_FRM_PATH = os.environ.get("BINGOMAP_FRM_PATH", r"F:\SMAP\FRM\\")
+
+# ⑥ SECS格式化參數頁的基準參數清單 — 2026/08/19使用者要求「把這頁改成
+# 這199格式化參數固定在裡面」：不要每次都要重新上傳log才看得到，而是
+# 把已經從真實log解析出來的199組參數(RECIPE@AEU132X2C001A-2070,
+# TID=58151)當作固定基準值直接內建在頁面裡。之後使用者會提供Excel
+# 參數清單，用這份基準值跟Excel清單做check list式比對(哪些已經在機台裡、
+# 哪些是Excel裡有、機台還沒有、後續要慢慢加進去的349組擴充目標)。
+SECS_PARAMS_BASELINE_PATH = Path(__file__).resolve().parent.parent / "bingomap" / "data" / "secs_params_baseline.json"
+
+
+def _load_secs_params_baseline() -> dict:
+    with open(SECS_PARAMS_BASELINE_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def _blank_from_header(data: dict):
@@ -769,6 +784,24 @@ def secs_params_page():
     return render_template("secs_params.html", active_page="secs_params")
 
 
+@app.get("/api/secs_params/baseline")
+def api_secs_params_baseline():
+    """The fixed 199-parameter baseline (see SECS_PARAMS_BASELINE_PATH's
+    comment) — the page loads this immediately on open, no log upload
+    needed. "上傳SECS Log" below stays available separately, for checking
+    a *different* log's own snapshot against this baseline."""
+    baseline = _load_secs_params_baseline()
+    return jsonify(
+        {
+            "pp_id": baseline["pp_id"],
+            "mdln": baseline["mdln"],
+            "softrev": baseline["softrev"],
+            "source_tid": baseline["source_tid"],
+            "params": baseline["params"],
+        }
+    )
+
+
 @app.post("/api/secs_params/extract")
 def api_secs_params_extract():
     """List every SECS "formatted process program" parameter snapshot
@@ -816,15 +849,32 @@ def api_secs_params_extract():
 _SECS_PARAMS_HEADER = ["CCODE", "名稱", "單位", "格式", "數值", "下限", "上限"]
 
 
-def _secs_params_rows(snap) -> list[list[str]]:
-    return [[p.ccode, p.name, p.unit, p.format, p.value, p.min, p.max] for p in snap.params]
+def _snapshot_to_dict(snap) -> dict:
+    """PPParamSnapshot (from a freshly-parsed log) -> the same plain-dict
+    shape the baseline JSON file already uses, so the TXT/Excel builders
+    below only need to handle one shape."""
+    return {
+        "pp_id": snap.pp_id,
+        "mdln": snap.mdln,
+        "softrev": snap.softrev,
+        "tid": snap.tid,
+        "params": [
+            {"ccode": p.ccode, "name": p.name, "unit": p.unit, "format": p.format, "value": p.value, "min": p.min, "max": p.max}
+            for p in snap.params
+        ],
+    }
+
+
+def _param_row(p: dict) -> list[str]:
+    return [p["ccode"], p["name"], p["unit"], p["format"], p["value"], p["min"], p["max"]]
 
 
 def _extract_snapshots_or_error(data: dict):
-    """Shared by the two export endpoints below: re-decode+re-parse the
-    uploaded log server-side (same principle as /api/strate_xml/download_zip
-    — never trust client-supplied result data for a download, re-derive it
-    from the source). Returns (snapshots, None) or (None, (json, status))."""
+    """Shared by the log-based export endpoints below: re-decode+re-parse
+    the uploaded log server-side (same principle as
+    /api/strate_xml/download_zip — never trust client-supplied result data
+    for a download, re-derive it from the source). Returns
+    (snapshot_dicts, None) or (None, (json, status))."""
     text, err = _decode_uploaded_log(data)
     if err:
         return None, err
@@ -834,7 +884,23 @@ def _extract_snapshots_or_error(data: dict):
         return None, ({"error": f"參數格式解析失敗：{exc}"}, 422)
     if not snapshots:
         return None, ({"error": "這份log裡沒有找到S7F25FormattedPPRequest參數快照"}, 400)
-    return snapshots, None
+    return [_snapshot_to_dict(s) for s in snapshots], None
+
+
+def _txt_for_snapshots(snapshot_dicts: list[dict]) -> bytes:
+    lines = []
+    for i, snap in enumerate(snapshot_dicts):
+        tid_note = f"\tTID={snap['tid']}" if snap.get("tid") else ""
+        lines.append(
+            f"# 快照{i + 1}\tPP_ID={snap['pp_id']}\tMDLN={snap['mdln']}\tSOFTREV={snap['softrev']}"
+            f"{tid_note}\t參數數量={len(snap['params'])}"
+        )
+        lines.append("\t".join(_SECS_PARAMS_HEADER))
+        for p in snap["params"]:
+            lines.append("\t".join(str(v) for v in _param_row(p)))
+        lines.append("")
+    content = "\r\n".join(lines) + "\r\n"
+    return content.encode("utf-8-sig")  # BOM so Excel/記事本 opens it as UTF-8, not Big5
 
 
 @app.post("/api/secs_params/download_txt")
@@ -844,22 +910,24 @@ def api_secs_params_download_txt():
     if err:
         return jsonify(err[0]), err[1]
 
-    lines = []
-    for i, snap in enumerate(snapshots):
-        lines.append(
-            f"# 快照{i + 1}\tPP_ID={snap.pp_id}\tMDLN={snap.mdln}\tSOFTREV={snap.softrev}\t"
-            f"TID={snap.tid}\t參數數量={len(snap.params)}"
-        )
-        lines.append("\t".join(_SECS_PARAMS_HEADER))
-        for row in _secs_params_rows(snap):
-            lines.append("\t".join(str(v) for v in row))
-        lines.append("")
-    content = "\r\n".join(lines) + "\r\n"
-
     return Response(
-        content.encode("utf-8-sig"),  # BOM so Excel/記事本 opens it as UTF-8, not Big5
+        _txt_for_snapshots(snapshots),
         mimetype="text/plain; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="secs_params.txt"'},
+    )
+
+
+@app.get("/api/secs_params/baseline/download_txt")
+def api_secs_params_baseline_download_txt():
+    baseline = _load_secs_params_baseline()
+    snap = {
+        "pp_id": baseline["pp_id"], "mdln": baseline["mdln"], "softrev": baseline["softrev"],
+        "tid": baseline["source_tid"], "params": baseline["params"],
+    }
+    return Response(
+        _txt_for_snapshots([snap]),
+        mimetype="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="secs_params_baseline.txt"'},
     )
 
 
@@ -877,29 +945,24 @@ def _safe_sheet_name(name: str, used: set[str]) -> str:
     return candidate
 
 
-@app.post("/api/secs_params/download_excel")
-def api_secs_params_download_excel():
-    data = request.get_json(force=True)
-    snapshots, err = _extract_snapshots_or_error(data)
-    if err:
-        return jsonify(err[0]), err[1]
-
+def _excel_for_snapshots(snapshot_dicts: list[dict]) -> bytes:
     wb = Workbook()
     wb.remove(wb.active)
     used_names: set[str] = set()
-    for i, snap in enumerate(snapshots):
+    for i, snap in enumerate(snapshot_dicts):
         # TID first: Excel's 31-char sheet-name limit would otherwise often
         # truncate off the TID entirely when multiple snapshots share the
         # same (long) PP_ID, leaving indistinguishable names that only
         # differ by the dedup suffix _safe_sheet_name() adds — found
         # 2026/08/19 with the real log's two RECIPE@AEU132X2C001A-2070
         # captures, which both truncated to the same 31 chars.
-        tid_label = f"TID{snap.tid}" if snap.tid else f"snapshot{i + 1}"
-        sheet_name = _safe_sheet_name(f"{tid_label}_{snap.pp_id}", used_names)
+        tid = snap.get("tid") or ""
+        tid_label = f"TID{tid}" if tid else f"snapshot{i + 1}"
+        sheet_name = _safe_sheet_name(f"{tid_label}_{snap['pp_id']}", used_names)
         ws = wb.create_sheet(sheet_name)
-        ws.append([f"PP_ID={snap.pp_id}", f"MDLN={snap.mdln}", f"SOFTREV={snap.softrev}", f"TID={snap.tid}"])
+        ws.append([f"PP_ID={snap['pp_id']}", f"MDLN={snap['mdln']}", f"SOFTREV={snap['softrev']}", f"TID={tid}"])
         ws.append(_SECS_PARAMS_HEADER)
-        rows = _secs_params_rows(snap)
+        rows = [_param_row(p) for p in snap["params"]]
         for row in rows:
             ws.append(row)
         for col_idx, header in enumerate(_SECS_PARAMS_HEADER, start=1):
@@ -911,11 +974,34 @@ def api_secs_params_download_excel():
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
+    return buf.getvalue()
+
+
+@app.post("/api/secs_params/download_excel")
+def api_secs_params_download_excel():
+    data = request.get_json(force=True)
+    snapshots, err = _extract_snapshots_or_error(data)
+    if err:
+        return jsonify(err[0]), err[1]
 
     return Response(
-        buf.getvalue(),
+        _excel_for_snapshots(snapshots),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="secs_params.xlsx"'},
+    )
+
+
+@app.get("/api/secs_params/baseline/download_excel")
+def api_secs_params_baseline_download_excel():
+    baseline = _load_secs_params_baseline()
+    snap = {
+        "pp_id": baseline["pp_id"], "mdln": baseline["mdln"], "softrev": baseline["softrev"],
+        "tid": baseline["source_tid"], "params": baseline["params"],
+    }
+    return Response(
+        _excel_for_snapshots([snap]),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="secs_params_baseline.xlsx"'},
     )
 
 

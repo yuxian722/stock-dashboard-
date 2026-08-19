@@ -1,13 +1,14 @@
-// ⑥ SECS格式化參數 — list every S7F25FormattedPPRequest (Reply) parameter
-// snapshot found in a SECS/AFC transaction log (see bingomap/secs_params.py).
-// Same UTF-16LE-no-BOM log, same base64-upload/server-side-decode pattern as
-// strate_xml.js (file.text() mis-decodes this log, so don't use it).
+// ⑥ SECS格式化參數 — the page's default content is a FIXED 199-parameter
+// baseline (see bingomap/data/secs_params_baseline.json), loaded straight
+// from the server on page open — 2026/08/19 ask: "把這頁改成這199格式化
+// 參數固定在裡面", so it doesn't need a log re-upload every time just to
+// see the current parameter list. Separately, "上傳SECS Log" (section③)
+// still works for checking a DIFFERENT log's own snapshot on its own —
+// same UTF-16LE-no-BOM log, same base64-upload/server-side-decode pattern
+// as strate_xml.js (file.text() mis-decodes this log, so don't use it).
 //
-// 2026/08/19: real log only has 2 Reply snapshots (same recipe captured
-// twice), 199 unique parameters each — not 181 (使用者記憶中的目前組數)
-// or 349 (使用者計畫要擴充到的組數). Flagged to the user in chat; this
-// page just lists what's actually in the log. Excel比對功能還沒做——
-// 需要使用者提供一份範例Excel檔案才能繼續，不要用猜的欄位格式硬做。
+// Excel比對功能(section②)還沒做——需要使用者提供一份範例Excel檔案才能
+// 繼續，不要用猜的欄位格式硬做；目前只是UI骨架(輸入框/按鈕都disabled)。
 let lastLogBase64 = null;
 
 function arrayBufferToBase64(buf) {
@@ -41,25 +42,83 @@ function downloadText(filename, text, withBom) {
   URL.revokeObjectURL(url);
 }
 
-function snapshotToCsv(snap) {
-  const header = ["CCODE", "名稱", "單位", "格式", "數值", "下限", "上限"];
+function paramsToCsv(params) {
+  const header = ["#", "CCODE", "名稱", "單位", "格式", "數值", "下限", "上限"];
   const lines = [header.map(csvEscape).join(",")];
-  snap.params.forEach((p) => {
-    lines.push([p.ccode, p.name, p.unit, p.format, p.value, p.min, p.max].map(csvEscape).join(","));
+  params.forEach((p, i) => {
+    lines.push([i + 1, p.ccode, p.name, p.unit, p.format, p.value, p.min, p.max].map(csvEscape).join(","));
   });
   return lines.join("\r\n") + "\r\n";
 }
 
-// ---- 全部快照匯出TXT/Excel(.xlsx) (2026/08/19 ask: "這些後續要可以匯出
-// excel或者txt檔") — unlike the per-snapshot CSV button above (built
-// client-side from the already-parsed result), these two re-send the
-// original log to the server and re-parse it there, same principle as
+// Shared table renderer (2026/08/19 ask: "要有項目1.2.3讓我知道共有幾項")
+// — every params table (baseline + any per-snapshot table) gets a leading
+// "#" column, both so the total count is obvious at a glance and so a
+// specific row is easy to reference/report back.
+function renderParamsTable(container, params) {
+  container.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "tbl";
+  table.innerHTML =
+    "<thead><tr><th>#</th><th>CCODE</th><th>名稱</th><th>單位</th><th>格式</th><th>數值</th><th>下限</th><th>上限</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+  params.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${i + 1}</td><td>${p.ccode}</td><td>${p.name}</td><td>${p.unit}</td><td>${p.format}</td>` +
+      `<td>${p.value}</td><td>${p.min}</td><td>${p.max}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+async function downloadGet(path, filename) {
+  const res = await fetch(path);
+  if (!res.ok) {
+    const data = await res.json();
+    alert(data.error || "下載失敗");
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ---- ①目前機台基準參數清單 (固定內建，開啟頁面就直接載入，不用上傳log) ----
+async function loadBaseline() {
+  const info = document.getElementById("sp-baseline-info");
+  const res = await fetch("/api/secs_params/baseline");
+  const data = await res.json();
+  if (!res.ok) {
+    info.className = "error";
+    info.textContent = data.error || "載入基準參數清單失敗";
+    return;
+  }
+  document.getElementById("sp-baseline-count").textContent = data.params.length;
+  info.className = "";
+  info.textContent = `PP_ID：${data.pp_id}　MDLN：${data.mdln}　SOFTREV：${data.softrev}　來源TID：${data.source_tid}`;
+  renderParamsTable(document.getElementById("sp-baseline-table-wrap"), data.params);
+}
+
+document.getElementById("sp-btn-download-baseline-txt").addEventListener("click", () => {
+  downloadGet("/api/secs_params/baseline/download_txt", "secs_params_baseline.txt");
+});
+document.getElementById("sp-btn-download-baseline-excel").addEventListener("click", () => {
+  downloadGet("/api/secs_params/baseline/download_excel", "secs_params_baseline.xlsx");
+});
+
+// ---- ③（進階/選用）從其他SECS Log重新解析 — unlike ①, this re-sends the
+// original log to the server and re-parses it there, same principle as
 // STRATE補檔頁的「全部下載zip」：never trust client-held result data for
-// a download when the source log is still available, re-derive it. Needs
-// lastLogBase64, which (like STRATE補檔頁) is best-effort persisted —
-// large logs may not fit localStorage's quota, in which case these two
-// buttons need a fresh upload after a page restore. ----
-async function downloadFromServer(path, filename, mimetype) {
+// a download when the source log is still available, re-derive it. ----
+async function downloadFromServer(path, filename) {
   const status = document.getElementById("sp-status");
   if (!lastLogBase64) {
     status.className = "error";
@@ -111,23 +170,13 @@ function renderSnapshots(snapshots) {
       `<b>PP_ID：${snap.pp_id}</b>　MDLN：${snap.mdln}　SOFTREV：${snap.softrev}　TID：${snap.tid}　` +
       `參數數量：${snap.params.length}<br>` +
       `<button type="button" class="secondary sp-btn-download-csv">下載CSV</button>` +
-      `<div style="overflow-x:auto;margin-top:0.6rem">` +
-      `<table class="tbl"><thead><tr>` +
-      `<th>CCODE</th><th>名稱</th><th>單位</th><th>格式</th><th>數值</th><th>下限</th><th>上限</th>` +
-      `</tr></thead><tbody></tbody></table></div>`;
+      `<div class="sp-table-wrap" style="overflow-x:auto;margin-top:0.6rem"></div>`;
 
-    const tbody = box.querySelector("tbody");
-    snap.params.forEach((p) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML =
-        `<td>${p.ccode}</td><td>${p.name}</td><td>${p.unit}</td><td>${p.format}</td>` +
-        `<td>${p.value}</td><td>${p.min}</td><td>${p.max}</td>`;
-      tbody.appendChild(tr);
-    });
+    renderParamsTable(box.querySelector(".sp-table-wrap"), snap.params);
 
     box.querySelector(".sp-btn-download-csv").addEventListener("click", () => {
       const name = (snap.pp_id || `snapshot_${snap.index + 1}`).replace(/[\\/:*?"<>|]/g, "_");
-      downloadText(`${name}_TID${snap.tid}.csv`, snapshotToCsv(snap), true);
+      downloadText(`${name}_TID${snap.tid}.csv`, paramsToCsv(snap.params), true);
     });
 
     list.appendChild(box);
@@ -171,6 +220,8 @@ async function extractLog() {
 }
 
 // ---- Persistence (同STRATE補檔頁的做法："我切換分頁的時候檔案不要不見") ----
+// Only covers section③ (checking a different log) — section① is always
+// re-fetched fresh from the server on load, so it never goes stale.
 const SP_STORAGE_RESULT = "bingomap_secs_params_result";
 const SP_STORAGE_FILENAME = "bingomap_secs_params_filename";
 const SP_STORAGE_LOG = "bingomap_secs_params_log_base64";
@@ -215,4 +266,5 @@ function restoreState() {
 document.getElementById("sp-btn-extract").addEventListener("click", extractLog);
 document.getElementById("sp-btn-download-all-txt").addEventListener("click", downloadAllTxt);
 document.getElementById("sp-btn-download-all-excel").addEventListener("click", downloadAllExcel);
+loadBaseline();
 restoreState();

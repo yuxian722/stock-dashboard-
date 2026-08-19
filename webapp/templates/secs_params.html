@@ -12,31 +12,54 @@
 
 <div class="hero">
   <h1>SECS格式化參數（S7F25FormattedPPRequest）</h1>
-  <p>上傳機台的SECS/AFC交易紀錄log，列出裡面記錄到的製程參數(Equipment Constants/Recipe參數)快照</p>
+  <p>機台目前的製程參數(Equipment Constants/Recipe參數)基準清單，之後可以跟Excel目標清單比對哪些已經有、哪些還沒加進去</p>
 </div>
 
 <div class="notice">
   Log裡的<code>S7F25FormattedPPRequest</code>（Type="Reply"）事件會記錄一次完整的參數快照：
   <code>PP_ID</code>/<code>MDLN</code>/<code>SOFTREV</code>（這是哪一組recipe／機型／軟體版本）加上
   一長串<code>&lt;Item&gt;</code>，每個Item是一項參數（<code>CCODE</code>編號＋名稱／單位／格式／
-  數值／下限／上限）。<b>目前只做「列出log裡實際找到的參數」，還沒有跟Excel參考檔案比對的功能</b>
-  ——需要一份Excel參數清單的範例檔案才能繼續開發比對邏輯，格式(欄位/工作表)還沒跟使用者確認過。
+  數值／下限／上限）。下面①是2026/08/19從真實log解析出來、固定內建在這頁裡的199組基準參數
+  （<code>RECIPE@AEU132X2C001A-2070</code>），不用每次都重新上傳log才看得到。
 </div>
 
 <div class="layout">
+  <section class="panel" id="sp-baseline-panel" style="grid-column:1/-1">
+    <h2><span class="step-badge">1</span>目前機台基準參數清單（共 <span id="sp-baseline-count">0</span> 組）</h2>
+    <p id="sp-baseline-info" class="small"></p>
+    <button class="secondary" id="sp-btn-download-baseline-txt">匯出TXT</button>
+    <button class="secondary" id="sp-btn-download-baseline-excel">匯出Excel(.xlsx)</button>
+    <div id="sp-baseline-table-wrap" style="overflow-x:auto;margin-top:0.6rem"></div>
+  </section>
+
+  <section class="panel" id="sp-compare-panel" style="grid-column:1/-1">
+    <h2><span class="step-badge">2</span>跟Excel目標清單比對（Check List）</h2>
+    <div class="notice">
+      <b>還沒開發完成</b>——需要你提供一份範例Excel參數清單檔案，確認裡面的欄位/工作表格式(例如是用
+      CCODE編號比對、還是用參數名稱比對)後才能把比對邏輯做對，不用猜的硬做。目標是：你之後要把
+      機台參數擴充到349組，這裡會顯示Excel清單裡「機台已經有」跟「機台還沒有、要慢慢加進去」的兩份
+      清單，等於check list比較。
+    </div>
+    <label>選擇Excel參數清單檔案（.xlsx，功能開發中） <input type="file" id="sp_excel_file" accept=".xlsx" disabled></label>
+    <button id="sp-btn-compare-excel" disabled>比對(尚未開發)</button>
+  </section>
+
   <section class="panel" id="sp-upload-panel" style="grid-column:1/-1">
-    <h2><span class="step-badge">1</span>上傳SECS Log</h2>
+    <h2><span class="step-badge">3</span>（進階/選用）從其他SECS Log重新解析</h2>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">
+      如果想確認另一份log自己記錄到的參數快照(不是上面固定的基準清單)，可以在這裡上傳、單獨解析查看。
+    </p>
     <label>選擇log檔案 <input type="file" id="sp_log_file" accept=".log,.txt"></label>
     <button id="sp-btn-extract">解析Log</button>
     <p id="sp-status"></p>
   </section>
 
   <section class="panel" id="sp-snapshots-panel" style="grid-column:1/-1;display:none">
-    <h2><span class="step-badge">2</span>參數快照（共 <span id="sp-snapshot-count">0</span> 筆）</h2>
+    <h2><span class="step-badge">4</span>該份log的參數快照（共 <span id="sp-snapshot-count">0</span> 筆）</h2>
     <button class="secondary" id="sp-btn-download-all-txt">全部匯出TXT</button>
     <button class="secondary" id="sp-btn-download-all-excel">全部匯出Excel(.xlsx)</button>
     <p class="hint" style="font-size:0.78rem;color:var(--muted)">
-      「全部匯出」是整份log的所有快照一次匯出成一個檔案(Excel是每個快照各自一個工作表)；下面每個快照
+      「全部匯出」是這份log的所有快照一次匯出成一個檔案(Excel是每個快照各自一個工作表)；下面每個快照
       自己也有「下載CSV」，只匯出那一筆快照。
     </p>
     <div id="sp-snapshots-list"></div>

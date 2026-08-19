@@ -535,6 +535,50 @@ def test_api_secs_params_download_excel_requires_log(client):
     assert res.status_code == 400
 
 
+def test_api_secs_params_baseline(client):
+    # 2026/08/19 ask: "把這頁改成這199格式化參數固定在裡面" — the page
+    # loads this fixed baseline immediately, no log upload needed.
+    res = client.get("/api/secs_params/baseline")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["pp_id"] == "RECIPE@AEU132X2C001A-2070"
+    assert data["mdln"] == "DB800"
+    assert data["softrev"] == "01.172/01"
+    assert len(data["params"]) == 199
+    first = data["params"][0]
+    assert first["ccode"] == "285278212"
+    assert first["name"] == "No. of blocks"
+    ccodes = [p["ccode"] for p in data["params"]]
+    assert len(ccodes) == len(set(ccodes))
+
+
+def test_api_secs_params_baseline_download_txt(client):
+    res = client.get("/api/secs_params/baseline/download_txt")
+    assert res.status_code == 200
+    assert "attachment" in res.headers["Content-Disposition"]
+    text = res.get_data().decode("utf-8-sig")
+    assert "PP_ID=RECIPE@AEU132X2C001A-2070" in text
+    assert "285278212\tNo. of blocks" in text
+    assert text.count("\n") > 199  # header + 199 param rows (+ blank line)
+
+
+def test_api_secs_params_baseline_download_excel(client):
+    import io
+
+    import openpyxl
+
+    res = client.get("/api/secs_params/baseline/download_excel")
+    assert res.status_code == 200
+    assert res.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    wb = openpyxl.load_workbook(io.BytesIO(res.get_data()))
+    assert len(wb.sheetnames) == 1
+    ws = wb[wb.sheetnames[0]]
+    assert "PP_ID=RECIPE@AEU132X2C001A-2070" in ws.cell(row=1, column=1).value
+    assert ws.cell(row=2, column=1).value == "CCODE"
+    assert ws.max_row == 2 + 199
+
+
 def test_api_strate_xml_download_zip_real_log(client):
     res = client.post("/api/strate_xml/download_zip", json={"log_base64": _secs_log_base64()})
     assert res.status_code == 200

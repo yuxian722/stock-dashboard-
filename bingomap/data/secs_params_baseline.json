@@ -1,0 +1,1799 @@
+{
+  "pp_id": "RECIPE@AEU132X2C001A-2070",
+  "mdln": "DB800",
+  "softrev": "01.172/01",
+  "source_tid": "58151",
+  "params": [
+    {
+      "ccode": "285278212",
+      "name": "No. of blocks",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "999"
+    },
+    {
+      "ccode": "285278214",
+      "name": "No. of Column(X) in a block",
+      "unit": "",
+      "format": "F8",
+      "value": "12",
+      "min": "0",
+      "max": "999"
+    },
+    {
+      "ccode": "285278218",
+      "name": "No. of Row(Y)",
+      "unit": "",
+      "format": "F8",
+      "value": "5",
+      "min": "1",
+      "max": "100"
+    },
+    {
+      "ccode": "285343745",
+      "name": "Detection mode",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540354",
+      "name": "Frame map",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540355",
+      "name": "Preform stage vacuum",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540356",
+      "name": "Bonding stage vacuum",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540357",
+      "name": "P gripper escape",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540358",
+      "name": "B gripper escape",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540359",
+      "name": "P frame grip during",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "285540360",
+      "name": "B frame grip during",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "285540361",
+      "name": "P frame clamp during",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540362",
+      "name": "B frame clamp during",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "285540366",
+      "name": "PS Vac. Sens. upper limit",
+      "unit": "kPa",
+      "format": "F8",
+      "value": "-50",
+      "min": "-100",
+      "max": "0"
+    },
+    {
+      "ccode": "285540367",
+      "name": "PS Vac. Sens. lower limit",
+      "unit": "kPa",
+      "format": "F8",
+      "value": "-100",
+      "min": "-100",
+      "max": "0"
+    },
+    {
+      "ccode": "285540368",
+      "name": "BS Vac. Sens. upper limit",
+      "unit": "kPa",
+      "format": "F8",
+      "value": "-50",
+      "min": "-100",
+      "max": "0"
+    },
+    {
+      "ccode": "285540369",
+      "name": "BS Vac. Sens. lower limit",
+      "unit": "kPa",
+      "format": "F8",
+      "value": "-100",
+      "min": "-100",
+      "max": "0"
+    },
+    {
+      "ccode": "285540372",
+      "name": "Frame disposal (Sched. unit count)",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "285540378",
+      "name": "Frame map data download",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "302055425",
+      "name": "Preform stage up/down",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "302055427",
+      "name": "Delay after preform stage up",
+      "unit": "ms",
+      "format": "F8",
+      "value": "100",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "302055432",
+      "name": "PS vacuum release time",
+      "unit": "ms",
+      "format": "F8",
+      "value": "30",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "302055433",
+      "name": "Preform clamp speed (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "10",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302055434",
+      "name": "Preform clamp speed (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "10",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302120961",
+      "name": "Bonding stage up/down",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "302252041",
+      "name": "Frame Det. sens. offset(Rear)",
+      "unit": "um",
+      "format": "F8",
+      "value": "0",
+      "min": "-5000",
+      "max": "5000"
+    },
+    {
+      "ccode": "302383105",
+      "name": "Loader feeder transfer speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302383106",
+      "name": "Loader feeder speed (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302383107",
+      "name": "Loader feeder speed (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302383108",
+      "name": "L/F grip motion (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302383109",
+      "name": "L/F grip motion (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302383110",
+      "name": "Revrsed frame Det. speed1",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302448641",
+      "name": "Main feeder1 transfer speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302448642",
+      "name": "Main feeder1 speed (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302448643",
+      "name": "Main feeder1 speed (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302448644",
+      "name": "M/F 1 grip motion (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302448645",
+      "name": "M/F 1 grip motion (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302448650",
+      "name": "P frame clamp transfer timer",
+      "unit": "ms",
+      "format": "F8",
+      "value": "20",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "302514177",
+      "name": "Main feeder2 transfer speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302514178",
+      "name": "Main feeder2 speed (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302514179",
+      "name": "Main feeder2 speed (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302514180",
+      "name": "M/F 2 grip motion (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302514181",
+      "name": "M/F 2 grip motion (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302514183",
+      "name": "B frame clamp transfer timer",
+      "unit": "ms",
+      "format": "F8",
+      "value": "100",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "302579713",
+      "name": "UL/F transfer speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302579714",
+      "name": "Unloader feeder speed (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302579715",
+      "name": "Unloader feeder speed (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302579716",
+      "name": "UL/F grip speed (Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302579717",
+      "name": "UL/F grip speed (Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302645250",
+      "name": "Frame unload speed",
+      "unit": "mm/s",
+      "format": "F8",
+      "value": "20",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302645252",
+      "name": "Frame return speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "30",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "302645261",
+      "name": "Frame unload jam detect push speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "20",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "318832644",
+      "name": "Wafer ring orientation",
+      "unit": "deg",
+      "format": "F8",
+      "value": "180",
+      "min": "-360",
+      "max": "360"
+    },
+    {
+      "ccode": "318832645",
+      "name": "O.F orientation",
+      "unit": "deg",
+      "format": "F8",
+      "value": "90",
+      "min": "-360",
+      "max": "360"
+    },
+    {
+      "ccode": "318963719",
+      "name": "Expansion",
+      "unit": "um",
+      "format": "F8",
+      "value": "5000",
+      "min": "0",
+      "max": "15000"
+    },
+    {
+      "ccode": "318963721",
+      "name": "Die-shift tolerance X",
+      "unit": "um",
+      "format": "F8",
+      "value": "50",
+      "min": "0",
+      "max": "1000"
+    },
+    {
+      "ccode": "318963722",
+      "name": "Die-shift tolerance Y",
+      "unit": "um",
+      "format": "F8",
+      "value": "50",
+      "min": "0",
+      "max": "1000"
+    },
+    {
+      "ccode": "318963725",
+      "name": "Move Die Pos. check NUM X",
+      "unit": "",
+      "format": "F8",
+      "value": "6",
+      "min": "0",
+      "max": "99"
+    },
+    {
+      "ccode": "318963726",
+      "name": "Move Die Pos. check NUM Y",
+      "unit": "",
+      "format": "F8",
+      "value": "6",
+      "min": "0",
+      "max": "99"
+    },
+    {
+      "ccode": "335609862",
+      "name": "Dome Vac. Sens. upper limit",
+      "unit": "kPa",
+      "format": "F8",
+      "value": "-60",
+      "min": "-100",
+      "max": "0"
+    },
+    {
+      "ccode": "335609863",
+      "name": "Dome Vac. Sens. lower limit",
+      "unit": "kPa",
+      "format": "F8",
+      "value": "-100",
+      "min": "-100",
+      "max": "0"
+    },
+    {
+      "ccode": "335806468",
+      "name": "Extractor speed(Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "40",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "335806469",
+      "name": "Extractor speed(Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "10",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "335806470",
+      "name": "Extractor slow speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "10",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "335806471",
+      "name": "Pre griper action delay",
+      "unit": "ms",
+      "format": "F8",
+      "value": "100",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "335806472",
+      "name": "Griper open/close action delay",
+      "unit": "ms",
+      "format": "F8",
+      "value": "50",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "335937537",
+      "name": "Wafer blow time",
+      "unit": "ms",
+      "format": "F8",
+      "value": "50",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "336003074",
+      "name": "Movable radius for 8inch",
+      "unit": "um",
+      "format": "F8",
+      "value": "102000",
+      "min": "97000",
+      "max": "107000"
+    },
+    {
+      "ccode": "336003075",
+      "name": "Movable radius for 12inch",
+      "unit": "um",
+      "format": "F8",
+      "value": "153000",
+      "min": "147000",
+      "max": "157000"
+    },
+    {
+      "ccode": "352387073",
+      "name": "Die position recognition",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "352387075",
+      "name": "Ink mark recognition",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "352387076",
+      "name": "Ink mark die mode",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "352387080",
+      "name": "Check die function",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "352387081",
+      "name": "Die recognition error mode",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "352387084",
+      "name": "Die outline recognition mode",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "4"
+    },
+    {
+      "ccode": "352387086",
+      "name": "Die outline recognition mode(Move Die Pos. check)",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "352518145",
+      "name": "Target die coordinate X",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "-600",
+      "max": "600"
+    },
+    {
+      "ccode": "352518146",
+      "name": "Target die coordinate Y",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "-600",
+      "max": "600"
+    },
+    {
+      "ccode": "352518154",
+      "name": "Target search die coordinate X",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "-600",
+      "max": "600"
+    },
+    {
+      "ccode": "352518155",
+      "name": "Target search die coordinate Y",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "-600",
+      "max": "600"
+    },
+    {
+      "ccode": "352715009",
+      "name": "Rec. threshold matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "352715010",
+      "name": "Rec. cutoff matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "352781313",
+      "name": "Rec. threshold matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "75",
+      "min": "70",
+      "max": "75"
+    },
+    {
+      "ccode": "352781314",
+      "name": "Rec. cutoff matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "75",
+      "min": "0",
+      "max": "75"
+    },
+    {
+      "ccode": "352781569",
+      "name": "Rec. threshold matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "75",
+      "min": "70",
+      "max": "75"
+    },
+    {
+      "ccode": "352781570",
+      "name": "Rec. cutoff matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "75",
+      "min": "70",
+      "max": "75"
+    },
+    {
+      "ccode": "369164289",
+      "name": "Preform Type",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "369164299",
+      "name": "Preform cleaning",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "369229826",
+      "name": "XY speed(Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "5",
+      "max": "50"
+    },
+    {
+      "ccode": "369229828",
+      "name": "Z speed(Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "5",
+      "max": "50"
+    },
+    {
+      "ccode": "369360897",
+      "name": "Dispense mode",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "369360917",
+      "name": "Vacuum pressure",
+      "unit": "kPa",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "20"
+    },
+    {
+      "ccode": "369426694",
+      "name": "Writing speed (1st point)",
+      "unit": "%",
+      "format": "F8",
+      "value": "20",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "369623041",
+      "name": "Tail cut action",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "369623044",
+      "name": "Tail cut action count",
+      "unit": "count",
+      "format": "U2",
+      "value": "1",
+      "min": "0",
+      "max": "99"
+    },
+    {
+      "ccode": "369688581",
+      "name": "Preform clamp stroke",
+      "unit": "um",
+      "format": "F8",
+      "value": "3000",
+      "min": "0",
+      "max": "6500"
+    },
+    {
+      "ccode": "385941505",
+      "name": "Paddle position recognition",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "385941507",
+      "name": "Paddle recognition mode",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "385941510",
+      "name": "Fail mark recognition",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "385941511",
+      "name": "Fail mark mode",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "386072577",
+      "name": "Recognition threshold",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "386072578",
+      "name": "Recognition cutoff",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "386138113",
+      "name": "Recognition threshold",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "386138114",
+      "name": "Recognition cutoff",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "386203649",
+      "name": "Recognition threshold",
+      "unit": "%",
+      "format": "F8",
+      "value": "70",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "386203650",
+      "name": "Recognition cutoff",
+      "unit": "%",
+      "format": "F8",
+      "value": "70",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "386793473",
+      "name": "Reversed frame Rec. mode",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "386793474",
+      "name": "Recognition threshold",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "402718734",
+      "name": "B force air tolerance (Under 10N)",
+      "unit": "N",
+      "format": "F8",
+      "value": "3",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "402784258",
+      "name": "X speed(Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "50",
+      "min": "40",
+      "max": "50"
+    },
+    {
+      "ccode": "402784259",
+      "name": "X speed(Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "50",
+      "min": "5",
+      "max": "50"
+    },
+    {
+      "ccode": "402784260",
+      "name": "Y speed(Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "80",
+      "max": "85"
+    },
+    {
+      "ccode": "402784261",
+      "name": "Y speed(Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "10",
+      "max": "80"
+    },
+    {
+      "ccode": "402784262",
+      "name": "Z speed(Fast)",
+      "unit": "%",
+      "format": "F8",
+      "value": "50",
+      "min": "10",
+      "max": "50"
+    },
+    {
+      "ccode": "402784263",
+      "name": "Z speed(Slow)",
+      "unit": "%",
+      "format": "F8",
+      "value": "50",
+      "min": "10",
+      "max": "50"
+    },
+    {
+      "ccode": "402980865",
+      "name": "Bonding mode",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "402980866",
+      "name": "Bonding land mode",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "403046659",
+      "name": "Bonding height1",
+      "unit": "um",
+      "format": "F8",
+      "value": "0",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403046661",
+      "name": "Bonding force1",
+      "unit": "N",
+      "format": "F8",
+      "value": "8.6",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403046662",
+      "name": "Bonding time1",
+      "unit": "ms",
+      "format": "F8",
+      "value": "800",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403046915",
+      "name": "Bonding height2",
+      "unit": "um",
+      "format": "F8",
+      "value": "90",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403046917",
+      "name": "Bonding force2",
+      "unit": "N",
+      "format": "F8",
+      "value": "5.8",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403046918",
+      "name": "Bonding time2",
+      "unit": "ms",
+      "format": "F8",
+      "value": "500",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403047171",
+      "name": "Bonding height3",
+      "unit": "um",
+      "format": "F8",
+      "value": "180",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403047173",
+      "name": "Bonding force3",
+      "unit": "N",
+      "format": "F8",
+      "value": "5.8",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403047174",
+      "name": "Bonding time3",
+      "unit": "ms",
+      "format": "F8",
+      "value": "500",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403047427",
+      "name": "Bonding height4",
+      "unit": "um",
+      "format": "F8",
+      "value": "270",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403047429",
+      "name": "Bonding force4",
+      "unit": "N",
+      "format": "F8",
+      "value": "5.8",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403047430",
+      "name": "Bonding time4",
+      "unit": "ms",
+      "format": "F8",
+      "value": "500",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403047683",
+      "name": "Bonding height5",
+      "unit": "um",
+      "format": "F8",
+      "value": "0",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403047685",
+      "name": "Bonding force5",
+      "unit": "N",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403047686",
+      "name": "Bonding time5",
+      "unit": "ms",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403047939",
+      "name": "Bonding height6",
+      "unit": "um",
+      "format": "F8",
+      "value": "0",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403047941",
+      "name": "Bonding force6",
+      "unit": "N",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403047942",
+      "name": "Bonding time6",
+      "unit": "ms",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403048195",
+      "name": "Bonding height7",
+      "unit": "um",
+      "format": "F8",
+      "value": "0",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403048197",
+      "name": "Bonding force7",
+      "unit": "N",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403048198",
+      "name": "Bonding time7",
+      "unit": "ms",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403048451",
+      "name": "Bonding height8",
+      "unit": "um",
+      "format": "F8",
+      "value": "0",
+      "min": "-500",
+      "max": "1000"
+    },
+    {
+      "ccode": "403048453",
+      "name": "Bonding force8",
+      "unit": "N",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403048454",
+      "name": "Bonding time8",
+      "unit": "ms",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403177476",
+      "name": "Bonding start height",
+      "unit": "um",
+      "format": "F8",
+      "value": "500",
+      "min": "0",
+      "max": "5000"
+    },
+    {
+      "ccode": "403177486",
+      "name": "Bonding land speed",
+      "unit": "mm/s",
+      "format": "F8",
+      "value": "5",
+      "min": "0.1",
+      "max": "100"
+    },
+    {
+      "ccode": "403177487",
+      "name": "Bonding slow up speed",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "1",
+      "max": "100"
+    },
+    {
+      "ccode": "403177490",
+      "name": "Bonding land time",
+      "unit": "ms",
+      "format": "F8",
+      "value": "10",
+      "min": "0",
+      "max": "500"
+    },
+    {
+      "ccode": "403177492",
+      "name": "B frame transfer timer",
+      "unit": "ms",
+      "format": "F8",
+      "value": "100",
+      "min": "0",
+      "max": "3000"
+    },
+    {
+      "ccode": "403177493",
+      "name": "B Vac. release start timer",
+      "unit": "ms",
+      "format": "F8",
+      "value": "50",
+      "min": "0",
+      "max": "5000"
+    },
+    {
+      "ccode": "403243009",
+      "name": "Pickup mode",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "403243012",
+      "name": "Pickup force",
+      "unit": "N",
+      "format": "F8",
+      "value": "0.6",
+      "min": "0.2",
+      "max": "5"
+    },
+    {
+      "ccode": "403243013",
+      "name": "Pickup land mode",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "403243017",
+      "name": "Pickup retry count",
+      "unit": "count",
+      "format": "U2",
+      "value": "0",
+      "min": "0",
+      "max": "0"
+    },
+    {
+      "ccode": "403308554",
+      "name": "Pickup land speed",
+      "unit": "mm/s",
+      "format": "F8",
+      "value": "5",
+      "min": "1",
+      "max": "100"
+    },
+    {
+      "ccode": "403308558",
+      "name": "Pickup land time",
+      "unit": "ms",
+      "format": "F8",
+      "value": "10",
+      "min": "0",
+      "max": "500"
+    },
+    {
+      "ccode": "403439620",
+      "name": "Needle up height1",
+      "unit": "um",
+      "format": "F8",
+      "value": "900",
+      "min": "-2000",
+      "max": "6000"
+    },
+    {
+      "ccode": "403439621",
+      "name": "Needle up height2",
+      "unit": "um",
+      "format": "F8",
+      "value": "600",
+      "min": "-2000",
+      "max": "6000"
+    },
+    {
+      "ccode": "403439624",
+      "name": "Needle up speed1",
+      "unit": "%",
+      "format": "F8",
+      "value": "5",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403439625",
+      "name": "Needle up speed2",
+      "unit": "%",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403439627",
+      "name": "Pickup timer1",
+      "unit": "ms",
+      "format": "F8",
+      "value": "200",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "403439628",
+      "name": "Pickup timer2",
+      "unit": "ms",
+      "format": "F8",
+      "value": "200",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "403439629",
+      "name": "Needle up height3",
+      "unit": "um",
+      "format": "F8",
+      "value": "300",
+      "min": "-2000",
+      "max": "6000"
+    },
+    {
+      "ccode": "403439630",
+      "name": "Needle up speed3",
+      "unit": "%",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "403439631",
+      "name": "Pickup timer3",
+      "unit": "ms",
+      "format": "F8",
+      "value": "200",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "403505153",
+      "name": "Pre heat motion",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "403505154",
+      "name": "Pre heat temperature",
+      "unit": "degC",
+      "format": "F8",
+      "value": "160",
+      "min": "0",
+      "max": "300"
+    },
+    {
+      "ccode": "403570689",
+      "name": "Bond heat motion",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "403570690",
+      "name": "Bond heat temperature",
+      "unit": "degC",
+      "format": "F8",
+      "value": "160",
+      "min": "0",
+      "max": "300"
+    },
+    {
+      "ccode": "403570693",
+      "name": "First IC heat time",
+      "unit": "ms",
+      "format": "F8",
+      "value": "500",
+      "min": "0",
+      "max": "60000"
+    },
+    {
+      "ccode": "403832837",
+      "name": "B clamp open/close distance",
+      "unit": "um",
+      "format": "F8",
+      "value": "3000",
+      "min": "3000",
+      "max": "6500"
+    },
+    {
+      "ccode": "405012484",
+      "name": "Pickup force",
+      "unit": "N",
+      "format": "F8",
+      "value": "0.5",
+      "min": "0.2",
+      "max": "100"
+    },
+    {
+      "ccode": "405078027",
+      "name": "P/U slow down start timer",
+      "unit": "ms",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "5000"
+    },
+    {
+      "ccode": "405078030",
+      "name": "Pickup vacuum timer",
+      "unit": "ms",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "20000"
+    },
+    {
+      "ccode": "405209089",
+      "name": "Bh Collet cleaning",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "405274625",
+      "name": "Brush cleaning mode(0:Disable/1:Enable/2:Enable(Tape cleaning Sync.))",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "405340161",
+      "name": "Bh collete cleaning(0:Disable/1:Enable)",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "405405697",
+      "name": "Puh collete cleaning(0:Disable/1:Enable)",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "419495937",
+      "name": "Paddle position recognition",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "419495938",
+      "name": "No. of Paddle Rec. point",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "1",
+      "max": "3"
+    },
+    {
+      "ccode": "419495940",
+      "name": "Paddle recognition mode",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "419561479",
+      "name": "Paddle recognition area X",
+      "unit": "um",
+      "format": "F8",
+      "value": "800",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "419561480",
+      "name": "Paddle recognition area Y",
+      "unit": "um",
+      "format": "F8",
+      "value": "800",
+      "min": "0",
+      "max": "10000"
+    },
+    {
+      "ccode": "419627009",
+      "name": "Recognition threshold",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "50",
+      "max": "100"
+    },
+    {
+      "ccode": "419627010",
+      "name": "Recognition cutoff",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "70",
+      "max": "100"
+    },
+    {
+      "ccode": "419692545",
+      "name": "Recognition threshold",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "30",
+      "max": "100"
+    },
+    {
+      "ccode": "419692546",
+      "name": "Recognition cutoff",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "70",
+      "max": "100"
+    },
+    {
+      "ccode": "420216833",
+      "name": "Ins. mode(Ins.)",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "420216834",
+      "name": "Inspection frequency(Ins.)",
+      "unit": "IC",
+      "format": "U4",
+      "value": "1",
+      "min": "0",
+      "max": "9999"
+    },
+    {
+      "ccode": "421134337",
+      "name": "Before bonding inspection",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "3"
+    },
+    {
+      "ccode": "421199873",
+      "name": "Rec. threshold",
+      "unit": "%",
+      "format": "F8",
+      "value": "40",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "421789698",
+      "name": "Rec. threshold matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "1",
+      "max": "100"
+    },
+    {
+      "ccode": "421789699",
+      "name": "Rec. cutoff matching rate",
+      "unit": "%",
+      "format": "F8",
+      "value": "80",
+      "min": "1",
+      "max": "100"
+    },
+    {
+      "ccode": "422641665",
+      "name": "Die Surface Check",
+      "unit": "",
+      "format": "F8",
+      "value": "2",
+      "min": "0",
+      "max": "2"
+    },
+    {
+      "ccode": "436273186",
+      "name": "Bonding inspection",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "436273193",
+      "name": "Preform stage Vac. Det.",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "436273194",
+      "name": "Bonding stage Vac. Det.",
+      "unit": "",
+      "format": "F8",
+      "value": "1",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "453050369",
+      "name": "Presence inspection",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "453050370",
+      "name": "Inspection frequency",
+      "unit": "IC",
+      "format": "U4",
+      "value": "1",
+      "min": "0",
+      "max": "100"
+    },
+    {
+      "ccode": "453050375",
+      "name": "Area inspection",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "1"
+    },
+    {
+      "ccode": "486735876",
+      "name": "OVERFLOW CHECK THRESHOLD1",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "2200000"
+    },
+    {
+      "ccode": "486735878",
+      "name": "SHORTAGE CHECK THRESHOLD1",
+      "unit": "",
+      "format": "F8",
+      "value": "0",
+      "min": "0",
+      "max": "2200000"
+    }
+  ]
+}
