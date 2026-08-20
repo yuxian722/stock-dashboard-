@@ -52,6 +52,17 @@
       <label>T點 X <input id="mp-t-point-x" type="number" placeholder="選填"></label>
       <label>T點 Y <input id="mp-t-point-y" type="number" placeholder="選填"></label>
     </div>
+    <div class="notice" style="margin-top:0.6rem">
+      或者：填「目視檢查」畫面上顯示的Ref. Point，自動換算成上面的T點座標（2026/08/19用真實案例驗證
+      過的換算公式：<code>T點X = columns − Ref.Y</code>、<code>T點Y = rows + Ref.X</code>）——只驗證過
+      一組真實資料，換算出來的結果還是可以直接改上面T點欄位覆蓋掉，不放心的話務必再跟WaferCoordinate.exe
+      核對一次。要先按上面「預覽/讀取wafer MAP」載入這片wafer才能換算(需要知道columns/rows)。
+    </div>
+    <div class="grid2">
+      <label>目視檢查 Ref. Point X <input id="mp-visual-ref-x" type="number" placeholder="選填"></label>
+      <label>目視檢查 Ref. Point Y <input id="mp-visual-ref-y" type="number" placeholder="選填"></label>
+    </div>
+    <button type="button" class="secondary" id="mp-btn-convert-visual-ref">換算填入T點</button>
   </section>
 
   <section class="panel" id="strate-panel">

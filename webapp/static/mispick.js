@@ -54,6 +54,32 @@ function renderBinLegend(containerId, cells) {
 // same need — paste-able straight into the main page's manual textarea).
 let lastWaferPasteText = "";
 
+// Convenience auto-fill (2026/08/19): converts "目視檢查"'s own "Ref.
+// Point" reading into T點 X/Y — see app.js's waferDimsByPanel comment for
+// the formula/derivation (confirmed against a real example: Ref. Point
+// (-10, 1) on a 46x24 wafer -> DB-rule (45, 14), matching
+// WaferCoordinate.exe's own display exactly). Not a replacement for the
+// manual T點 fields — just saves doing this arithmetic by hand; still
+// only confirmed against one example.
+function convertVisualRefPoint() {
+  if (!lastWaferData) {
+    document.getElementById("mp-preview-status").className = "error";
+    document.getElementById("mp-preview-status").textContent = "請先預覽/讀取wafer MAP，才知道columns/rows可以換算";
+    return;
+  }
+  const refX = parseInt(document.getElementById("mp-visual-ref-x").value, 10);
+  const refY = parseInt(document.getElementById("mp-visual-ref-y").value, 10);
+  if (!Number.isFinite(refX) || !Number.isFinite(refY)) {
+    document.getElementById("mp-preview-status").className = "error";
+    document.getElementById("mp-preview-status").textContent = "請先填目視檢查顯示的Ref. Point X跟Y";
+    return;
+  }
+  document.getElementById("mp-t-point-x").value = lastWaferData.columns - refY;
+  document.getElementById("mp-t-point-y").value = lastWaferData.rows + refX;
+  saveState(); // setting .value in JS doesn't fire "input", so this won't auto-save otherwise
+  renderWaferGrid(lastWaferData);
+}
+
 function renderWaferGrid(wafer) {
   const panel = document.getElementById("mispick-wafer-panel");
   const container = document.getElementById("mp-wafer-grid");
@@ -436,6 +462,7 @@ const MP_FIELD_IDS = [
   "mp_machine_type", "mp_offset_axis", "mp_offset_value",
   "mp_good_bins", "mp_ng_bins", "mp_review_bins",
   "mp-t-point-x", "mp-t-point-y",
+  "mp-visual-ref-x", "mp-visual-ref-y",
 ];
 
 function saveState() {
@@ -486,5 +513,6 @@ for (const id of MP_FIELD_IDS) {
 // to be — re-renders whichever wafer is already showing, if any.
 document.getElementById("mp-t-point-x").addEventListener("input", () => renderWaferGrid(lastWaferData));
 document.getElementById("mp-t-point-y").addEventListener("input", () => renderWaferGrid(lastWaferData));
+document.getElementById("mp-btn-convert-visual-ref").addEventListener("click", convertVisualRefPoint);
 
 restoreState();

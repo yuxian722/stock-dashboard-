@@ -299,3 +299,32 @@ WaferCoordinate.exe畫面上那條**純幾何、寫死在畫面正中央、跟�
 在原本公式上加修正項或猜第二種情況的公式，應該回頭確認一開始「這是不是真的由資料決定」這個前提
 本身有沒有問題——這次靠重新反編譯真正的.exe原始碼直接找到答案，比再猜一輪公式快得多，也不會像
 之前SECS log/FRM那幾次T點調查一樣來回猜好幾輪。**
+
+### 後續（同一天）：T點改手動輸入之後，找到「目視檢查→DB規則」的換算公式(只驗證過一組)
+
+T點改手動輸入後使用者還是想要能省一點手動心算的力氣，指出：`P_map_image.exe`(使用者稱「目視檢查」/
+「2目視檢查」)這個工具顯示的「Ref. Point」欄位資料本身是原始、不會錯的，只是跟WaferCoordinate.exe的
+「DB規則」(WaferCoordinate.exe的`cbMachine`下拉選單裡真實存在的「DB系列」選項，不是我們自創的名詞)
+座標系統不一樣，要求換算。
+
+- 先確認`P_map_image.exe`是native Win32 GUI執行檔(`file`指令輸出`PE32 executable (GUI) Intel 80386`，
+  `ilspycmd`直接丟`PEFileNotSupportedException`)，不是.NET組件，沒辦法比照`WaferCoordinate.exe`反編譯
+  ——這點跟本檔案更早之前已經記錄過的結論一致，這次是重新確認、沒有找到新的繞過方法，繼續保留人工
+  操作這一步。
+- 反過來重新反編譯`WaferCoordinate.exe`確認「DB規則」的實際定義：`cbMachine_SelectedIndexChanged`選
+  「DB 系列」(也是預設值)時`WaferOrinigal = OrinigalLocation.UpRight`；`ShowCoord()`的`UpRight`分支
+  是`displayed_X = Count_X - raw_X - 1`、`displayed_Y = raw_Y`——這剛好跟這個專案wafer圖一直以來的
+  畫法(X軸反轉/原點右上角、Y軸不變)完全一致，代表wafer圖本身的座標系統從頭到尾沒有錯，之前來回懷疑
+  的「鏡像」問題只出在T點這個疊加標記上，不是底圖。
+- 使用者提供一組矩配資料反推出公式：wafer WPQ5310156SS/Barcode FD1B25、layout 46欄×24列，「目視檢查」
+  顯示`Ref. Point: -10, 1`，WaferCoordinate.exe顯示`position X:46, Y:15`(1起算，使用者換算成0起算後
+  告訴我是`(45, 14)`)。公式：`T點X(DB規則,0起算) = columns − 目視檢查.Y`、
+  `T點Y(DB規則,0起算) = rows + 目視檢查.X`。代入：`46−1=45`、`24+(−10)=14`，完全吻合。**只驗證過這一組
+  真實資料**，套用到`webapp/app.js`/`webapp/mispick.js`的做法是當成「輔助換算按鈕」而不是取代手動
+  輸入欄位——按了會把算出來的值寫進原本就存在的T點X/Y欄位，欄位本身還是可以手動覆蓋，不是新增一條
+  獨立、無法覆蓋的自動路徑。細節見`webapp/README.md`「T點標示」章節。
+- 實作上踩到一個小坑：用JS直接設定`input.value`不會觸發`input`事件，如果依賴的是掛在欄位上的
+  `input`監聽器來存`localStorage`，換算出來的值會在切分頁/重新整理後消失——這跟本檔案沒有直接關係，
+  是純前端持久化的坑，但因為這個專案每個新功能幾乎都會涉及`localStorage`持久化，值得記一筆：**新增
+  任何用JS程式碼(不是使用者手動輸入)寫入表單欄位值的功能，都要記得該欄位原本的存檔路徑是不是真的
+  會被觸發到，用Playwright實際reload驗證，不要只看程式邏輯覺得「應該會存」。**

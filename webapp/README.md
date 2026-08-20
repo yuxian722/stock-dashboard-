@@ -240,6 +240,41 @@ WaferCoordinate.exe比對「鏡像相反」，要求拿真正的`.exe`確認正�
 T點」這個假設，現在看來也一樣站不住腳(T點是操作員每片wafer各自判斷的，不是layout常數)，之後如果
 要繼續完善這個功能，應該一併改成手動輸入，不要沿用套用到全部wafer的假設。
 
+**2026/08/19再更新：手動輸入太麻煩，加了一個「目視檢查」換算T點的輔助按鈕（仍然可以手動覆蓋）。**
+使用者說明：「目視檢查」(`P_map_image.exe`)這個獨立小工具顯示的「Ref. Point」欄位，資料本身是原始、
+不會錯的，只是座標系統(下面稱「目視檢查座標」)跟WaferCoordinate.exe實際顯示給操作員判斷T點用的座標
+系統(使用者稱「DB規則」——WaferCoordinate.exe裡選「DB系列」機型時套用的座標轉換，是個實際存在的下拉
+選單選項，不是我們發明的名詞)不一樣，要求找出兩者的換算公式。
+
+- `P_map_image.exe`確認是native Win32 GUI執行檔(`file`指令看得出來，`ilspycmd`直接丟
+  `PEFileNotSupportedException: PE file does not contain any managed metadata`)，不是.NET組件，
+  沒辦法比照`WaferCoordinate.exe`反編譯源碼——這點`bingomap/CLAUDE.md`本來就有記錄之前試過放棄，
+  這次重新確認結果一樣，不再嘗試更重的逆向工程手段。
+- 改用反編譯`WaferCoordinate.exe`本尊找到的邏輯確認「DB規則」本身：`cbMachine_SelectedIndexChanged`
+  選「DB 系列」時`WaferOrinigal = OrinigalLocation.UpRight`(且是預設值)；`ShowCoord()`的`UpRight`
+  分支：`displayed_X = Count_X - raw_X - 1`、`displayed_Y = raw_Y`(不變)——這剛好跟我們自己wafer圖
+  一直以來的畫法(X軸反轉/原點右上角、Y軸不變)完全一致，代表wafer圖本身從來沒有錯，問題只在T點這個
+  疊加標記上。
+- 使用者直接提供一組真實比對資料：wafer WPQ5310156SS/Barcode FD1B25、layout是46欄×24列，「目視檢查」
+  顯示`Ref. Point: -10, 1`，同一片wafer的WaferCoordinate.exe顯示`position X:46, Y:15`(1起算)——使用者
+  直接換算成0起算告訴我是`(45, 14)`。反推出換算公式：
+  ```
+  T點X (DB規則、0起算) = columns − 目視檢查.Y
+  T點Y (DB規則、0起算) = rows + 目視檢查.X
+  ```
+  代入驗證：`46 − 1 = 45`、`24 + (−10) = 14`，跟使用者給的`(45, 14)`完全吻合。**目前只驗證過這一組
+  真實資料**，公式本身信心沒有低到不能用，但也還沒到能完全取代人工核對的程度。
+- 因此新增的是**輔助換算按鈕，不是取代手動輸入**：①補資料頁(wafer panel，含跨兩片wafer模式的第二片)
+  跟②誤吸偏移頁都在「T點 X / T點 Y」欄位下方加了「目視檢查 Ref. Point X / Y」兩個選填欄位＋「換算
+  填入T點」按鈕，按下去用上面公式算出結果直接寫進T點 X/Y欄位——**T點欄位本身還是可以手動再改**，換算
+  結果只是省去手動心算，不放心就照原本流程直接跟WaferCoordinate.exe核對。要先讀取過這片wafer的FRM
+  (知道columns/rows)才能換算，沒有columns/rows的手動貼wafer bin文字模式沒有這個功能。
+- 實作上有個坑記錄一下：換算按鈕用JS直接設定`input.value`，這個操作**不會觸發`input`事件**，如果
+  只靠原本掛在欄位上的`input`監聽器存`localStorage`，換算出來的T點值會在切分頁/重新整理後消失
+  (Playwright測出來的，不是靠猜)——①補資料頁的按鈕最後有呼叫`renderAll()`(本來就會存)，但②誤吸偏移
+  頁的對應函式改成用`renderWaferGrid()`直接重繪、沒有經過會存檔的那條路徑，所以額外手動呼叫了一次
+  `saveState()`修正。
+
 ## 參考同一片wafer的其他基板
 
 同一片實體wafer常常會切成好幾枚基板，各自產生各自的`.strate`。「複製既有.strate為範本」欄位下方

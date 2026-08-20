@@ -42,6 +42,23 @@ let waferBoundsByPanel = [null, null];
 // wrong auto-guess labeled "T點" is worse than not showing one at all.
 // The input fields' own values are what persists (see APP_FIELD_IDS) —
 // no separate T點 state variable is needed.
+//
+// 2026/08/19 follow-up: the user found a real, working conversion from
+// "目視檢查" (a separate viewer tool)'s own "Ref. Point" reading to our
+// DB-rule (x, y) — confirmed against a real example (Ref. Point (-10, 1)
+// on a 46x24 wafer -> DB-rule (45, 14), matching WaferCoordinate.exe's own
+// display exactly):
+//   raw_x = columns - refPointY
+//   raw_y = rows + refPointX
+// This is a convenience auto-fill for the T點 fields, NOT a replacement
+// for manual entry — "目視檢查"'s own Ref. Point still has to be read off
+// its screen by eye each time, same as before, and this formula is only
+// confirmed against one example so it could still be wrong for some other
+// layout. See convertVisualRefPoint() below. waferDimsByPanel caches
+// {columns, rows} from the last FRM load per panel — needed for this
+// formula (manually-pasted "x,y,bin" text has no header to get them from,
+// so the button stays disabled then).
+let waferDimsByPanel = [null, null]; // {columns, rows} | null
 let substratePositions = []; // ["col:row", ...] in blank_generator's own machine-type order — shared by every layer
 let substrateBounds = null; // {minCol, maxCol, minRow, maxRow}
 let focusedSubstratePosByLayer = [null]; // "col:row" clicked in that layer's BINGO MAP, for reverse lookup
@@ -103,6 +120,9 @@ function waferIds(i) {
     binLegend: `wafer-bin-legend${s}`,
     tPointX: `t-point-x${s}`,
     tPointY: `t-point-y${s}`,
+    visualRefX: `visual-ref-x${s}`,
+    visualRefY: `visual-ref-y${s}`,
+    btnConvertVisualRef: `btn-convert-visual-ref${s}`,
     hoverStatus: `wafer-hover-status${s}`,
     wrap: `wafer-wrap${s}`,
     grid: `wafer-grid${s}`,
@@ -158,6 +178,15 @@ function buildExtraWaferPanelHtml() {
         <label>T點 X <input id="${ids.tPointX}" type="number" placeholder="選填"></label>
         <label>T點 Y <input id="${ids.tPointY}" type="number" placeholder="選填"></label>
       </div>
+      <div class="notice" style="margin-top:0.6rem">
+        或者：填「目視檢查」的Ref. Point自動換算(公式見上方主wafer區塊說明)，要先用「自動讀取FRM檔案」
+        載入這片wafer才能換算。
+      </div>
+      <div class="grid2">
+        <label>目視檢查 Ref. Point X <input id="${ids.visualRefX}" type="number" placeholder="選填"></label>
+        <label>目視檢查 Ref. Point Y <input id="${ids.visualRefY}" type="number" placeholder="選填"></label>
+      </div>
+      <button type="button" class="secondary" id="${ids.btnConvertVisualRef}">換算填入T點</button>
       <div class="legend">
         <span id="${ids.binLegend}" style="display:contents"></span>
         <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
@@ -200,6 +229,7 @@ function resetLayerState() {
   stagedPicks = [];
   waferCellsByPanel = [waferCellsByPanel[0] || new Map(), new Map()];
   waferBoundsByPanel = [waferBoundsByPanel[0] || null, null];
+  waferDimsByPanel = [waferDimsByPanel[0] || null, null];
   focusedSubstratePosByLayer = Array.from({ length: n }, () => null);
   focusedWaferXYByLayer = Array.from({ length: n }, () => null);
   document.getElementById("lookup-status").textContent = "";
@@ -592,6 +622,7 @@ async function loadFrmIntoPanel(panelIndex) {
   const { cells, bounds } = waferCellsFromApiCells(data.cells);
   waferCellsByPanel[panelIndex] = cells;
   waferBoundsByPanel[panelIndex] = bounds;
+  waferDimsByPanel[panelIndex] = { columns: data.columns, rows: data.rows };
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   renderAll();
@@ -609,6 +640,36 @@ function currentRefPoint(panelIndex) {
   const y = parseInt(yEl.value, 10);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return { x, y };
+}
+
+// Convenience auto-fill (2026/08/19): converts "目視檢查"'s own "Ref.
+// Point" reading into T點 X/Y directly — see waferDimsByPanel's comment
+// for the formula and how it was confirmed. Needs the wafer's own
+// columns/rows (only known after an FRM load), so does nothing if that
+// hasn't happened yet.
+function convertVisualRefPoint(panelIndex) {
+  const ids = waferIds(panelIndex);
+  const dims = waferDimsByPanel[panelIndex];
+  const status = document.getElementById(ids.frmStatus);
+  if (!dims) {
+    if (status) {
+      status.className = "error";
+      status.textContent = "請先用「自動讀取FRM檔案」載入這片wafer，才知道columns/rows可以換算";
+    }
+    return;
+  }
+  const refX = parseInt(document.getElementById(ids.visualRefX).value, 10);
+  const refY = parseInt(document.getElementById(ids.visualRefY).value, 10);
+  if (!Number.isFinite(refX) || !Number.isFinite(refY)) {
+    if (status) {
+      status.className = "error";
+      status.textContent = "請先填目視檢查顯示的Ref. Point X跟Y";
+    }
+    return;
+  }
+  document.getElementById(ids.tPointX).value = dims.columns - refY;
+  document.getElementById(ids.tPointY).value = dims.rows + refX;
+  renderAll();
 }
 
 // Bin color palette — 2026/08/19 ask: "應該依據下載下來有什麼bin code就出現
@@ -949,6 +1010,7 @@ const APP_FIELD_IDS = [
   "assy_lot", "mapping_lot", "eqpid", "oper", "substrate_id", "substrate_row",
   "substrate_column", "substrate_block", "notch", "ref", "convention", "machine_type",
   "wafer_ring", "start_time", "interval_seconds", "t-point-x", "t-point-y",
+  "visual-ref-x", "visual-ref-y",
 ];
 
 function serializeWaferCells(cellsMap) {
@@ -1199,6 +1261,8 @@ function wireWaferPanelEvents(panelIndex) {
   const yEl = document.getElementById(ids.tPointY);
   if (xEl) xEl.addEventListener("input", renderAll);
   if (yEl) yEl.addEventListener("input", renderAll);
+  const convertBtn = document.getElementById(ids.btnConvertVisualRef);
+  if (convertBtn) convertBtn.addEventListener("click", () => convertVisualRefPoint(panelIndex));
 }
 
 function wireBingoBlockEvents(layerIndex) {
