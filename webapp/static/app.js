@@ -675,15 +675,25 @@ function convertVisualRefPoint(panelIndex) {
 // Bin color palette — 2026/08/19 ask: "應該依據下載下來有什麼bin code就出現
 // 不能只有Bin 1 Bin 7". Real wafer bin codes are always a single ASCII
 // digit (bingomap/frm_reader.py's _decode_bin_kind does `int(chr(value))`,
-// which only ever succeeds for one decimal digit) — a fixed 10-entry
-// palette covers every real value; anything unexpected falls back to one
-// shared gray rather than crashing or silently reusing another bin's color.
+// which only ever succeeds for one decimal digit).
+//
+// 2026/08/20大更正：這組顏色本來是我自己配的一套「看起來清楚」的10色palette，
+// 使用者拿真正的WaferCoordinate.exe截圖比對後說「還是沒有改成正確的版本」——
+// 追出來不是座標/軸向的問題(那個早就驗證過完全吻合)，是**顏色**：Bin 2我們畫
+// 橘色、真正的工具畫藍色；Bin 6我們畫青色、真正的工具畫灰色，難怪畫面看起來
+// 對不起來。反編譯`WaferCoordinate.exe`的`clsWaferMap.cs`的`DrawBinRect()`
+// 找到它自己畫wafer圖用的真正switch/case色碼(`ColorTranslator.FromHtml`，
+// AARRGGBB格式，這裡把AA透明度那個字節去掉直接轉成RRGGBB)，逐一比對這才是唯一
+// 正確的來源，不是憑印象配色：
+//   1→#13ff13(綠) 2→#0000cd(藍) 3→#ff8c00(橘) 4→#c60060(洋紅)
+//   5→#40e0d0(青綠) 6→#838383(灰) 7→#ff59ff(粉紅) 8→#11ffff(青)
+//   9→#848400(橄欖) 其他(含0，真正的工具的switch也沒有特別處理0)→#e0ffff(極淺青)
 const BIN_COLORS = {
-  "0": "#94a3b8", "1": "#4fb84a", "2": "#f59e0b", "3": "#ef4444",
-  "4": "#8b5cf6", "5": "#3b82f6", "6": "#14b8a6", "7": "#d867d8",
-  "8": "#92400e", "9": "#ca8a04",
+  "1": "#13ff13", "2": "#0000cd", "3": "#ff8c00", "4": "#c60060",
+  "5": "#40e0d0", "6": "#838383", "7": "#ff59ff", "8": "#11ffff",
+  "9": "#848400",
 };
-const BIN_COLOR_FALLBACK = "#64748b";
+const BIN_COLOR_FALLBACK = "#e0ffff"; // covers bin "0" too — real tool's switch doesn't special-case it either
 
 function binColor(bin) {
   return BIN_COLORS[bin] !== undefined ? BIN_COLORS[bin] : BIN_COLOR_FALLBACK;
