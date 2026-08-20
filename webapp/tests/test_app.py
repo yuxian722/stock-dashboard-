@@ -579,6 +579,100 @@ def test_api_secs_params_baseline_download_excel(client):
     assert ws.max_row == 2 + 199
 
 
+def _checklist_xlsx_bytes(rows) -> bytes:
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Item", "Name", "ID number", "ID name"])
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_api_secs_params_compare_excel_categorizes_matched_new_and_machine_only(client):
+    import base64
+
+    rows = [
+        ("[Recipe]-[Group A]", "No. of blocks", 285278212, "DT_SOME_ID"),  # matches baseline exactly
+        (None, "Brand new param", 999999999, "DT_NEW_ID"),  # not on the machine yet
+    ]
+    b64 = base64.b64encode(_checklist_xlsx_bytes(rows)).decode("ascii")
+    res = client.post("/api/secs_params/compare_excel", json={"excel_base64": b64})
+    assert res.status_code == 200
+    data = res.get_json()
+
+    assert data["counts"]["checklist_total_rows"] == 2
+    assert data["counts"]["checklist_unique_ccodes"] == 2
+    assert data["counts"]["matched"] == 1
+    assert data["counts"]["checklist_only"] == 1
+    assert data["counts"]["machine_only"] == 198  # 199 baseline - the 1 matched
+    assert data["counts"]["duplicate_ccode_groups"] == 0
+
+    matched = data["matched"][0]
+    assert matched["ccode"] == "285278212"
+    assert matched["baseline_name"] == "No. of blocks"
+    assert matched["name_mismatch"] is False
+
+    new = data["checklist_only"][0]
+    assert new["ccode"] == "999999999"
+    assert new["name"] == "Brand new param"
+    # forward-filled from the previous row's Item column, same as a real
+    # Excel with merged-looking category cells (only the first row of a
+    # group actually has a value)
+    assert new["category"] == "[Recipe]-[Group A]"
+
+
+def test_api_secs_params_compare_excel_reports_duplicate_ccode(client):
+    import base64
+
+    rows = [
+        ("[Recipe]-[Group A]", "First", 111111111, "DT_A"),
+        (None, "First again, different name", 111111111, "DT_A2"),
+    ]
+    b64 = base64.b64encode(_checklist_xlsx_bytes(rows)).decode("ascii")
+    res = client.post("/api/secs_params/compare_excel", json={"excel_base64": b64})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["counts"]["duplicate_ccode_groups"] == 1
+    dup = data["duplicate_ccodes"][0]
+    assert dup["ccode"] == "111111111"
+    assert [r["name"] for r in dup["rows"]] == ["First", "First again, different name"]
+
+
+def test_api_secs_params_compare_excel_requires_file(client):
+    res = client.post("/api/secs_params/compare_excel", json={})
+    assert res.status_code == 400
+
+
+def test_api_secs_params_compare_excel_rejects_bad_base64(client):
+    res = client.post("/api/secs_params/compare_excel", json={"excel_base64": "not valid base64!!"})
+    assert res.status_code == 400
+
+
+def test_api_secs_params_compare_excel_rejects_wrong_header(client):
+    import base64
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Wrong", "Header", "Shape"])
+    ws.append(["a", "b", "c"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    res = client.post("/api/secs_params/compare_excel", json={"excel_base64": b64})
+    assert res.status_code == 422
+    assert "欄位標題" in res.get_json()["error"]
+
+
 def test_api_strate_xml_download_zip_real_log(client):
     res = client.post("/api/strate_xml/download_zip", json={"log_base64": _secs_log_base64()})
     assert res.status_code == 200

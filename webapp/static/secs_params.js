@@ -7,8 +7,10 @@
 // same UTF-16LE-no-BOM log, same base64-upload/server-side-decode pattern
 // as strate_xml.js (file.text() mis-decodes this log, so don't use it).
 //
-// Excel比對功能(section②)還沒做——需要使用者提供一份範例Excel檔案才能
-// 繼續，不要用猜的欄位格式硬做；目前只是UI骨架(輸入框/按鈕都disabled)。
+// Excel比對功能(section②，2026/08/20實作)：使用者提供了真實的目標參數
+// Excel(4欄Item/Name/ID number/ID name)，確認用「ID number」(CCODE)當
+// 比對鍵——解析本身在後端用openpyxl做(webapp/app.py的_parse_excel_checklist)，
+// 這裡只是把.xlsx檔案原始bytes轉base64送過去，跟log上傳同一套模式。
 let lastLogBase64 = null;
 
 function arrayBufferToBase64(buf) {
@@ -113,6 +115,126 @@ document.getElementById("sp-btn-download-baseline-txt").addEventListener("click"
 document.getElementById("sp-btn-download-baseline-excel").addEventListener("click", () => {
   downloadGet("/api/secs_params/baseline/download_excel", "secs_params_baseline.xlsx");
 });
+
+// ---- ②跟Excel目標清單比對 (2026/08/20) ----
+function renderChecklistOnlyTable(container, rows) {
+  container.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "tbl";
+  table.innerHTML = "<thead><tr><th>#</th><th>分類</th><th>CCODE</th><th>名稱</th><th>ID name</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+  rows.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i + 1}</td><td>${r.category}</td><td>${r.ccode}</td><td>${r.name}</td><td>${r.id_name}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+function renderMachineOnlyTable(container, rows) {
+  container.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "tbl";
+  table.innerHTML = "<thead><tr><th>#</th><th>CCODE</th><th>名稱</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+  rows.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i + 1}</td><td>${r.ccode}</td><td>${r.name}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+function renderMatchedTable(container, rows) {
+  container.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "tbl";
+  table.innerHTML =
+    "<thead><tr><th>#</th><th>CCODE</th><th>機台上的名稱</th><th>Excel清單的名稱</th><th>分類</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+  rows.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    if (r.name_mismatch) tr.className = "sp-mismatch";
+    tr.innerHTML =
+      `<td>${i + 1}</td><td>${r.ccode}</td><td>${r.baseline_name}</td>` +
+      `<td>${r.checklist_name}${r.name_mismatch ? " ⚠" : ""}</td><td>${r.category}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+function renderCompareResult(data) {
+  document.getElementById("sp-compare-result").style.display = "";
+
+  document.getElementById("sp-checklist-only-count").textContent = data.counts.checklist_only;
+  document.getElementById("sp-machine-only-count").textContent = data.counts.machine_only;
+  document.getElementById("sp-matched-count").textContent = data.counts.matched;
+  const mismatchCount = data.matched.filter((m) => m.name_mismatch).length;
+  document.getElementById("sp-matched-mismatch-count").textContent = mismatchCount;
+
+  document.getElementById("sp-compare-summary").textContent =
+    `Excel清單共 ${data.counts.checklist_total_rows} 列（不重複CCODE ${data.counts.checklist_unique_ccodes} 組）` +
+    `，目前機台基準參數 ${data.counts.baseline_total} 組。`;
+
+  const dupBox = document.getElementById("sp-compare-duplicate-warning");
+  if (data.duplicate_ccodes.length) {
+    dupBox.style.display = "";
+    const lines = data.duplicate_ccodes
+      .map((d) => `CCODE ${d.ccode}：${d.rows.map((r) => `「${r.name}」`).join("、")}`)
+      .join("<br>");
+    dupBox.innerHTML =
+      `<b>⚠ Excel清單裡有 ${data.duplicate_ccodes.length} 組CCODE重複出現</b>（比對時只取每組第一筆，` +
+      `不影響下面的分類結果，但麻煩確認一下是不是複製貼上時忘記改ID）：<br>${lines}`;
+  } else {
+    dupBox.style.display = "none";
+    dupBox.innerHTML = "";
+  }
+
+  renderChecklistOnlyTable(document.getElementById("sp-checklist-only-table-wrap"), data.checklist_only);
+  renderMachineOnlyTable(document.getElementById("sp-machine-only-table-wrap"), data.machine_only);
+  renderMatchedTable(document.getElementById("sp-matched-table-wrap"), data.matched);
+}
+
+async function compareExcel() {
+  const status = document.getElementById("sp-compare-status");
+  const fileInput = document.getElementById("sp_excel_file");
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) {
+    status.className = "error";
+    status.textContent = "請先選擇一個Excel參數清單檔案(.xlsx)";
+    return;
+  }
+
+  status.className = "";
+  status.textContent = "讀取中...";
+
+  const buf = await file.arrayBuffer();
+  const excelBase64 = arrayBufferToBase64(buf);
+
+  const res = await fetch("/api/secs_params/compare_excel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ excel_base64: excelBase64 }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    status.className = "error";
+    status.textContent = data.error;
+    document.getElementById("sp-compare-result").style.display = "none";
+    return;
+  }
+
+  renderCompareResult(data);
+  saveCompareState(file.name, data);
+
+  status.className = "ok";
+  status.textContent = `比對完成：${file.name}`;
+}
+
+document.getElementById("sp-btn-compare-excel").addEventListener("click", compareExcel);
 
 // ---- ③（進階/選用）從其他SECS Log重新解析 — unlike ①, this re-sends the
 // original log to the server and re-parses it there, same principle as
@@ -263,8 +385,43 @@ function restoreState() {
     `合計 ${total} 項參數。${logNote}`;
 }
 
+// ---- Persistence for ②比對結果 — same principle as section③ above, but
+// simpler: the compare result itself is small (a few hundred rows of
+// ccode/name), no need to also keep the source .xlsx bytes around for a
+// re-download like section③ does for the log. ----
+const SP_STORAGE_COMPARE_RESULT = "bingomap_secs_params_compare_result";
+const SP_STORAGE_COMPARE_FILENAME = "bingomap_secs_params_compare_filename";
+
+function saveCompareState(filename, data) {
+  try {
+    localStorage.setItem(SP_STORAGE_COMPARE_RESULT, JSON.stringify(data));
+    localStorage.setItem(SP_STORAGE_COMPARE_FILENAME, filename);
+  } catch (err) {
+    return; // localStorage unavailable entirely (private mode etc.) — just don't persist
+  }
+}
+
+function restoreCompareState() {
+  const raw = localStorage.getItem(SP_STORAGE_COMPARE_RESULT);
+  if (!raw) return;
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    return;
+  }
+  const filename = localStorage.getItem(SP_STORAGE_COMPARE_FILENAME) || "";
+
+  renderCompareResult(data);
+
+  const status = document.getElementById("sp-compare-status");
+  status.className = "ok";
+  status.textContent = `已還原上次比對過的結果${filename ? `（${filename}）` : ""}。`;
+}
+
 document.getElementById("sp-btn-extract").addEventListener("click", extractLog);
 document.getElementById("sp-btn-download-all-txt").addEventListener("click", downloadAllTxt);
 document.getElementById("sp-btn-download-all-excel").addEventListener("click", downloadAllExcel);
 loadBaseline();
 restoreState();
+restoreCompareState();

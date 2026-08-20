@@ -11,7 +11,13 @@ from pathlib import Path
 import pytest
 
 from bingomap.secs_log import decode_secs_log
-from bingomap.secs_params import SecsParamsFormatError, extract_pp_param_snapshots
+from bingomap.secs_params import (
+    ChecklistRow,
+    SecsParam,
+    SecsParamsFormatError,
+    compare_checklist,
+    extract_pp_param_snapshots,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "secs_params_sample.log"
 
@@ -77,3 +83,59 @@ def test_item_with_wrong_pparm_count_raises():
     bad_item = ET.fromstring("<Item><CCODE>123</CCODE><PPARM>only one</PPARM></Item>")
     with pytest.raises(SecsParamsFormatError):
         _param_from_item(bad_item)
+
+
+# ---- compare_checklist() — 2026/08/20 real Excel checklist matching ----
+# (CCODE-based, confirmed against the user's real target-parameter Excel:
+# 185/199 baseline CCODEs matched by exact CCODE, 4 of those had a minor
+# name difference, 14 baseline CCODEs weren't in the checklist, 56 checklist
+# CCODEs weren't in the baseline yet, and 9 CCODEs appeared twice in the
+# checklist — every one of those five outcomes gets its own test below.)
+
+
+def _param(ccode, name="", unit="", format="F8", value="0", min="0", max="999"):
+    return SecsParam(ccode=ccode, name=name, unit=unit, format=format, value=value, min=min, max=max)
+
+
+def test_compare_checklist_matched_and_name_mismatch():
+    baseline = [_param("111", name="Same Name"), _param("222", name="Old Name")]
+    checklist = [
+        ChecklistRow(category="A", name="Same Name", ccode="111", id_name="DT_A"),
+        ChecklistRow(category="A", name="New Name", ccode="222", id_name="DT_B"),
+    ]
+    result = compare_checklist(baseline, checklist)
+    assert len(result.matched) == 2
+    by_ccode = {m["ccode"]: m for m in result.matched}
+    assert by_ccode["111"]["name_mismatch"] is False
+    assert by_ccode["222"]["name_mismatch"] is True
+    assert by_ccode["222"]["baseline_name"] == "Old Name"
+    assert by_ccode["222"]["checklist_name"] == "New Name"
+    assert result.machine_only == []
+    assert result.checklist_only == []
+
+
+def test_compare_checklist_machine_only_and_checklist_only():
+    baseline = [_param("111", name="On machine"), _param("222", name="Also on machine")]
+    checklist = [ChecklistRow(category="A", name="Target only", ccode="333", id_name="DT_C")]
+    result = compare_checklist(baseline, checklist)
+    assert result.matched == []
+    assert {m["ccode"] for m in result.machine_only} == {"111", "222"}
+    assert [r.ccode for r in result.checklist_only] == ["333"]
+    assert result.checklist_only[0].name == "Target only"
+
+
+def test_compare_checklist_reports_duplicate_ccodes_without_dropping_them():
+    baseline = [_param("111", name="On machine")]
+    checklist = [
+        ChecklistRow(category="A", name="First occurrence", ccode="999", id_name="DT_X"),
+        ChecklistRow(category="B", name="Second occurrence (probably a paste slip)", ccode="999", id_name="DT_X2"),
+    ]
+    result = compare_checklist(baseline, checklist)
+    # comparison itself only counts each CCODE once (first occurrence)
+    assert [r.ccode for r in result.checklist_only] == ["999"]
+    assert result.checklist_only[0].name == "First occurrence"
+    # but the duplicate is fully reported, not silently dropped
+    assert len(result.duplicate_ccodes) == 1
+    dup = result.duplicate_ccodes[0]
+    assert dup["ccode"] == "999"
+    assert [row.name for row in dup["rows"]] == ["First occurrence", "Second occurrence (probably a paste slip)"]

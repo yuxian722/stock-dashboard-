@@ -122,3 +122,93 @@ def extract_pp_param_snapshots(text: str) -> list[PPParamSnapshot]:
         tid_m = re.search(r'TID="([^"]*)"', raw)
         snapshots.append(_snapshot_from_element(elem, tid_m.group(1) if tid_m else ""))
     return snapshots
+
+
+# ---- Excel target-parameter checklist comparison (2026/08/20) ----
+#
+# 使用者提供的真實Excel(4欄: Item/Name/ID number/ID name)確認："ID number"
+# 就是CCODE——跟199組固定基準參數比對，185組CCODE吻合，代表這是正確的比對
+# 欄位，不是用參數名稱比對(名稱在真實資料裡本來就有重複，例如同一種
+# "Rec. threshold matching rate"在好幾個不同的辨識設定底下各自出現一次，
+# CCODE才是唯一鍵)。"Item"欄只有每組第一列才有值(其餘是合併儲存格視覺
+# 效果)，屬於分類階層，不是比對用的鍵。
+#
+# .xlsx本身的讀取(openpyxl)是webapp/app.py的責任——這個模組維持只吃/吐
+# 純Python資料，不依賴openpyxl，方便單元測試(跟這個套件其他模組一致的
+# 原則)。
+
+
+@dataclass
+class ChecklistRow:
+    """One row from the user's target-parameter checklist, already parsed
+    into plain data by the caller."""
+
+    category: str
+    name: str
+    ccode: str
+    id_name: str
+
+
+@dataclass
+class ChecklistComparison:
+    # CCODE 同時存在基準清單跟checklist的項目 (可能名稱有出入，見name_mismatch)
+    matched: list[dict]
+    # 基準清單裡有，但checklist沒有的項目 (機台目前有、但checklist沒列出來)
+    machine_only: list[dict]
+    # checklist裡有，但基準清單沒有的項目 (使用者說的「還沒加進去的」)
+    checklist_only: list[ChecklistRow]
+    # checklist裡同一個CCODE出現不止一次的分組——2026/08/20用使用者的真實
+    # Excel發現有9組CCODE重複(比對整份250列裡有明顯的整段複製貼上痕跡)，
+    # 不要靜默選第一筆/覆蓋，直接回報請使用者自己確認是不是貼錯
+    duplicate_ccodes: list[dict]
+
+
+def compare_checklist(
+    baseline_params: list[SecsParam], checklist_rows: list[ChecklistRow]
+) -> ChecklistComparison:
+    """Check-list式比對：以CCODE為鍵，把使用者的目標參數清單(checklist_rows)
+    跟目前機台的基準參數清單(baseline_params)分成三類——見上面模組註解。
+    checklist_rows裡重複的CCODE不會被丟棄，也不會被靜默去重覆蓋：比對本身
+    只取每個CCODE的第一筆代表，但完整的重複清單另外回報在
+    duplicate_ccodes，讓使用者自己判斷是否為貼錯。"""
+    by_ccode: dict[str, list[ChecklistRow]] = {}
+    for row in checklist_rows:
+        by_ccode.setdefault(row.ccode, []).append(row)
+
+    duplicate_ccodes = [
+        {"ccode": ccode, "rows": rows} for ccode, rows in by_ccode.items() if len(rows) > 1
+    ]
+
+    unique_checklist = {ccode: rows[0] for ccode, rows in by_ccode.items()}
+    baseline_by_ccode = {p.ccode: p for p in baseline_params}
+
+    matched = []
+    checklist_only = []
+    for ccode, row in unique_checklist.items():
+        base = baseline_by_ccode.get(ccode)
+        if base is None:
+            checklist_only.append(row)
+        else:
+            matched.append(
+                {
+                    "ccode": ccode,
+                    "baseline_name": base.name,
+                    "checklist_name": row.name,
+                    "id_name": row.id_name,
+                    "category": row.category,
+                    "name_mismatch": base.name.strip() != row.name.strip(),
+                }
+            )
+
+    machine_only = [
+        {"ccode": p.ccode, "name": p.name}
+        for p in baseline_params
+        if p.ccode not in unique_checklist
+    ]
+
+    return ChecklistComparison(
+        matched=matched,
+        machine_only=machine_only,
+        checklist_only=checklist_only,
+        duplicate_ccodes=duplicate_ccodes,
+    )

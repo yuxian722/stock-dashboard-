@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from bingomap.assignment import DieCountMismatch, DiePick, assign_dies, assign_layers
 from bingomap.blank_generator import blank_from_positions, generate_blank
@@ -51,7 +51,13 @@ from bingomap.mispick_analysis import (
     parse_bin_set,
 )
 from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_wafer_maps
-from bingomap.secs_params import SecsParamsFormatError, extract_pp_param_snapshots
+from bingomap.secs_params import (
+    ChecklistRow,
+    SecsParam,
+    SecsParamsFormatError,
+    compare_checklist,
+    extract_pp_param_snapshots,
+)
 from bingomap.strate import StrateFile, StrateFormatError
 
 app = Flask(__name__)
@@ -842,6 +848,136 @@ def api_secs_params_extract():
                 }
                 for i, s in enumerate(snapshots)
             ]
+        }
+    )
+
+
+class ExcelChecklistFormatError(ValueError):
+    """Raised when the uploaded checklist .xlsx doesn't have the expected
+    4-column header — see _parse_excel_checklist()."""
+
+
+_CHECKLIST_EXPECTED_HEADER = ["Item", "Name", "ID number", "ID name"]
+
+
+def _checklist_cell_str(value) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def _checklist_ccode_str(value) -> str:
+    # openpyxl reads a numeric CCODE cell back as int/float, not str — the
+    # baseline's own ccode values are plain digit strings (see
+    # bingomap/data/secs_params_baseline.json), so normalize here rather
+    # than at every comparison call site.
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _parse_excel_checklist(file_bytes: bytes) -> list[ChecklistRow]:
+    """Parse a user-uploaded target-parameter checklist .xlsx into
+    ChecklistRow objects — see bingomap/secs_params.py's module comment on
+    why CCODE ("ID number") is the match key, confirmed 2026/08/20 against
+    a real checklist (185/199 baseline CCODEs found by exact match).
+    Strict on the header (first sheet, first row must be exactly
+    Item/Name/ID number/ID name) — this project's convention is to error
+    out on an unexpected format rather than guess a column mapping."""
+    try:
+        wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
+    except Exception as exc:  # noqa: BLE001 - openpyxl raises several exception types for a bad file
+        raise ExcelChecklistFormatError(f"Excel檔案無法讀取：{exc}") from exc
+
+    ws = wb.worksheets[0]
+    rows = list(ws.iter_rows(min_row=1, values_only=True))
+    if not rows:
+        raise ExcelChecklistFormatError("Excel檔案是空的")
+
+    header = [_checklist_cell_str(c) for c in rows[0][:4]]
+    if header != _CHECKLIST_EXPECTED_HEADER:
+        raise ExcelChecklistFormatError(
+            f"第一列欄位標題預期是 {_CHECKLIST_EXPECTED_HEADER}，實際讀到 {header}"
+            "——請確認是不是同一份格式的Excel，欄位對應不會用猜的"
+        )
+
+    checklist_rows: list[ChecklistRow] = []
+    current_category = ""
+    for r in rows[1:]:
+        if all(c is None for c in r):
+            continue
+        item, name, id_number, id_name = (list(r) + [None, None, None, None])[:4]
+        category = _checklist_cell_str(item)
+        if category:
+            current_category = category
+        if id_number is None or name is None:
+            continue  # no CCODE or no name on this row — nothing to match, skip
+        checklist_rows.append(
+            ChecklistRow(
+                category=current_category,
+                name=_checklist_cell_str(name),
+                ccode=_checklist_ccode_str(id_number),
+                id_name=_checklist_cell_str(id_name),
+            )
+        )
+    return checklist_rows
+
+
+def _checklist_row_dict(row: ChecklistRow) -> dict:
+    return {"category": row.category, "name": row.name, "ccode": row.ccode, "id_name": row.id_name}
+
+
+@app.post("/api/secs_params/compare_excel")
+def api_secs_params_compare_excel():
+    """Check-list式比對：把上傳的目標參數Excel(CCODE為鍵)跟固定的199組
+    基準參數清單比對，分成「兩邊都有」「機台有Excel沒有」「Excel有機台
+    沒有(要新增的)」三類——見bingomap/secs_params.py的compare_checklist()。"""
+    data = request.get_json(force=True)
+    file_b64 = data.get("excel_base64")
+    if not file_b64:
+        return jsonify({"error": "缺少Excel檔案內容"}), 400
+    try:
+        file_bytes = base64.b64decode(file_b64)
+    except (ValueError, binascii.Error) as exc:
+        return jsonify({"error": f"檔案內容解碼失敗：{exc}"}), 400
+
+    try:
+        checklist_rows = _parse_excel_checklist(file_bytes)
+    except ExcelChecklistFormatError as exc:
+        return jsonify({"error": str(exc)}), 422
+
+    if not checklist_rows:
+        return jsonify({"error": "Excel檔案裡沒有解析到任何一列有效的參數(ID number/Name都要有值)"}), 422
+
+    baseline = _load_secs_params_baseline()
+    baseline_params = [
+        SecsParam(
+            ccode=p["ccode"], name=p["name"], unit=p["unit"], format=p["format"],
+            value=p["value"], min=p["min"], max=p["max"],
+        )
+        for p in baseline["params"]
+    ]
+
+    comparison = compare_checklist(baseline_params, checklist_rows)
+
+    return jsonify(
+        {
+            "counts": {
+                "checklist_total_rows": len(checklist_rows),
+                "checklist_unique_ccodes": len(comparison.matched) + len(comparison.checklist_only),
+                "baseline_total": len(baseline_params),
+                "matched": len(comparison.matched),
+                "machine_only": len(comparison.machine_only),
+                "checklist_only": len(comparison.checklist_only),
+                "duplicate_ccode_groups": len(comparison.duplicate_ccodes),
+            },
+            "matched": sorted(comparison.matched, key=lambda m: m["ccode"]),
+            "machine_only": sorted(comparison.machine_only, key=lambda m: m["ccode"]),
+            "checklist_only": [
+                _checklist_row_dict(r) for r in sorted(comparison.checklist_only, key=lambda r: r.ccode)
+            ],
+            "duplicate_ccodes": [
+                {"ccode": d["ccode"], "rows": [_checklist_row_dict(r) for r in d["rows"]]}
+                for d in sorted(comparison.duplicate_ccodes, key=lambda d: d["ccode"])
+            ],
         }
     )
 

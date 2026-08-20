@@ -35,13 +35,28 @@
   <section class="panel" id="sp-compare-panel" style="grid-column:1/-1">
     <h2><span class="step-badge">2</span>跟Excel目標清單比對（Check List）</h2>
     <div class="notice">
-      <b>還沒開發完成</b>——需要你提供一份範例Excel參數清單檔案，確認裡面的欄位/工作表格式(例如是用
-      CCODE編號比對、還是用參數名稱比對)後才能把比對邏輯做對，不用猜的硬做。目標是：你之後要把
-      機台參數擴充到349組，這裡會顯示Excel清單裡「機台已經有」跟「機台還沒有、要慢慢加進去」的兩份
-      清單，等於check list比較。
+      2026/08/20用你提供的真實Excel確認格式：第一列欄位標題要是<code>Item / Name / ID number / ID
+      name</code>（跟你這份檔案一樣），以「ID number」欄位(就是CCODE)當比對的鍵——因為參數名稱本身
+      在真實資料裡會重複(例如好幾個不同辨識設定底下都各自有一個「Rec. threshold matching rate」)，
+      CCODE才是每一項參數唯一的編號。上傳後會分成三類：①<b>兩邊都有</b>(機台已經有、Excel清單也有)
+      ②<b>機台有、Excel清單沒有</b> ③<b>Excel清單有、機台還沒有</b>(你要慢慢加進去的目標)。
     </div>
-    <label>選擇Excel參數清單檔案（.xlsx，功能開發中） <input type="file" id="sp_excel_file" accept=".xlsx" disabled></label>
-    <button id="sp-btn-compare-excel" disabled>比對(尚未開發)</button>
+    <label>選擇Excel參數清單檔案（.xlsx） <input type="file" id="sp_excel_file" accept=".xlsx"></label>
+    <button id="sp-btn-compare-excel">比對</button>
+    <p id="sp-compare-status"></p>
+    <div id="sp-compare-result" style="display:none;margin-top:0.8rem">
+      <p id="sp-compare-summary" class="small"></p>
+      <div id="sp-compare-duplicate-warning" style="display:none" class="notice"></div>
+
+      <h3>③ Excel清單有、機台還沒有（要新增的，共 <span id="sp-checklist-only-count">0</span> 組）</h3>
+      <div id="sp-checklist-only-table-wrap" style="overflow-x:auto"></div>
+
+      <h3 style="margin-top:1rem">② 機台有、Excel清單沒有（共 <span id="sp-machine-only-count">0</span> 組）</h3>
+      <div id="sp-machine-only-table-wrap" style="overflow-x:auto"></div>
+
+      <h3 style="margin-top:1rem">① 兩邊都有（共 <span id="sp-matched-count">0</span> 組，<span id="sp-matched-mismatch-count">0</span> 組名稱有出入）</h3>
+      <div id="sp-matched-table-wrap" style="overflow-x:auto"></div>
+    </div>
   </section>
 
   <section class="panel" id="sp-upload-panel" style="grid-column:1/-1">
