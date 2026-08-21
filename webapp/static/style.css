@@ -15,7 +15,10 @@ body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft JhengHei","Noto Sans TC",sans-serif;
   color:var(--ink);
 }
-.wrap{max-width:1400px;margin:0 auto}
+/* 2026/08/21使用者回報「軟體視窗太小，要在往左右擴增」——寬wafer(例如
+   71欄的MS040)在1400px的舊寬度下要一直橫向捲動才看得到全貌。放寬到
+   1800px(一般寬螢幕都放得下)，比1400px窄的視窗還是會自動縮到100%寬。 */
+.wrap{max-width:1800px;margin:0 auto}
 
 .topNav{
   display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;
