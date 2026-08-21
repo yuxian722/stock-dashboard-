@@ -126,8 +126,12 @@ function renderStripGrid(doc) {
         el.dataset.key = cell.key;
         el.title = `${cell.output_coord}｜TX:TY ${cell.tx}:${cell.ty}｜Wafer ${cell.wafer_id} FX:FY ${cell.fx}:${cell.fy}`;
         if (markedSet.has(cell.key)) {
-          el.style.background = "#ffedd5";
-          el.style.borderColor = "#ea580c";
+          // 跟renderWaferGrid()同一次修正(2026/08/21)：淡橘色太淺看不清楚，
+          // 改成飽和紅色+白色粗體，兩邊Crack標示保持一致。
+          el.style.background = "#ef4444";
+          el.style.borderColor = "#991b1b";
+          el.style.color = "#fff";
+          el.style.fontWeight = "700";
           el.textContent = "C" + (markedKeys.indexOf(cell.key) + 1);
         }
       }
@@ -160,9 +164,16 @@ function renderWaferGrid(scatter) {
       const el = document.createElement("div");
       el.className = "substrate-cell";
       if (p) {
-        el.style.background = p.is_crack ? "#ffedd5" : "#dcfce7";
+        // 2026/08/21使用者回報「Crack的顏色太淺 看不清楚 綠色跟其他圖檔不一樣」
+        // ——原本的淡綠色(#dcfce7)/淡橘色(#ffedd5)是這頁自己配的，跟其他頁面
+        // wafer圖用的鮮綠色(#13ff13，真正WaferCoordinate.exe的bin1顏色)不一致，
+        // 縮小畫面/截圖時幾乎看不出來。改成跟其他頁面一致的鮮綠色，Crack格子
+        // 改成飽和紅色+白色粗體文字，對比更明顯。
+        el.style.background = p.is_crack ? "#ef4444" : "#13ff13";
         if (p.is_crack) {
-          el.style.borderColor = "#ea580c";
+          el.style.borderColor = "#991b1b";
+          el.style.color = "#fff";
+          el.style.fontWeight = "700";
           el.textContent = "C" + p.crack_no;
         }
       }
