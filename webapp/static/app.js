@@ -25,13 +25,16 @@ let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -
 let waferBoundsByPanel = [null, null];
 // 2026/08/21大更正：X軸反轉(欄0在右邊)是2026/08/14用WPQ5310156SS/FC2643
 // (EU014 layout)這片真實wafer反覆驗證過的方向，但使用者後來用另一片真實
-// wafer(FQFYMFS.5X/J7697F, MS040 layout)直接指出WaferCoordinate.exe畫面上
-// 一顆bin=7的die座標，跟我們算出來的位置對不上——實際查證後發現這片wafer
-// 反而是「Y軸反轉、X軸不轉」才對得上，跟EU014那片剛好相反。兩片真實wafer
-// 需要的方向不一樣，代表這不是全部wafer通用的單一公式(原因目前不明，FRM
-// 檔案本身的reverse_fixed欄位兩片都是2，看不出差異)——比照T點最後變成手動
-// 輸入的同一個教訓，方向也做成手動可切換，不再猜一個全部套用的公式。
-// 預設值(X反轉/Y不轉)維持跟一直以來一樣的行為，不會讓舊資料無聲無息跑掉。
+// wafer(FQFYMFS.5X/J7697F, MS040 layout)指出畫面跟WaferCoordinate.exe/
+// 目視檢查對不上——一開始只靠單一(position,bin)座標反推`die_map`就下結論
+// 「X不轉/Y反轉」，直接上線，結果是錯的：使用者拿三張真實畫面(自己開發的
+// 圖、目視檢查、WaferCoordinate.exe)並排比對後糾正，正確答案其實是「X反轉、
+// Y也反轉」(兩個都要反)，不是只反Y。教訓是單一座標反推容易巧合對上一點但
+// 整體方向還是錯的，這類問題最終要以整張圖跟真實畫面視覺比對為準。不管是
+// 哪個方向，都是「不是全部wafer通用的單一公式」(原因目前不明，FRM檔案本身
+// 的reverse_fixed欄位兩片都是2，看不出差異)——比照T點最後變成手動輸入的
+// 同一個教訓，方向做成手動可切換，不再猜一個全部套用的公式。預設值(X反轉/
+// Y不轉)維持跟一直以來一樣的行為，不會讓舊資料無聲無息跑掉。
 let waferFlipXByPanel = [true, true];
 let waferFlipYByPanel = [false, false];
 // T點 (Reference Point) — a cell the user points out themselves as a
