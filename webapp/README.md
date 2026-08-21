@@ -500,6 +500,64 @@ wafer圖檔的資料」。跟前三頁完全不同的地方：**不需要重新�
      (`2070_V30EUC6_Z25709007096_20260801024007.strate`)逐行byte-for-byte比對驗證過完全一致
      (56顆DIE_INFO + 168顆DIE_INFO_OTHER_LAYER + 全部header欄位)。
 
+**2026/08/21重大更正：上面那句「`.strate`檔案輸出完全沒問題」是錯的——`wafer_xy`欄位本身的
+欄位順序就是錯的，這次真正的成因終於找到了，不是「零星幾顆die」的小問題。**
+
+使用者用①補資料頁載入這批`.strate`(`2070_V30EUC6_Z25709007096_...`，就是上面那次「逐行byte-for-byte
+比對驗證過完全一致」的同一份參考檔案)當範本，疊在WPQ5310156SS/FC2643這片wafer的真實bin圖上，
+「已寫入」的座標散得到處都是、明顯超出wafer範圍——使用者一開始以為是wafer圖本身鏡像了，要求重新
+確認方向。這次沒有再猜，直接拿使用者這份`.strate`裡FC2643的49顆die座標，跟FC2643真正的`.frm`檔案
+(die_map)逐顆交叉比對：
+
+- **原封不動比對(`wafer_xy`當作x:y直接查)**：49顆裡只有35顆(71%)真的落在bin=1的位置，8顆完全落在
+  wafer外圍的空白區、4顆對到bin=6(壞的)、1顆對到bin=2(壞的)、1顆對到bin=7(壞的)——但這份`.strate`
+  自己的`bin`欄位49顆全部記錄"1"(已上片良品)，跟這個交叉比對結果完全矛盾
+- **把`wafer_xy`兩個數字互換之後再比對**：49顆全部對到bin=1、而且49個位置各自唯一沒有互相重複，
+  跟`.strate`自己說的「全部都是良品」完全吻合，不是巧合
+
+追根究底找到真正的成因：**回頭看SECS log自己原始的`<DIE_INFO>`XML內容**(不是我們解析出來的結果，
+是log檔案裡的原始文字)，第一顆die就寫著`FC2643,15:5,0:0,...`——跟上面比對"互換"之後才對的上的
+座標完全一致，證實**這不是我們的解析程式改動或算錯的，是機台SECS log自己記錄`<DIE_INFO>`的
+`wafer_xy`欄位時，用的就是`row:col`(列在前、欄在後)**。但`.strate`檔案格式本身的`wafer_xy`約定，
+是`col:row`(欄在前、列在後——這是2026/08/17用另一片完全不同的真實DB案例
+`2070_V32AWE6_Z26306101030_...`驗證過的，見`bingomap/tests/test_mispick_analysis_real_db_sample.py`)。
+
+`secs_log.py`的`extract_strate_files()`原本是把log的`<DIE_INFO>`文字**原封不動**複製進`.strate`
+輸出(docstring原本寫的就是`DieInfo.from_line()`直接解析、不改內容)——這正是問題所在：log自己的
+`row:col`欄位順序，被誤當成`.strate`格式標準的`col:row`直接寫出去，語法(9欄CSV格式)完全對，但欄位
+**語意**(每個數字代表的軸)反了。上面那次「逐行byte-for-byte比對驗證過完全一致」的驗證，比對的
+參考檔案剛好也是同一種方法產生的(同樣沒做欄位互換)，兩邊「一致」只是因為犯了同一個錯，不是真的
+驗證過跟機台原生`.strate`格式相符。
+
+至於`WaferStart`的`BinList`(用來畫這頁自己的wafer圖)：`wafer_map_from_element()`內部本來就是
+「以log的原始row:col為準」在存(`row index = wafer_xy的第一個數字`)，跟`DIE_INFO`用的是同一種
+log原生語意——這頁的疊圖(基板占用位置疊在wafer圖上)之所以能對上、94~96%吻合，是因為**兩邊都用
+log原生的row:col語意，內部自己一致**，不代表這個語意就是`.strate`格式該用的col:row。
+
+**已修正**：
+- `bingomap/secs_log.py`新增`_swap_wafer_xy()`，`extract_strate_files()`輸出的每一筆`DieInfo`的
+  `wafer_xy`都會從log原生的row:col換成`.strate`標準的col:row——下載/複製到①補資料／②誤吸偏移／
+  ③Crack位置回推當範本，現在都會落在正確位置
+- `wafer_map_from_element()`同步把`WaferBinMap`內部存法也改成`(x=欄,y=列)`，跟`frm_reader.py`的
+  `die_map`、跟整個網站其他頁面的wafer座標慣例一致(先前是`(x=列,y=欄)`，只有這個功能自己用反的)
+- `strate_xml.js`的`renderWaferGrid()`跟著同步改成「x=欄(水平)、y=列(垂直)」，畫面排版(哪個軸畫
+  水平/垂直)完全沒變，只是底層資料語意跟著訂正
+- `SECS_T_POINT`常數從`{x:14,y:45}`改成`{x:45,y:14}`——巧合的是，這剛好跟①補資料頁2026/08/20
+  用完全獨立的另一組真實資料(目視檢查Ref.Point換算DB規則)反推出來的公式一致：
+  `T點X=columns−Ref.Y=46−1=45`、`T點Y=rows+Ref.X=24+(−10)=14`，兩條完全不同的調查路線得到
+  同一個答案，互相佐證這次的修正方向是對的
+- 新增回歸測試`bingomap/tests/test_secs_log.py`的
+  `test_extract_strate_files_wafer_xy_matches_real_frm_die_map()`：直接拿使用者提供的真實
+  `.strate`(49顆FC2643 die)跟真實`.frm`(FC2643的die_map)交叉比對，鎖定「互換後49顆全部對到
+  bin=1、無重複」這個結果，不會再退回去
+- 用Playwright實際重跑一次使用者原本回報的情境(用修正後的.strate當①補資料頁範本，疊在WPQ5310156SS
+  wafer上)：56顆「已寫入」座標全部落在wafer內部的綠色區域、緊密聚在一起，不再散落到wafer外圍
+
+教訓：**「逐行byte-for-byte比對驗證過完全一致」聽起來很嚴謹，但如果拿來比對的參考資料本身也是
+同一套(有問題的)邏輯產生的，兩邊「一致」只是同一個錯誤的兩份拷貝，不代表真的驗證過格式正確——
+要驗證，必須拿完全獨立、不同來源、不同方法產生的真實資料交叉比對(這次是反過來用真正的`.frm`
+die_map去對，而不是自己另一份`.strate`跟自己比)，才能真正抓出語意層面(不是語法層面)的錯誤。**
+
 ## SECS格式化參數（`/secs-params`）
 
 2026/08/19使用者要求「機台內secs參數與excel檔案的參數去比較」。2026/08/20使用者提供了真實的目標

@@ -65,7 +65,10 @@ def test_extract_strate_files_matches_real_substrate():
 
     first_die = first.die_info[0]
     assert first_die.wafer_ring == "HD56BA"
-    assert first_die.wafer_xy == "10:42"
+    # 2026/08/21: the log's raw DIE_INFO wafer_xy is row:col ("10:42"),
+    # but a .strate file's wafer_xy is col:row (see secs_log.py's
+    # _swap_wafer_xy()) — extraction now normalizes to "42:10".
+    assert first_die.wafer_xy == "42:10"
     assert first_die.sub_pos == "0:0"
     assert first_die.bin == "1"
 
@@ -114,6 +117,57 @@ def test_extract_wafer_maps_skips_events_without_binlist():
     text = _load_text()
     wafer_maps = extract_wafer_maps(text)
     assert all(wm.wafer_map.cells for wm in wafer_maps)
+
+
+def test_extract_strate_files_wafer_xy_matches_real_frm_die_map():
+    """2026/08/21 regression test: the user reported "已寫入" picks from a
+    SECS-log-extracted .strate landing outside the wafer's real bin data
+    when loaded onto ①補資料/②誤吸偏移. Root cause: the log's own
+    `<DIE_INFO>` wafer_xy field is row:col, but the .strate format's
+    wafer_xy is col:row (identity-mapped onto the real wafer MAP for
+    machine_type="DB", per test_mispick_analysis_real_db_sample.py's
+    separate real-file verification) — two different real data sources,
+    two different field orders. `_swap_wafer_xy()` normalizes to col:row
+    on extraction; this locks that in against completely real files: every
+    FC2643 wafer_xy from a real StrateMap (extracted from a real BAB14 log)
+    must land on an actual bin='1' cell in FC2643's real .frm die map, with
+    no collisions — the un-swapped (raw log) ordering only gets 35/49
+    right, with 8 landing outside the wafer entirely and 6 on the wrong
+    bin (see bingomap/CLAUDE.md for the full before/after comparison)."""
+    from bingomap.frm_reader import parse_frm
+
+    strate = _parse_strate_fixture()
+    frm = parse_frm(
+        (Path(__file__).parent / "fixtures" / "WPQ5310156SS_FC2643.frm").read_bytes()
+    )
+
+    fc2643_dies = [
+        d
+        for d in strate.die_info + strate.other_layer_die_info
+        if d.wafer_ring == "FC2643"
+    ]
+    assert len(fc2643_dies) == 49, "fixture must have exactly the 49 FC2643 dies this test was built from"
+
+    # This fixture .strate is the RAW file the user provided — its own
+    # wafer_xy is still row:col (un-swapped), same as what a fresh
+    # extract_strate_files() call would get straight from the log before
+    # _swap_wafer_xy() runs. Swapping here reproduces exactly what that
+    # function does, checked against real independent data (a real .frm),
+    # not just the small trimmed log fixture the other tests use.
+    seen_positions = set()
+    for d in fc2643_dies:
+        row_str, _, col_str = d.wafer_xy.partition(":")
+        pos = (int(col_str), int(row_str))
+        assert frm.die_map.get(pos) == 1, f"wafer_xy={d.wafer_xy!r} swapped -> {pos} is not a real bin=1 die"
+        assert pos not in seen_positions, f"wafer_xy={d.wafer_xy!r} swapped -> {pos} collides with another die"
+        seen_positions.add(pos)
+
+
+def _parse_strate_fixture():
+    from bingomap.strate import StrateFile
+
+    path = Path(__file__).parent / "fixtures" / "2070_V30EUC6_Z25709007096_20260801024007.strate"
+    return StrateFile.parse(path.read_text(encoding="utf-8"))
 
 
 def test_iter_transactions_handles_self_closing_tag_immediately_before_real_one():

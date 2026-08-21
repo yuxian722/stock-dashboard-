@@ -65,21 +65,21 @@ const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style
 // itself (WaferStart's T2_POINT is always "NA" here) — confirmed
 // 2026/08/19 against a real screenshot of the actual "WaferCoordinate"
 // tool (this project's whole namesake, decompiled in frm_reader.py — NOT
-// the separate "目視檢查" viewer, whose own COL/ROW convention turned out
-// to be rotated 90° relative to WaferCoordinate's) for wafer FC2643:
-// its own "position" readout showed X:46, Y:15 (1-based, out of its own
-// Columns=46/Rows=24) while hovering the T點 mark. Converted to 0-based
-// DIE_INFO coordinates (col-axis 46→45, row-axis 15→14, then mapped onto
-// DIE_INFO's own X=row-axis/Y=col-axis labels — see renderWaferGrid's
-// axis-orientation comment) that's (X=14, Y=45) — checked against
-// FC2643's real bin data: a populated die sits right there, at the edge
-// of the wafer, consistent with a registration mark. User-confirmed
-// correct. Only verified for this one wafer; assumed constant across the
-// whole log since every wafer here shares the EU014 layout (same
-// reasoning as the main page's AW191 T點: the FRM/log analogue,
-// reference_point_x/y, was a per-LAYOUT constant there too) — flag it if
-// it turns out wrong on a different wafer.
-const SECS_T_POINT = { x: 14, y: 45 };
+// the separate "目視檢查" viewer) for wafer FC2643: its own "position"
+// readout showed X:46, Y:15 (1-based, out of its own Columns=46/Rows=24)
+// while hovering the T點 mark, i.e. (col=45, row=14) 0-based.
+//
+// 2026/08/21大更正：這裡原本寫的是`{x:14,y:45}`，是套用log的DIE_INFO
+// 原始row:col座標算出來的——但那時候還沒發現DIE_INFO的wafer_xy其實是
+// row:col、不是.strate標準格式的col:row(見bingomap/secs_log.py的
+// `_swap_wafer_xy()`docstring)。修正這個座標系統之後(renderWaferGrid
+// 現在跟這個網站其他頁面一樣，x=欄/col、y=列/row)，T點座標本身當然也
+// 要對應改成`(col=45, row=14)`——巧合的是，這剛好跟①補資料頁2026/08/20
+// 用完全獨立的另一組真實資料(目視檢查Ref.Point換算成DB規則)反推出來的
+// 公式一致：`T點X = columns - Ref.Y = 46-1 = 45`、
+// `T點Y = rows + Ref.X = 24+(-10) = 14`——兩條完全不同的調查路線
+// 得到同一個答案，等於互相佐證這次的修正方向是對的。
+const SECS_T_POINT = { x: 45, y: 14 };
 
 // containerId: element to render the grid into. wm: one wafer_maps entry
 // (columns/rows/cells). matchedSubstrates: [{label, color, name,
@@ -88,20 +88,21 @@ const SECS_T_POINT = { x: 14, y: 45 };
 // frame_id in renderWaferMaps()).
 // 2026/08/18-19: the user reported substrates' overlaid positions
 // rendering outside the wafer's visible boundary and pointed at needing
-// to match "the wafer coordinate file"'s own orientation. Took two tries:
-// first guessed ColCount's axis should be horizontal (matching real .frm
-// files' own COL=horizontal convention) — a real "目視檢查" viewer
-// screenshot of this wafer (EU014/FC2643) showed "COL 24 ROW 46",
-// seemingly the opposite, so that got reverted back to DIE_INFO's raw
-// X horizontal / Y vertical. Then the user sent ANOTHER screenshot with
-// a second real tool open side by side — literally "WaferCoordinate"
-// itself (not "目視檢查") — showing "Columns: 46, Rows: 24" AND its own
-// wafer image rendered landscape (46 wide, 24 tall), matching the FIRST
-// guess after all. "目視檢查" is a different, separately-oriented viewer
-// — not the tool this whole project (frm_reader.py's own docstring) was
-// built to match, so its COL/ROW shouldn't have been trusted over
-// WaferCoordinate's own. Final: ColCount's axis (DIE_INFO's own "y"
-// field, 0..45) horizontal, RowCount's axis ("x", 0..23) vertical.
+// to match "the wafer coordinate file"'s own orientation — this round of
+// guessing settled (wrongly, see below) on treating DIE_INFO's raw first
+// wafer_xy component as the vertical/RowCount axis and the second as the
+// horizontal/ColCount axis, matching WaferCoordinate.exe's own
+// Columns=46/Rows=24 landscape rendering.
+//
+// 2026/08/21大更正：問題不是這裡的水平/垂直方向選錯，是根本欄位語意
+// 搞反了——反編譯/交叉比對真實資料才發現，log的`<DIE_INFO>`原始
+// `wafer_xy`欄位本身是`row:col`，但`.strate`檔案格式的`wafer_xy`標準
+// 是`col:row`(直接等於wafer MAP座標，DB規則不用轉換，見
+// `bingomap/secs_log.py`的`_swap_wafer_xy()`)——`bingomap/secs_log.py`
+// 現在已經把這個欄位語意在後端統一成`col:row`(呼叫端這裡收到的
+// `wm.cells`/`s.die_positions`都已經是`{x:col, y:row}`，跟這個網站
+// 其他頁面的wafer座標慣例一致)，這裡只要跟著把「x當col(水平)、
+// y當row(垂直)」畫，不用再自己另外判斷方向。
 function renderWaferGrid(containerId, wm, matchedSubstrates) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
@@ -109,8 +110,8 @@ function renderWaferGrid(containerId, wm, matchedSubstrates) {
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
   renderBinLegend(`${containerId}-bin-legend`, cellMap);
-  const rowVals = wm.cells.map((c) => c.x); // RowCount-sized axis -> vertical
-  const colVals = wm.cells.map((c) => c.y); // ColCount-sized axis -> horizontal
+  const colVals = wm.cells.map((c) => c.x); // ColCount-sized axis -> horizontal
+  const rowVals = wm.cells.map((c) => c.y); // RowCount-sized axis -> vertical
   const minRow = Math.min(...rowVals), maxRow = Math.max(...rowVals);
   const minCol = Math.min(...colVals), maxCol = Math.max(...colVals);
 
@@ -135,24 +136,24 @@ function renderWaferGrid(containerId, wm, matchedSubstrates) {
     rowLabel.textContent = row;
     rowEl.appendChild(rowLabel);
     for (let col = maxCol; col >= minCol; col--) {
-      const bin = cellMap.get(`${row},${col}`);
+      const bin = cellMap.get(`${col},${row}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell";
       applyBinColor(cell, bin);
-      const key = `${row},${col}`;
+      const key = `${col},${row}`;
       const owner = matchedSubstrates.find((s) => s.positions.has(key));
-      const isTPoint = row === SECS_T_POINT.x && col === SECS_T_POINT.y;
+      const isTPoint = col === SECS_T_POINT.x && row === SECS_T_POINT.y;
       if (isTPoint) cell.classList.add("ref-point");
       if (owner) {
         cell.classList.add("referenced");
         cell.style.setProperty("--ref-color", owner.color);
         cell.textContent = owner.label;
-        cell.title = `${row}:${col}${isTPoint ? " — T點" : ""} — 基板「${owner.name}」`;
+        cell.title = `${col}:${row}${isTPoint ? " — T點" : ""} — 基板「${owner.name}」`;
       } else if (isTPoint) {
         cell.textContent = "T";
-        cell.title = `${row}:${col} — T點`;
+        cell.title = `${col}:${row} — T點`;
       } else {
-        cell.title = `${row}:${col}`;
+        cell.title = `${col}:${row}`;
       }
       rowEl.appendChild(cell);
     }

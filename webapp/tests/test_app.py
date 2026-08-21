@@ -422,7 +422,10 @@ def test_api_strate_xml_extract_real_log(client):
     assert "MAPPING_LOT=\r\n" in first["text"]
     assert "SUBSTRATE_ID=Z2570900444F" in first["text"]
     assert len(first["die_positions"]) == first["num_dies"] + first["num_other_layer_dies"]
-    assert first["die_positions"][0] == {"x": 10, "y": 42}
+    # 2026/08/21: wafer_xy is now normalized to col:row (x:y) — see
+    # bingomap/secs_log.py's _swap_wafer_xy(); the log's raw DIE_INFO had
+    # this as row:col ("10:42"), extraction now flips it to "42:10".
+    assert first["die_positions"][0] == {"x": 42, "y": 10}
 
     assert len(data["wafer_maps"]) == 1
     wm = data["wafer_maps"][0]
