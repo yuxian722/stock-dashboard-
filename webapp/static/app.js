@@ -23,6 +23,17 @@ let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin, panel}[] — panel = w
 let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not yet written into any layer
 let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -> bin (index 1 only used when multiWaferEnabled)
 let waferBoundsByPanel = [null, null];
+// 2026/08/21大更正：X軸反轉(欄0在右邊)是2026/08/14用WPQ5310156SS/FC2643
+// (EU014 layout)這片真實wafer反覆驗證過的方向，但使用者後來用另一片真實
+// wafer(FQFYMFS.5X/J7697F, MS040 layout)直接指出WaferCoordinate.exe畫面上
+// 一顆bin=7的die座標，跟我們算出來的位置對不上——實際查證後發現這片wafer
+// 反而是「Y軸反轉、X軸不轉」才對得上，跟EU014那片剛好相反。兩片真實wafer
+// 需要的方向不一樣，代表這不是全部wafer通用的單一公式(原因目前不明，FRM
+// 檔案本身的reverse_fixed欄位兩片都是2，看不出差異)——比照T點最後變成手動
+// 輸入的同一個教訓，方向也做成手動可切換，不再猜一個全部套用的公式。
+// 預設值(X反轉/Y不轉)維持跟一直以來一樣的行為，不會讓舊資料無聲無息跑掉。
+let waferFlipXByPanel = [true, true];
+let waferFlipYByPanel = [false, false];
 // T點 (Reference Point) — a cell the user points out themselves as a
 // visual landmark, NOT anything WaferCoordinate.exe marks or highlights on
 // its own. 2026/08/18-19 history: three formula guesses were tried (direct
@@ -123,6 +134,8 @@ function waferIds(i) {
     visualRefX: `visual-ref-x${s}`,
     visualRefY: `visual-ref-y${s}`,
     btnConvertVisualRef: `btn-convert-visual-ref${s}`,
+    flipX: `wafer-flip-x${s}`,
+    flipY: `wafer-flip-y${s}`,
     hoverStatus: `wafer-hover-status${s}`,
     wrap: `wafer-wrap${s}`,
     grid: `wafer-grid${s}`,
@@ -187,6 +200,10 @@ function buildExtraWaferPanelHtml() {
         <label>目視檢查 Ref. Point Y <input id="${ids.visualRefY}" type="number" placeholder="選填"></label>
       </div>
       <button type="button" class="secondary" id="${ids.btnConvertVisualRef}">換算填入T點</button>
+      <div class="grid2" style="margin-top:0.6rem">
+        <label><input type="checkbox" id="${ids.flipX}" checked> X軸反轉（欄0在右邊）</label>
+        <label><input type="checkbox" id="${ids.flipY}"> Y軸反轉（列0在下面）</label>
+      </div>
       <div class="legend">
         <span id="${ids.binLegend}" style="display:contents"></span>
         <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
@@ -786,17 +803,23 @@ function renderWaferPanel(panelIndex) {
   const { minX, maxX, minY, maxY } = bounds;
   const refPoint = currentRefPoint(panelIndex);
 
-  // X axis is rendered right-to-left (0 at the right edge) to match the
-  // real WaferCoordinate.exe tool's convention, where the wafer's origin
-  // (0,0) sits at the top-right, not top-left — confirmed against a photo
-  // of the real tool. Only the display order changes here; dataset.x/y on
-  // each cell still carries the real coordinate.
+  // 方向可切換(見上面waferFlipXByPanel/waferFlipYByPanel的註解) — 這裡只是
+  // 決定畫面上格子的排列順序，dataset.x/y每一格還是原始真實座標，不受影響。
+  const flipX = waferFlipXByPanel[panelIndex];
+  const flipY = waferFlipYByPanel[panelIndex];
+  const xOrder = [];
+  for (let x = minX; x <= maxX; x++) xOrder.push(x);
+  if (flipX) xOrder.reverse();
+  const yOrder = [];
+  for (let y = minY; y <= maxY; y++) yOrder.push(y);
+  if (flipY) yOrder.reverse();
+
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let x = maxX; x >= minX; x--) {
+  for (const x of xOrder) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
     label.textContent = x;
@@ -804,14 +827,14 @@ function renderWaferPanel(panelIndex) {
   }
   container.appendChild(headerRow);
 
-  for (let y = minY; y <= maxY; y++) {
+  for (const y of yOrder) {
     const row = document.createElement("div");
     row.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
     rowLabel.textContent = y;
     row.appendChild(rowLabel);
-    for (let x = maxX; x >= minX; x--) {
+    for (const x of xOrder) {
       const bin = cells.get(`${x},${y}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell";
@@ -1273,6 +1296,20 @@ function wireWaferPanelEvents(panelIndex) {
   if (yEl) yEl.addEventListener("input", renderAll);
   const convertBtn = document.getElementById(ids.btnConvertVisualRef);
   if (convertBtn) convertBtn.addEventListener("click", () => convertVisualRefPoint(panelIndex));
+  const flipXEl = document.getElementById(ids.flipX);
+  const flipYEl = document.getElementById(ids.flipY);
+  if (flipXEl) {
+    flipXEl.addEventListener("change", () => {
+      waferFlipXByPanel[panelIndex] = flipXEl.checked;
+      renderAll();
+    });
+  }
+  if (flipYEl) {
+    flipYEl.addEventListener("change", () => {
+      waferFlipYByPanel[panelIndex] = flipYEl.checked;
+      renderAll();
+    });
+  }
 }
 
 function wireBingoBlockEvents(layerIndex) {

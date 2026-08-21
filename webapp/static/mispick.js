@@ -1,5 +1,9 @@
 let lastCsv = null;
 let lastWaferData = null; // last {columns, rows, lot_no, wafer_id, cells} passed to renderWaferGrid() — so the T點 fields can re-render live on every keystroke without re-fetching
+// 2026/08/21：跟app.js同一次更正，見那邊waferFlipXByPanel的完整註解——不同
+// layout的wafer需要的方向不一樣，改成手動切換而不是猜一個全部套用的公式。
+let mpFlipX = true;
+let mpFlipY = false;
 // Kept so nudge buttons (which re-run analyze() without the user touching
 // the file input again) and a restored session both keep working — a
 // plain <input type=file> can never be re-populated by JS after a page
@@ -126,12 +130,19 @@ function renderWaferGrid(wafer) {
   document.getElementById("mp-wafer-info").textContent =
     `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
 
+  const xOrder = [];
+  for (let x = minX; x <= maxX; x++) xOrder.push(x);
+  if (mpFlipX) xOrder.reverse();
+  const yOrder = [];
+  for (let y = minY; y <= maxY; y++) yOrder.push(y);
+  if (mpFlipY) yOrder.reverse();
+
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let x = maxX; x >= minX; x--) {
+  for (const x of xOrder) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
     label.textContent = x;
@@ -139,14 +150,14 @@ function renderWaferGrid(wafer) {
   }
   container.appendChild(headerRow);
 
-  for (let y = minY; y <= maxY; y++) {
+  for (const y of yOrder) {
     const row = document.createElement("div");
     row.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
     rowLabel.textContent = y;
     row.appendChild(rowLabel);
-    for (let x = maxX; x >= minX; x--) {
+    for (const x of xOrder) {
       const bin = cellMap.get(`${x},${y}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell";
@@ -517,5 +528,13 @@ for (const id of MP_FIELD_IDS) {
 document.getElementById("mp-t-point-x").addEventListener("input", () => renderWaferGrid(lastWaferData));
 document.getElementById("mp-t-point-y").addEventListener("input", () => renderWaferGrid(lastWaferData));
 document.getElementById("mp-btn-convert-visual-ref").addEventListener("click", convertVisualRefPoint);
+document.getElementById("mp-wafer-flip-x").addEventListener("change", (e) => {
+  mpFlipX = e.target.checked;
+  renderWaferGrid(lastWaferData);
+});
+document.getElementById("mp-wafer-flip-y").addEventListener("change", (e) => {
+  mpFlipY = e.target.checked;
+  renderWaferGrid(lastWaferData);
+});
 
 restoreState();
