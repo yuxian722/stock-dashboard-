@@ -103,6 +103,58 @@ const SECS_T_POINT = { x: 45, y: 14 };
 // `wm.cells`/`s.die_positions`都已經是`{x:col, y:row}`，跟這個網站
 // 其他頁面的wafer座標慣例一致)，這裡只要跟著把「x當col(水平)、
 // y當row(垂直)」畫，不用再自己另外判斷方向。
+// 2026/08/25：使用者在①補資料/②誤吸偏移頁拿掉X/Y軸反轉勾選框、改成
+// 0/90/180/270度角度選單之後，直接說「其他分頁也一樣」——這裡的wafer圖
+// 跟那兩頁是同一種東西(真實wafer bin座標)，所以套用同一套設計：排列
+// 順序永遠固定(欄0在右邊、列0在最上面，見renderWaferGrid()本來就是這樣
+// 寫死的，不用改)，角度選單改變的是直接重新計算每一顆die的座標，跟另外
+// 兩頁的rotateWaferCells()/rotateWaferArray()用同一條公式。因為這裡除了
+// wafer bin資料本身，還會疊一層「哪些格子屬於哪個基板」的顏色標示
+// (matchedSubstrates)，兩者用的是同一個wafer、同一個座標系統，所以要
+// 一起旋轉，不然基板標示會跟旋轉後的bin顏色對不齊。
+function rotateWaferMapAndSubstrates(wm, matchedSubstrates, angleDeg) {
+  if (!wm.cells.length) return { wm, matchedSubstrates };
+  const xs = wm.cells.map((c) => c.x);
+  const ys = wm.cells.map((c) => c.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const spanX = maxX - minX, spanY = maxY - minY;
+  const rotatePoint = (x, y) => {
+    const u = x - minX, v = y - minY;
+    if (angleDeg === 90) return [v, spanX - u];
+    if (angleDeg === 180) return [spanX - u, spanY - v];
+    if (angleDeg === 270) return [spanY - v, u];
+    return [u, v]; // 0
+  };
+  const cells = wm.cells.map((c) => {
+    const [nx, ny] = rotatePoint(c.x, c.y);
+    return { x: nx, y: ny, bin: c.bin };
+  });
+  const pasteText = cells
+    .slice()
+    .sort((a, b) => a.x - b.x || a.y - b.y)
+    .map((c) => `${c.x},${c.y},${c.bin}`)
+    .join("\n");
+  const newWm = {
+    ...wm,
+    cells,
+    paste_text: pasteText,
+    columns: angleDeg === 90 || angleDeg === 270 ? wm.rows : wm.columns,
+    rows: angleDeg === 90 || angleDeg === 270 ? wm.columns : wm.rows,
+  };
+  const newMatched = matchedSubstrates.map((s) => ({
+    ...s,
+    positions: new Set(
+      [...s.positions].map((key) => {
+        const [x, y] = key.split(",").map(Number);
+        const [nx, ny] = rotatePoint(x, y);
+        return `${nx},${ny}`;
+      })
+    ),
+  }));
+  return { wm: newWm, matchedSubstrates: newMatched };
+}
+
 function renderWaferGrid(containerId, wm, matchedSubstrates) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
@@ -227,16 +279,24 @@ function renderWaferMaps(waferMaps, substrates) {
     const textareaId = `sx-wafer-map-text-${wm.index}`;
     const gridId = `sx-wafer-map-grid-${wm.index}`;
     const legendId = `sx-wafer-map-legend-${wm.index}`;
+    const angleId = `sx-wafer-map-angle-${wm.index}`;
     box.innerHTML =
       `<b>Frame ID：${wm.frame_id}</b>　Wafer ID：${wm.wafer_id}　尺寸：${wm.columns}x${wm.rows}　有資料的格子：${wm.num_cells}顆<br>` +
       `<button type="button" class="secondary sx-btn-toggle-text">顯示/複製座標文字</button>` +
       `<button type="button" class="secondary sx-btn-copy-text" style="display:none">複製到剪貼簿</button>` +
       `<textarea id="${textareaId}" rows="6" readonly style="display:none;width:100%;margin-top:0.4rem"></textarea>` +
+      `<label style="margin-top:0.4rem;display:inline-block">wafer角度（座標0,0固定右上角，不受角度影響）
+        <select id="${angleId}">
+          <option value="0" selected>0°</option>
+          <option value="90">90°</option>
+          <option value="180">180°</option>
+          <option value="270">270°</option>
+        </select>
+      </label>` +
       `<div class="legend" id="${gridId}-bin-legend" style="margin-top:0.6rem"></div>` +
       `<div class="legend" id="${legendId}" style="margin-top:0.2rem"></div>` +
       `<div class="lyr-wafer-wrap"><div id="${gridId}" class="lyr-wafer-grid"></div></div>`;
     const textarea = box.querySelector(`#${textareaId}`);
-    textarea.value = wm.paste_text;
     const toggleBtn = box.querySelector(".sx-btn-toggle-text");
     const copyBtn = box.querySelector(".sx-btn-copy-text");
     toggleBtn.addEventListener("click", () => {
@@ -244,9 +304,10 @@ function renderWaferMaps(waferMaps, substrates) {
       textarea.style.display = showing ? "none" : "";
       copyBtn.style.display = showing ? "none" : "";
     });
+    let currentPasteText = wm.paste_text;
     copyBtn.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(wm.paste_text);
+        await navigator.clipboard.writeText(currentPasteText);
         copyBtn.textContent = "已複製！";
       } catch (err) {
         textarea.select();
@@ -258,8 +319,15 @@ function renderWaferMaps(waferMaps, substrates) {
     });
     list.appendChild(box);
 
-    renderWaferLegend(legendId, matchedSubstrates);
-    renderWaferGrid(gridId, wm, matchedSubstrates);
+    const rerender = (angleDeg) => {
+      const rotated = rotateWaferMapAndSubstrates(wm, matchedSubstrates, angleDeg);
+      currentPasteText = rotated.wm.paste_text;
+      textarea.value = currentPasteText;
+      renderWaferLegend(legendId, rotated.matchedSubstrates);
+      renderWaferGrid(gridId, rotated.wm, rotated.matchedSubstrates);
+    };
+    box.querySelector(`#${angleId}`).addEventListener("change", (e) => rerender(Number(e.target.value)));
+    rerender(0);
   });
 }
 
