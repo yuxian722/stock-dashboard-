@@ -423,6 +423,12 @@ async function previewWaferMap() {
     return;
   }
 
+  // 2026/08/25：跟app.js同一次更正(見那邊resetWaferFlip的完整註解)——換一片
+  // wafer要重設方向勾選框，不然上一片wafer調過的方向會無聲無息帶到這一片。
+  mpFlipX = true;
+  mpFlipY = false;
+  document.getElementById("mp-wafer-flip-x").checked = true;
+  document.getElementById("mp-wafer-flip-y").checked = false;
   renderWaferGrid(data);
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;

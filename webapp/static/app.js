@@ -639,6 +639,25 @@ function waferCellsFromApiCells(apiCells) {
   return { cells, bounds: cells.size ? { minX, maxX, minY, maxY } : null };
 }
 
+// 2026/08/25：使用者反映「我可以設定方向，但我的座標不應該也跟著轉——
+// 座標應該固定右上角是0,0」。查證後發現：X/Y軸反轉勾選框是per-panel的
+// 即時DOM狀態，不會在載入新wafer時重設——如果使用者為了對之前那片wafer
+// (例如MS040)才手動勾選了Y軸反轉，之後在同一個瀏覽器分頁換載入另一片
+// 完全不同的wafer，勾選框會原封不動留著，導致新wafer的0,0跟著跑到不是
+// 使用者預期的角落，卻不是使用者主動要求的。修法：每次載入「新的」wafer
+// 資料(FRM或貼文字)都把這個panel的方向重設回預設(X反轉/Y不轉＝0,0固定在
+// 右上角)，需要為某片特定wafer調整方向的話，載入之後再手動勾選即可，
+// 不會被「上一片wafer調過的設定」無聲無息帶到這一片。
+function resetWaferFlip(panelIndex) {
+  waferFlipXByPanel[panelIndex] = true;
+  waferFlipYByPanel[panelIndex] = false;
+  const ids = waferIds(panelIndex);
+  const flipXEl = document.getElementById(ids.flipX);
+  const flipYEl = document.getElementById(ids.flipY);
+  if (flipXEl) flipXEl.checked = true;
+  if (flipYEl) flipYEl.checked = false;
+}
+
 async function loadFrmIntoPanel(panelIndex) {
   const ids = waferIds(panelIndex);
   const status = document.getElementById(ids.frmStatus);
@@ -664,6 +683,7 @@ async function loadFrmIntoPanel(panelIndex) {
   waferCellsByPanel[panelIndex] = cells;
   waferBoundsByPanel[panelIndex] = bounds;
   waferDimsByPanel[panelIndex] = { columns: data.columns, rows: data.rows };
+  resetWaferFlip(panelIndex);
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   renderAll();
@@ -1309,6 +1329,7 @@ function wireWaferPanelEvents(panelIndex) {
     const { cells, bounds } = parseWaferText(document.getElementById(ids.waferInput).value);
     waferCellsByPanel[panelIndex] = cells;
     waferBoundsByPanel[panelIndex] = bounds;
+    resetWaferFlip(panelIndex);
     renderAll();
   });
   const clearWaferBtn = document.getElementById(ids.btnClearWafer);
@@ -1317,6 +1338,7 @@ function wireWaferPanelEvents(panelIndex) {
       waferCellsByPanel[panelIndex] = new Map();
       waferBoundsByPanel[panelIndex] = null;
       waferDimsByPanel[panelIndex] = null;
+      resetWaferFlip(panelIndex);
       const waferInputEl = document.getElementById(ids.waferInput);
       if (waferInputEl) waferInputEl.value = "";
       const statusEl = document.getElementById(ids.frmStatus);
