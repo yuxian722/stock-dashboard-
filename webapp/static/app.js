@@ -131,6 +131,7 @@ function waferIds(i) {
     frmStatus: `frm-status${s}`,
     waferInput: `wafer-input${s}`,
     btnLoadWafer: `btn-load-wafer${s}`,
+    btnClearWafer: `btn-clear-wafer${s}`,
     binLegend: `wafer-bin-legend${s}`,
     tPointX: `t-point-x${s}`,
     tPointY: `t-point-y${s}`,
@@ -189,6 +190,7 @@ function buildExtraWaferPanelHtml() {
       <div class="notice" style="margin-top:1rem">或手動貼上第二片wafer bin資料（每行 <code>x,y,bin</code>）</div>
       <textarea id="${ids.waferInput}" rows="6" placeholder="23,195,1&#10;23,196,1&#10;23,197,7"></textarea>
       <button class="secondary" id="${ids.btnLoadWafer}">載入第二片Wafer地圖(文字)</button>
+      <button type="button" class="secondary" id="${ids.btnClearWafer}">清除已載入的Wafer MAP</button>
       <div class="notice" style="margin-top:1rem">T點座標（選填，手動輸入，不是自動算出來的——見上方主wafer區塊的說明）</div>
       <div class="grid2">
         <label>T點 X <input id="${ids.tPointX}" type="number" placeholder="選填"></label>
@@ -1290,6 +1292,22 @@ function wireWaferPanelEvents(panelIndex) {
     waferBoundsByPanel[panelIndex] = bounds;
     renderAll();
   });
+  const clearWaferBtn = document.getElementById(ids.btnClearWafer);
+  if (clearWaferBtn) {
+    clearWaferBtn.addEventListener("click", () => {
+      waferCellsByPanel[panelIndex] = new Map();
+      waferBoundsByPanel[panelIndex] = null;
+      waferDimsByPanel[panelIndex] = null;
+      const waferInputEl = document.getElementById(ids.waferInput);
+      if (waferInputEl) waferInputEl.value = "";
+      const statusEl = document.getElementById(ids.frmStatus);
+      if (statusEl) {
+        statusEl.className = "";
+        statusEl.textContent = "";
+      }
+      renderAll();
+    });
+  }
   wireGridDragEvents(ids.grid, ids.hoverStatus, ids.tooltip, panelIndex);
   // T點 is a manual input — needs a live re-render (not just a save) on
   // every keystroke so the marker moves as the user types.
