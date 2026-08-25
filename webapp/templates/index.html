@@ -142,17 +142,20 @@
     </div>
     <button type="button" class="secondary" id="btn-convert-visual-ref">換算填入T點</button>
     <div class="notice" style="margin-top:0.6rem">
-      wafer圖方向（選填）——2026/08/21發現不同layout的wafer需要的方向不一樣(有的要X軸反轉、有的要
-      Y軸反轉)，沒辦法用同一條公式套用到全部wafer，所以改成手動勾選：如果畫面上的圖跟WaferCoordinate.exe
-      看起來位置對不上，先試著切換這兩個勾選框，哪個組合能讓bin7/bin1的分布跟真正的畫面吻合就用哪個。
-      預設(X軸反轉、Y軸不轉)是座標0,0固定在右上角的方向，沒問題的話不用改。<b>每次重新載入這個panel的
-      wafer資料(自動讀取FRM／貼文字／清除)都會自動把這兩個勾選框重設回預設值</b>，不會被上一片wafer調整
-      過的方向帶到新載入的這一片——要為特定wafer調整方向，請在「載入」之後再手動勾選。
+      wafer角度（選填）——<b>座標0,0永遠固定在畫面右上角</b>，不會因為選了哪個角度而改變；如果畫面上
+      的圖跟WaferCoordinate.exe看起來位置對不上，換一個角度試試看哪個能讓bin7/bin1的分布吻合。換角度
+      會直接重新算出每一顆die的座標(連待寫入/已寫入的座標也是同一套算法)，不是單純換排列順序。每次
+      重新載入這個panel的wafer資料(自動讀取FRM／貼文字／清除)都會自動把角度重設回0°，不會被上一片
+      wafer調整過的角度帶到新載入的這一片。
     </div>
-    <div class="grid2">
-      <label><input type="checkbox" id="wafer-flip-x" checked> X軸反轉（欄0在右邊）</label>
-      <label><input type="checkbox" id="wafer-flip-y"> Y軸反轉（列0在下面）</label>
-    </div>
+    <label>wafer角度
+      <select id="wafer-angle">
+        <option value="0" selected>0°</option>
+        <option value="90">90°</option>
+        <option value="180">180°</option>
+        <option value="270">270°</option>
+      </select>
+    </label>
     <div class="legend">
       <span id="wafer-bin-legend" style="display:contents"></span>
       <span id="wafer-legend-picked"><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層（格內數字＝第幾層）</span>

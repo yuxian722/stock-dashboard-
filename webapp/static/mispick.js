@@ -1,9 +1,38 @@
 let lastCsv = null;
 let lastWaferData = null; // last {columns, rows, lot_no, wafer_id, cells} passed to renderWaferGrid() — so the T點 fields can re-render live on every keystroke without re-fetching
-// 2026/08/21：跟app.js同一次更正，見那邊waferFlipXByPanel的完整註解——不同
-// layout的wafer需要的方向不一樣，改成手動切換而不是猜一個全部套用的公式。
-let mpFlipX = true;
-let mpFlipY = false;
+// 2026/08/25大改版：跟app.js同一次更正，見那邊waferAngleByPanel/
+// rotateWaferCells()的完整註解——拿掉X/Y軸反轉勾選框，改成單一的0/90/
+// 180/270度角度選單，選了角度直接重新算出每一顆die的座標(連複製出去的
+// 座標文字也是算過的這組)，畫格子的順序永遠固定(欄0在右邊、列0在最上
+// 面)，這樣「0,0永遠在右上角」是結構上保證成立。這裡的預覽圖純粹是給
+// 使用者「看一下這片wafer的bin圖、複製座標文字用」的參考功能，實際誤吸
+// 偏移分析(/api/mispick/analyze)完全在後端用DB/ESEC既有公式計算，不會
+// 讀取這裡的角度設定，所以角度調整只影響這個預覽/複製文字，不影響分析
+// 結果正確性。
+let mpAngle = 0; // 0 | 90 | 180 | 270
+let mpRawWafer = null; // pristine {columns, rows, lot_no, wafer_id, cells} as loaded — angle changes re-derive from this
+
+// Same rotation formula as app.js's rotateWaferCells(), just operating on
+// the {x,y,bin}[] array shape this page's wafer object uses instead of a
+// Map — keep the two in sync if the formula ever needs to change.
+function rotateWaferArray(wafer, angleDeg) {
+  if (!wafer || !wafer.cells.length) return wafer;
+  const xs = wafer.cells.map((c) => c.x);
+  const ys = wafer.cells.map((c) => c.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const spanX = maxX - minX, spanY = maxY - minY;
+  const cells = wafer.cells.map((c) => {
+    const u = c.x - minX, v = c.y - minY;
+    let nu, nv;
+    if (angleDeg === 90) { nu = v; nv = spanX - u; }
+    else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+    else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+    else { nu = u; nv = v; }
+    return { x: nu, y: nv, bin: c.bin };
+  });
+  return { ...wafer, cells, columns: angleDeg === 90 || angleDeg === 270 ? wafer.rows : wafer.columns, rows: angleDeg === 90 || angleDeg === 270 ? wafer.columns : wafer.rows };
+}
 // Kept so nudge buttons (which re-run analyze() without the user touching
 // the file input again) and a restored session both keep working — a
 // plain <input type=file> can never be re-populated by JS after a page
@@ -142,12 +171,13 @@ function renderWaferGrid(wafer) {
   document.getElementById("mp-wafer-info").textContent =
     `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
 
+  // 排列順序永遠固定(欄0在右邊、列0在最上面) — 方向調整交給mpAngle在座標
+  // 本身上處理(見rotateWaferArray())，不再是可切換的顯示順序。
   const xOrder = [];
   for (let x = minX; x <= maxX; x++) xOrder.push(x);
-  if (mpFlipX) xOrder.reverse();
+  xOrder.reverse();
   const yOrder = [];
   for (let y = minY; y <= maxY; y++) yOrder.push(y);
-  if (mpFlipY) yOrder.reverse();
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
@@ -245,7 +275,8 @@ function decisionClass(decision) {
 }
 
 function renderResults(data) {
-  renderWaferGrid(data.wafer);
+  mpRawWafer = data.wafer;
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle));
 
   const container = document.getElementById("mp-results");
   container.innerHTML = "";
@@ -453,13 +484,12 @@ async function previewWaferMap() {
     return;
   }
 
-  // 2026/08/25：跟app.js同一次更正(見那邊resetWaferFlip的完整註解)——換一片
-  // wafer要重設方向勾選框，不然上一片wafer調過的方向會無聲無息帶到這一片。
-  mpFlipX = true;
-  mpFlipY = false;
-  document.getElementById("mp-wafer-flip-x").checked = true;
-  document.getElementById("mp-wafer-flip-y").checked = false;
-  renderWaferGrid(data);
+  // 2026/08/25：跟app.js同一次更正(見那邊setWaferRawData的完整註解)——換一片
+  // wafer要把角度重設回0°，不然上一片wafer調過的角度會無聲無息帶到這一片。
+  mpRawWafer = data;
+  mpAngle = 0;
+  document.getElementById("mp-wafer-angle").value = "0";
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle));
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   saveState();
@@ -578,13 +608,9 @@ for (const id of MP_FIELD_IDS) {
 document.getElementById("mp-t-point-x").addEventListener("input", () => renderWaferGrid(lastWaferData));
 document.getElementById("mp-t-point-y").addEventListener("input", () => renderWaferGrid(lastWaferData));
 document.getElementById("mp-btn-convert-visual-ref").addEventListener("click", convertVisualRefPoint);
-document.getElementById("mp-wafer-flip-x").addEventListener("change", (e) => {
-  mpFlipX = e.target.checked;
-  renderWaferGrid(lastWaferData);
-});
-document.getElementById("mp-wafer-flip-y").addEventListener("change", (e) => {
-  mpFlipY = e.target.checked;
-  renderWaferGrid(lastWaferData);
+document.getElementById("mp-wafer-angle").addEventListener("change", (e) => {
+  mpAngle = Number(e.target.value);
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle));
 });
 
 restoreState();

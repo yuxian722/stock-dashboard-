@@ -64,13 +64,19 @@
     </div>
     <button type="button" class="secondary" id="mp-btn-convert-visual-ref">換算填入T點</button>
     <div class="notice" style="margin-top:0.6rem">
-      wafer圖方向（選填）——2026/08/21發現不同layout的wafer需要的方向不一樣，沒辦法用同一條公式套用到
-      全部wafer，改成手動勾選：如果畫面跟WaferCoordinate.exe對不上，先試著切換這兩個勾選框。
+      wafer角度（選填）——<b>座標0,0永遠固定在畫面右上角</b>，不會因為選了哪個角度而改變；如果畫面跟
+      WaferCoordinate.exe對不上，換一個角度試試看哪個能讓bin7/bin1分布吻合。這裡只影響下面的wafer圖
+      預覽/複製座標文字，不影響誤吸偏移分析結果——分析是後端用既有DB/ESEC公式計算的，跟這個角度設定
+      無關。每次重新讀取wafer都會自動把角度重設回0°。
     </div>
-    <div class="grid2">
-      <label><input type="checkbox" id="mp-wafer-flip-x" checked> X軸反轉（欄0在右邊）</label>
-      <label><input type="checkbox" id="mp-wafer-flip-y"> Y軸反轉（列0在下面）</label>
-    </div>
+    <label>wafer角度
+      <select id="mp-wafer-angle">
+        <option value="0" selected>0°</option>
+        <option value="90">90°</option>
+        <option value="180">180°</option>
+        <option value="270">270°</option>
+      </select>
+    </label>
   </section>
 
   <section class="panel" id="strate-panel">

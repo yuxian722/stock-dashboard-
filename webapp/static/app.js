@@ -23,20 +23,55 @@ let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin, panel}[] — panel = w
 let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not yet written into any layer
 let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -> bin (index 1 only used when multiWaferEnabled)
 let waferBoundsByPanel = [null, null];
-// 2026/08/21大更正：X軸反轉(欄0在右邊)是2026/08/14用WPQ5310156SS/FC2643
-// (EU014 layout)這片真實wafer反覆驗證過的方向，但使用者後來用另一片真實
-// wafer(FQFYMFS.5X/J7697F, MS040 layout)指出畫面跟WaferCoordinate.exe/
-// 目視檢查對不上——一開始只靠單一(position,bin)座標反推`die_map`就下結論
-// 「X不轉/Y反轉」，直接上線，結果是錯的：使用者拿三張真實畫面(自己開發的
-// 圖、目視檢查、WaferCoordinate.exe)並排比對後糾正，正確答案其實是「X反轉、
-// Y也反轉」(兩個都要反)，不是只反Y。教訓是單一座標反推容易巧合對上一點但
-// 整體方向還是錯的，這類問題最終要以整張圖跟真實畫面視覺比對為準。不管是
-// 哪個方向，都是「不是全部wafer通用的單一公式」(原因目前不明，FRM檔案本身
-// 的reverse_fixed欄位兩片都是2，看不出差異)——比照T點最後變成手動輸入的
-// 同一個教訓，方向做成手動可切換，不再猜一個全部套用的公式。預設值(X反轉/
-// Y不轉)維持跟一直以來一樣的行為，不會讓舊資料無聲無息跑掉。
-let waferFlipXByPanel = [true, true];
-let waferFlipYByPanel = [false, false];
+// 2026/08/25大改版：先前用「X軸反轉/Y軸反轉」兩個勾選框處理不同wafer需要
+// 不同方向的問題(見bingomap/CLAUDE.md「wafer圖X/Y軸方向」那幾則的完整
+// 歷史)，但這個設計有根本缺陷——它只改變畫格子的「顯示順序」，dataset.x/y
+// 用的還是FRM原始座標，於是(1)換一片wafer時勾選框狀態沒有自動歸零，容易把
+// 上一片wafer調過的方向帶到新wafer上；(2)使用者實際期待的是「畫面上0,0
+// 永遠固定在右上角，只要能選0/90/180/270度轉向」，不是「兩個獨立勾選框
+// 湊出來的四種組合」。改成單一角度選單，選了角度後直接用rotateWaferCells()
+// 重新算出每一顆die的座標(連dataset.x/y、待寫入/已寫入座標都用算出來的
+// 這組)，畫格子的順序永遠固定不變(欄0在右邊、列0在最上面)——這樣「0,0在
+// 右上角」是結構上保證成立、不會因為忘記重設而跑掉，角度選單只決定「原始
+// wafer資料要用哪個方向讀進來」。角度=0時完全等同於先前「X反轉/Y不轉」
+// 驗證過的行為(EU014/FC2643那組真實資料)，不會讓舊資料跑掉。
+let waferAngleByPanel = [0, 0]; // 0 | 90 | 180 | 270 (degrees)
+let waferRawCellsByPanel = [null, null]; // pristine, un-rotated {cells,bounds} as loaded — angle changes re-derive from this, never compound on top of an already-rotated set
+let waferRawBoundsByPanel = [null, null];
+
+// Rotates a raw {x,y}->bin Map by 0/90/180/270 degrees, producing NEW
+// (x,y) labels — this is a genuine coordinate remap (not just a display
+// reorder): the rotated labels become the real x/y used everywhere
+// (staging, hover, generated .strate), matching how WaferCoordinate.exe
+// itself computes a different position number per machine orientation.
+// Normalizes to 0-based (u,v) first so angle=0 reduces to the identity
+// whenever the source data already starts at (0,0), which every FRM-derived
+// wafer seen so far does.
+function rotateWaferCells(rawCells, rawBounds, angleDeg) {
+  if (!rawBounds) return { cells: new Map(), bounds: null };
+  const { minX, maxX, minY, maxY } = rawBounds;
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const newCells = new Map();
+  let nMinX = Infinity, nMaxX = -Infinity, nMinY = Infinity, nMaxY = -Infinity;
+  for (const [key, bin] of rawCells.entries()) {
+    const commaIdx = key.indexOf(",");
+    const x = Number(key.slice(0, commaIdx));
+    const y = Number(key.slice(commaIdx + 1));
+    const u = x - minX, v = y - minY;
+    let nu, nv;
+    if (angleDeg === 90) { nu = v; nv = spanX - u; }
+    else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+    else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+    else { nu = u; nv = v; } // 0
+    newCells.set(`${nu},${nv}`, bin);
+    if (nu < nMinX) nMinX = nu;
+    if (nu > nMaxX) nMaxX = nu;
+    if (nv < nMinY) nMinY = nv;
+    if (nv > nMaxY) nMaxY = nv;
+  }
+  return { cells: newCells, bounds: newCells.size ? { minX: nMinX, maxX: nMaxX, minY: nMinY, maxY: nMaxY } : null };
+}
 // T點 (Reference Point) — a cell the user points out themselves as a
 // visual landmark, NOT anything WaferCoordinate.exe marks or highlights on
 // its own. 2026/08/18-19 history: three formula guesses were tried (direct
@@ -138,8 +173,7 @@ function waferIds(i) {
     visualRefX: `visual-ref-x${s}`,
     visualRefY: `visual-ref-y${s}`,
     btnConvertVisualRef: `btn-convert-visual-ref${s}`,
-    flipX: `wafer-flip-x${s}`,
-    flipY: `wafer-flip-y${s}`,
+    angleSelect: `wafer-angle${s}`,
     hoverStatus: `wafer-hover-status${s}`,
     wrap: `wafer-wrap${s}`,
     grid: `wafer-grid${s}`,
@@ -205,10 +239,19 @@ function buildExtraWaferPanelHtml() {
         <label>目視檢查 Ref. Point Y <input id="${ids.visualRefY}" type="number" placeholder="選填"></label>
       </div>
       <button type="button" class="secondary" id="${ids.btnConvertVisualRef}">換算填入T點</button>
-      <div class="grid2" style="margin-top:0.6rem">
-        <label><input type="checkbox" id="${ids.flipX}" checked> X軸反轉（欄0在右邊）</label>
-        <label><input type="checkbox" id="${ids.flipY}"> Y軸反轉（列0在下面）</label>
+      <div class="notice" style="margin-top:0.6rem">
+        wafer角度（選填）——座標0,0固定在畫面右上角，不會因為角度改變；如果畫面跟WaferCoordinate.exe
+        對不上，換一個角度試試看哪個能讓bin7/bin1的分布吻合。換角度會重新計算每一顆die的座標(連待寫入
+        /已寫入的座標也是)，不是單純換排列順序。
       </div>
+      <label>wafer角度
+        <select id="${ids.angleSelect}">
+          <option value="0" selected>0°</option>
+          <option value="90">90°</option>
+          <option value="180">180°</option>
+          <option value="270">270°</option>
+        </select>
+      </label>
       <div class="legend">
         <span id="${ids.binLegend}" style="display:contents"></span>
         <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
@@ -252,6 +295,9 @@ function resetLayerState() {
   waferCellsByPanel = [waferCellsByPanel[0] || new Map(), new Map()];
   waferBoundsByPanel = [waferBoundsByPanel[0] || null, null];
   waferDimsByPanel = [waferDimsByPanel[0] || null, null];
+  waferRawCellsByPanel = [waferRawCellsByPanel[0] || null, null];
+  waferRawBoundsByPanel = [waferRawBoundsByPanel[0] || null, null];
+  waferAngleByPanel = [waferAngleByPanel[0] || 0, 0];
   focusedSubstratePosByLayer = Array.from({ length: n }, () => null);
   focusedWaferXYByLayer = Array.from({ length: n }, () => null);
   document.getElementById("lookup-status").textContent = "";
@@ -639,23 +685,35 @@ function waferCellsFromApiCells(apiCells) {
   return { cells, bounds: cells.size ? { minX, maxX, minY, maxY } : null };
 }
 
-// 2026/08/25：使用者反映「我可以設定方向，但我的座標不應該也跟著轉——
-// 座標應該固定右上角是0,0」。查證後發現：X/Y軸反轉勾選框是per-panel的
-// 即時DOM狀態，不會在載入新wafer時重設——如果使用者為了對之前那片wafer
-// (例如MS040)才手動勾選了Y軸反轉，之後在同一個瀏覽器分頁換載入另一片
-// 完全不同的wafer，勾選框會原封不動留著，導致新wafer的0,0跟著跑到不是
-// 使用者預期的角落，卻不是使用者主動要求的。修法：每次載入「新的」wafer
-// 資料(FRM或貼文字)都把這個panel的方向重設回預設(X反轉/Y不轉＝0,0固定在
-// 右上角)，需要為某片特定wafer調整方向的話，載入之後再手動勾選即可，
-// 不會被「上一片wafer調過的設定」無聲無息帶到這一片。
-function resetWaferFlip(panelIndex) {
-  waferFlipXByPanel[panelIndex] = true;
-  waferFlipYByPanel[panelIndex] = false;
+// Re-derives waferCellsByPanel/waferBoundsByPanel (the RENDERED/effective
+// coordinates) from the pristine waferRawCellsByPanel using the panel's
+// current angle — the only place that ever computes the effective coords,
+// so switching angles never compounds on top of an already-rotated set.
+function applyWaferAngleFromRaw(panelIndex) {
+  const raw = waferRawCellsByPanel[panelIndex];
+  const rawBounds = waferRawBoundsByPanel[panelIndex];
+  if (!raw) {
+    waferCellsByPanel[panelIndex] = new Map();
+    waferBoundsByPanel[panelIndex] = null;
+    return;
+  }
+  const { cells, bounds } = rotateWaferCells(raw, rawBounds, waferAngleByPanel[panelIndex]);
+  waferCellsByPanel[panelIndex] = cells;
+  waferBoundsByPanel[panelIndex] = bounds;
+}
+
+// Every place that loads/replaces a panel's wafer data funnels through
+// here — always resets the angle back to 0° (see waferAngleByPanel's
+// comment: a wafer's angle must never silently carry over from whatever
+// the PREVIOUS wafer needed).
+function setWaferRawData(panelIndex, cells, bounds) {
+  waferRawCellsByPanel[panelIndex] = cells;
+  waferRawBoundsByPanel[panelIndex] = bounds;
+  waferAngleByPanel[panelIndex] = 0;
   const ids = waferIds(panelIndex);
-  const flipXEl = document.getElementById(ids.flipX);
-  const flipYEl = document.getElementById(ids.flipY);
-  if (flipXEl) flipXEl.checked = true;
-  if (flipYEl) flipYEl.checked = false;
+  const angleEl = document.getElementById(ids.angleSelect);
+  if (angleEl) angleEl.value = "0";
+  applyWaferAngleFromRaw(panelIndex);
 }
 
 async function loadFrmIntoPanel(panelIndex) {
@@ -680,10 +738,8 @@ async function loadFrmIntoPanel(panelIndex) {
     return;
   }
   const { cells, bounds } = waferCellsFromApiCells(data.cells);
-  waferCellsByPanel[panelIndex] = cells;
-  waferBoundsByPanel[panelIndex] = bounds;
+  setWaferRawData(panelIndex, cells, bounds);
   waferDimsByPanel[panelIndex] = { columns: data.columns, rows: data.rows };
-  resetWaferFlip(panelIndex);
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   renderAll();
@@ -847,16 +903,14 @@ function renderWaferPanel(panelIndex) {
   const { minX, maxX, minY, maxY } = bounds;
   const refPoint = currentRefPoint(panelIndex);
 
-  // 方向可切換(見上面waferFlipXByPanel/waferFlipYByPanel的註解) — 這裡只是
-  // 決定畫面上格子的排列順序，dataset.x/y每一格還是原始真實座標，不受影響。
-  const flipX = waferFlipXByPanel[panelIndex];
-  const flipY = waferFlipYByPanel[panelIndex];
+  // 排列順序永遠固定(欄0在右邊、列0在最上面)——方向調整交給waferAngleByPanel
+  // 在座標本身上處理(見rotateWaferCells())，這裡不再有可切換的顯示順序，
+  // 才能保證「0,0永遠在右上角」是結構上成立、不會被忘記重設的勾選框搞壞。
   const xOrder = [];
   for (let x = minX; x <= maxX; x++) xOrder.push(x);
-  if (flipX) xOrder.reverse();
+  xOrder.reverse();
   const yOrder = [];
   for (let y = minY; y <= maxY; y++) yOrder.push(y);
-  if (flipY) yOrder.reverse();
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
@@ -1178,8 +1232,16 @@ function restoreState() {
   const savedCells = saved.waferCells || [[], []];
   waferCellsByPanel = [new Map(), new Map()];
   waferBoundsByPanel = [null, null];
+  waferRawCellsByPanel = [null, null];
+  waferRawBoundsByPanel = [null, null];
+  waferAngleByPanel = [0, 0];
   for (let i = 0; i < 2; i++) {
     const { cells, bounds } = waferCellsFromApiCells(savedCells[i] || []);
+    // Restored sessions always come back at angle=0 — what was saved is
+    // treated as the pristine/raw set going forward (safer than trying to
+    // persist+restore an angle value across reloads).
+    waferRawCellsByPanel[i] = cells;
+    waferRawBoundsByPanel[i] = bounds;
     waferCellsByPanel[i] = cells;
     waferBoundsByPanel[i] = bounds;
   }
@@ -1327,18 +1389,14 @@ function wireWaferPanelEvents(panelIndex) {
   document.getElementById(ids.btnLoadFrm).addEventListener("click", () => loadFrmIntoPanel(panelIndex));
   document.getElementById(ids.btnLoadWafer).addEventListener("click", () => {
     const { cells, bounds } = parseWaferText(document.getElementById(ids.waferInput).value);
-    waferCellsByPanel[panelIndex] = cells;
-    waferBoundsByPanel[panelIndex] = bounds;
-    resetWaferFlip(panelIndex);
+    setWaferRawData(panelIndex, cells, bounds);
     renderAll();
   });
   const clearWaferBtn = document.getElementById(ids.btnClearWafer);
   if (clearWaferBtn) {
     clearWaferBtn.addEventListener("click", () => {
-      waferCellsByPanel[panelIndex] = new Map();
-      waferBoundsByPanel[panelIndex] = null;
+      setWaferRawData(panelIndex, new Map(), null);
       waferDimsByPanel[panelIndex] = null;
-      resetWaferFlip(panelIndex);
       const waferInputEl = document.getElementById(ids.waferInput);
       if (waferInputEl) waferInputEl.value = "";
       const statusEl = document.getElementById(ids.frmStatus);
@@ -1358,17 +1416,11 @@ function wireWaferPanelEvents(panelIndex) {
   if (yEl) yEl.addEventListener("input", renderAll);
   const convertBtn = document.getElementById(ids.btnConvertVisualRef);
   if (convertBtn) convertBtn.addEventListener("click", () => convertVisualRefPoint(panelIndex));
-  const flipXEl = document.getElementById(ids.flipX);
-  const flipYEl = document.getElementById(ids.flipY);
-  if (flipXEl) {
-    flipXEl.addEventListener("change", () => {
-      waferFlipXByPanel[panelIndex] = flipXEl.checked;
-      renderAll();
-    });
-  }
-  if (flipYEl) {
-    flipYEl.addEventListener("change", () => {
-      waferFlipYByPanel[panelIndex] = flipYEl.checked;
+  const angleEl = document.getElementById(ids.angleSelect);
+  if (angleEl) {
+    angleEl.addEventListener("change", () => {
+      waferAngleByPanel[panelIndex] = Number(angleEl.value);
+      applyWaferAngleFromRaw(panelIndex);
       renderAll();
     });
   }
