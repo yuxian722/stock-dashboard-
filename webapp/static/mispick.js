@@ -12,6 +12,18 @@ let mpFlipY = false;
 // itself is empty. See analyze()'s file-reading block below.
 let lastStrateFiles = [];
 
+// 2026/08/25：使用者反映「誤吸偏移只能一個檔案load進去，換下一個檔案都
+// 沒反應」——查證後這是<input type=file multiple>的原生行為：每次重新
+// 打開選擇檔案視窗，只要沒有在同一次視窗裡用Ctrl/Shift多選，瀏覽器就會
+// 用這次選到的檔案「整批換掉」上一次選的，不會累加，即使原本就有multiple
+// 屬性也一樣——所以分好幾次選、每次只選一份的話，只有最後一次選的那份會
+// 留著，前面選的會被使用者以為「消失了/沒反應」。修法：不要直接在analyze()
+// 裡讀取input.files，改成每次change事件都把新選到的檔案累加進這個陣列
+// (用檔名+大小去重複)，並在畫面上列出目前累加了哪些檔案，可以個別移除或
+// 整批清除；input本身每次change後清空(value = "")，這樣同一個檔案再選一次
+// 也能正常觸發change(瀏覽器對同一個檔案不會觸發change，清空value可以繞過)。
+let pendingStrateFiles = []; // File[] — accumulated across multiple "選擇檔案" interactions
+
 // ---- Visual grids (added 2026/08/18: user asked to see the actual wafer
 // MAP here too, not just a table — and to have force-delete positions
 // shown as a red outline directly on each substrate's own BINGO MAP,
@@ -292,6 +304,25 @@ function renderResults(data) {
   });
 }
 
+function renderStrateFileList() {
+  const el = document.getElementById("mp-strate-file-list");
+  el.innerHTML = pendingStrateFiles
+    .map(
+      (f, i) =>
+        `<span class="badge" style="margin:0.15rem">${f.name}　<a href="#" data-idx="${i}" class="mp-remove-strate-file" style="color:var(--danger,#dc2626)">移除</a></span>`
+    )
+    .join("");
+  el.querySelectorAll(".mp-remove-strate-file").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      pendingStrateFiles.splice(Number(a.dataset.idx), 1);
+      renderStrateFileList();
+      document.getElementById("mp-btn-clear-strate-files").style.display = pendingStrateFiles.length ? "" : "none";
+    });
+  });
+  document.getElementById("mp-btn-clear-strate-files").style.display = pendingStrateFiles.length ? "" : "none";
+}
+
 async function analyze() {
   const status = document.getElementById("mp-status");
   status.className = "";
@@ -299,11 +330,10 @@ async function analyze() {
   document.getElementById("mp-btn-download-csv").style.display = "none";
   lastCsv = null;
 
-  const files = [...(document.getElementById("mp_strate_files").files || [])];
   let strateFiles;
-  if (files.length) {
+  if (pendingStrateFiles.length) {
     strateFiles = [];
-    for (const f of files) {
+    for (const f of pendingStrateFiles) {
       strateFiles.push({ name: f.name, text: await f.text() });
     }
     lastStrateFiles = strateFiles;
@@ -434,6 +464,20 @@ async function previewWaferMap() {
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   saveState();
 }
+
+document.getElementById("mp_strate_files").addEventListener("change", (e) => {
+  const newFiles = [...(e.target.files || [])];
+  for (const f of newFiles) {
+    const alreadyIn = pendingStrateFiles.some((existing) => existing.name === f.name && existing.size === f.size);
+    if (!alreadyIn) pendingStrateFiles.push(f);
+  }
+  e.target.value = ""; // allows re-picking the same file later and still firing "change"
+  renderStrateFileList();
+});
+document.getElementById("mp-btn-clear-strate-files").addEventListener("click", () => {
+  pendingStrateFiles = [];
+  renderStrateFileList();
+});
 
 document.getElementById("mp-btn-preview-wafer").addEventListener("click", previewWaferMap);
 document.getElementById("mp-btn-toggle-wafer-text").addEventListener("click", () => {

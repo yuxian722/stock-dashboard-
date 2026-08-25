@@ -75,8 +75,13 @@
 
   <section class="panel" id="strate-panel">
     <h2><span class="step-badge">2</span>已上片 STRATE</h2>
-    <label>選擇一或多份 .strate 檔案 <input type="file" id="mp_strate_files" accept=".strate,.txt" multiple></label>
-    <p class="hint" style="font-size:0.78rem;color:var(--muted)">每份檔案獨立分析，結果分開列出。</p>
+    <label>選擇 .strate 檔案（可分次選、每次選的會累加，不會蓋掉前面選過的） <input type="file" id="mp_strate_files" accept=".strate,.txt" multiple></label>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">
+      每份檔案獨立分析，結果分開列出。<b>可以分好幾次點「選擇檔案」，每次選的檔案會加進下面的清單，
+      不會把前面選過的檔案換掉</b>——如果一次選取視窗裡用Ctrl/Shift多選也可以，兩種方式都可以累加。
+    </p>
+    <div id="mp-strate-file-list" style="margin:0.4rem 0"></div>
+    <button type="button" class="secondary" id="mp-btn-clear-strate-files" style="display:none">清除已選擇的STRATE檔案</button>
   </section>
 
   <section class="panel" id="offset-panel">
