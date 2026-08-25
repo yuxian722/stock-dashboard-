@@ -450,21 +450,40 @@ async function loadReferenceFiles(files) {
   if (loaded.length) parts.push(`已載入 ${loaded.length} 枚參考基板（共${referenceSubstrates.length}枚），佔用座標已不能再選取`);
   if (errors.length) parts.push(`失敗：${errors.join("；")}`);
   status.textContent = parts.join("　") || "沒有選擇任何檔案";
-  document.getElementById("btn-clear-references").style.display = referenceSubstrates.length ? "" : "none";
+  updateClearReferencesVisibility();
   renderAll();
 }
 
+// Reference substrates ("參考同一片wafer的其他基板") are loaded/cleared from
+// the panel at the very top of the page, but drawn as an overlay all the way
+// down on the wafer grid — and restored from localStorage on page load
+// (restoreState()), so they can persist silently across sessions. That
+// distance + persistence caused real confusion (2026/08/25: user saw
+// unexpected letter-coded cells covering the wafer grid after loading a new
+// wafer, and neither "清除待寫入的座標" nor "清除已載入的Wafer MAP" touch
+// this — by design, those clear different data). So the legend + a clear
+// button are duplicated right next to the wafer grid too; both copies stay
+// in sync via this helper and renderReferenceLegend().
+function updateClearReferencesVisibility() {
+  const show = referenceSubstrates.length ? "" : "none";
+  document.getElementById("btn-clear-references").style.display = show;
+  const block = document.getElementById("wafer-reference-block");
+  if (block) block.style.display = referenceSubstrates.length ? "" : "none";
+}
+
 function renderReferenceLegend() {
-  const el = document.getElementById("reference-legend");
-  el.innerHTML = referenceSubstrates
+  const html = referenceSubstrates
     .map((ref) => `<span><i style="background:${ref.color};border-color:${ref.color}"></i>${ref.label} = ${ref.name}（${ref.positions.size}顆）</span>`)
     .join("");
+  document.getElementById("reference-legend").innerHTML = html;
+  const el2 = document.getElementById("wafer-reference-legend");
+  if (el2) el2.innerHTML = html;
 }
 
 function clearReferenceSubstrates() {
   referenceSubstrates = [];
   renderReferenceLegend();
-  document.getElementById("btn-clear-references").style.display = "none";
+  updateClearReferencesVisibility();
   document.getElementById("reference-status").textContent = "已清除所有參考基板";
   document.getElementById("reference-status").className = "";
   document.getElementById("reference-files").value = "";
@@ -1150,7 +1169,7 @@ function restoreState() {
   focusedWaferXYByLayer = Array.from({ length: effectiveNumLayers() }, () => null);
 
   renderReferenceLegend();
-  document.getElementById("btn-clear-references").style.display = referenceSubstrates.length ? "" : "none";
+  updateClearReferencesVisibility();
   renderAll();
 
   document.getElementById("blank-status").textContent = `已還原上次的資料：共 ${substratePositions.length} 個基板位置。`;
@@ -1425,6 +1444,7 @@ document.getElementById("reference-files").addEventListener("change", (e) => {
   loadReferenceFiles(files);
 });
 document.getElementById("btn-clear-references").addEventListener("click", clearReferenceSubstrates);
+document.getElementById("btn-clear-references-2").addEventListener("click", clearReferenceSubstrates);
 document.getElementById("btn-clear").addEventListener("click", () => {
   resetLayerState();
   renderAll();

@@ -157,6 +157,16 @@
       <span id="wafer-legend-staged"><i style="background:#fff;border-color:#f5900f;border-style:dashed"></i>已選取、待寫入</span>
       <span><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點（上面手動填了X/Y才會標示，不能選取）</span>
     </div>
+    <div id="wafer-reference-block" style="display:none;margin-top:0.4rem">
+      <div class="notice">
+        下面彩色字母格＝最上面「參考同一片wafer的其他基板」載入的參考基板占用的座標（唯讀、不能選取）——
+        不是這次載入的wafer bin資料，也不是待寫入的座標，所以「清除已載入的Wafer MAP」「清除待寫入的座標」
+        都不會動到它。如果重新整理/回來這頁後發現wafer圖上有一堆意料之外的彩色字母格，那是之前工作階段留
+        下來的參考基板紀錄(瀏覽器會自動記住)，按下面這顆按鈕清除。
+      </div>
+      <div id="wafer-reference-legend" class="legend"></div>
+      <button type="button" class="secondary" id="btn-clear-references-2">清除參考基板</button>
+    </div>
     <div id="stage-controls" style="display:none;margin:0.4rem 0">
       <button type="button" class="secondary" id="btn-clear-staged">清除待寫入的座標</button>
     </div>
