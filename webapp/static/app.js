@@ -36,22 +36,24 @@ let waferBoundsByPanel = [null, null];
 // wafer資料要用哪個方向讀進來」。角度=0時完全等同於先前「X反轉/Y不轉」
 // 驗證過的行為(EU014/FC2643那組真實資料)，不會讓舊資料跑掉。
 let waferAngleByPanel = [0, 0]; // 0 | 90 | 180 | 270 (degrees)
-let waferRawCellsByPanel = [null, null]; // pristine, un-rotated {cells,bounds} as loaded — angle changes re-derive from this, never compound on top of an already-rotated set
+let waferMirrorByPanel = [false, false];
+let waferRawCellsByPanel = [null, null]; // pristine, un-rotated {cells,bounds} as loaded — angle/mirror changes re-derive from this, never compound on top of an already-transformed set
 let waferRawBoundsByPanel = [null, null];
 
-// Rotates a raw {x,y}->bin Map by 0/90/180/270 degrees, producing NEW
-// (x,y) labels — this is a genuine coordinate remap (not just a display
-// reorder): the rotated labels become the real x/y used everywhere
-// (staging, hover, generated .strate), matching how WaferCoordinate.exe
-// itself computes a different position number per machine orientation.
-// Normalizes to 0-based (u,v) first so angle=0 reduces to the identity
-// whenever the source data already starts at (0,0), which every FRM-derived
-// wafer seen so far does.
-function rotateWaferCells(rawCells, rawBounds, angleDeg) {
+// 2026/08/26：一個角度選單只能做「旋轉」(4種)，做不出「鏡像」——旋轉會
+// 保留圖案的鏡向(手性)，鏡像會反過來，兩者是不同的對稱操作，4個旋轉角度
+// 怎麼組合都不可能湊出鏡像的結果。使用者比對過真正的WaferCoordinate.exe
+// 之後回報我們的圖是鏡像的，代表單靠角度選單這次真的不夠，需要額外一個
+// 「鏡像」勾選框。加了鏡像之後，跟角度選單一樣是先重新計算出座標(不是
+// 換顯示順序)，勾選鏡像時對旋轉後的座標再做一次水平翻轉，這樣角度+鏡像
+// 兩個維度合起來可以湊出全部8種可能的方向(4個旋轉 x 有無鏡像)，理論上
+// 足夠比對任何真實wafer的方向。
+function rotateWaferCells(rawCells, rawBounds, angleDeg, mirror) {
   if (!rawBounds) return { cells: new Map(), bounds: null };
   const { minX, maxX, minY, maxY } = rawBounds;
   const spanX = maxX - minX;
   const spanY = maxY - minY;
+  const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const newCells = new Map();
   let nMinX = Infinity, nMaxX = -Infinity, nMinY = Infinity, nMaxY = -Infinity;
   for (const [key, bin] of rawCells.entries()) {
@@ -64,6 +66,7 @@ function rotateWaferCells(rawCells, rawBounds, angleDeg) {
     else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
     else if (angleDeg === 270) { nu = spanY - v; nv = u; }
     else { nu = u; nv = v; } // 0
+    if (mirror) nu = rotatedSpanX - nu;
     newCells.set(`${nu},${nv}`, bin);
     if (nu < nMinX) nMinX = nu;
     if (nu > nMaxX) nMaxX = nu;
@@ -174,6 +177,7 @@ function waferIds(i) {
     visualRefY: `visual-ref-y${s}`,
     btnConvertVisualRef: `btn-convert-visual-ref${s}`,
     angleSelect: `wafer-angle${s}`,
+    mirrorCheckbox: `wafer-mirror${s}`,
     hoverStatus: `wafer-hover-status${s}`,
     wrap: `wafer-wrap${s}`,
     grid: `wafer-grid${s}`,
@@ -240,18 +244,22 @@ function buildExtraWaferPanelHtml() {
       </div>
       <button type="button" class="secondary" id="${ids.btnConvertVisualRef}">換算填入T點</button>
       <div class="notice" style="margin-top:0.6rem">
-        wafer角度（選填）——座標0,0固定在畫面右上角，不會因為角度改變；如果畫面跟WaferCoordinate.exe
-        對不上，換一個角度試試看哪個能讓bin7/bin1的分布吻合。換角度會重新計算每一顆die的座標(連待寫入
-        /已寫入的座標也是)，不是單純換排列順序。
+        wafer角度／鏡像（選填）——座標0,0固定在畫面右上角，不會因為角度或鏡像改變；如果畫面跟
+        WaferCoordinate.exe對不上，先試角度，四個角度都不吻合的話再加勾鏡像(角度只能旋轉、湊不出鏡像
+        效果，是不同的對稱操作)。調整會重新計算每一顆die的座標(連待寫入/已寫入的座標也是)，不是單純
+        換排列順序。
       </div>
-      <label>wafer角度
-        <select id="${ids.angleSelect}">
-          <option value="0" selected>0°</option>
-          <option value="90">90°</option>
-          <option value="180">180°</option>
-          <option value="270">270°</option>
-        </select>
-      </label>
+      <div class="grid2">
+        <label>wafer角度
+          <select id="${ids.angleSelect}">
+            <option value="0" selected>0°</option>
+            <option value="90">90°</option>
+            <option value="180">180°</option>
+            <option value="270">270°</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="${ids.mirrorCheckbox}"> 鏡像</label>
+      </div>
       <div class="legend">
         <span id="${ids.binLegend}" style="display:contents"></span>
         <span><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層</span>
@@ -298,6 +306,7 @@ function resetLayerState() {
   waferRawCellsByPanel = [waferRawCellsByPanel[0] || null, null];
   waferRawBoundsByPanel = [waferRawBoundsByPanel[0] || null, null];
   waferAngleByPanel = [waferAngleByPanel[0] || 0, 0];
+  waferMirrorByPanel = [waferMirrorByPanel[0] || false, false];
   focusedSubstratePosByLayer = Array.from({ length: n }, () => null);
   focusedWaferXYByLayer = Array.from({ length: n }, () => null);
   document.getElementById("lookup-status").textContent = "";
@@ -697,22 +706,25 @@ function applyWaferAngleFromRaw(panelIndex) {
     waferBoundsByPanel[panelIndex] = null;
     return;
   }
-  const { cells, bounds } = rotateWaferCells(raw, rawBounds, waferAngleByPanel[panelIndex]);
+  const { cells, bounds } = rotateWaferCells(raw, rawBounds, waferAngleByPanel[panelIndex], waferMirrorByPanel[panelIndex]);
   waferCellsByPanel[panelIndex] = cells;
   waferBoundsByPanel[panelIndex] = bounds;
 }
 
 // Every place that loads/replaces a panel's wafer data funnels through
-// here — always resets the angle back to 0° (see waferAngleByPanel's
-// comment: a wafer's angle must never silently carry over from whatever
-// the PREVIOUS wafer needed).
+// here — always resets angle/mirror back to 0°/off (see waferAngleByPanel's
+// comment: a wafer's orientation must never silently carry over from
+// whatever the PREVIOUS wafer needed).
 function setWaferRawData(panelIndex, cells, bounds) {
   waferRawCellsByPanel[panelIndex] = cells;
   waferRawBoundsByPanel[panelIndex] = bounds;
   waferAngleByPanel[panelIndex] = 0;
+  waferMirrorByPanel[panelIndex] = false;
   const ids = waferIds(panelIndex);
   const angleEl = document.getElementById(ids.angleSelect);
   if (angleEl) angleEl.value = "0";
+  const mirrorEl = document.getElementById(ids.mirrorCheckbox);
+  if (mirrorEl) mirrorEl.checked = false;
   applyWaferAngleFromRaw(panelIndex);
 }
 
@@ -1235,6 +1247,7 @@ function restoreState() {
   waferRawCellsByPanel = [null, null];
   waferRawBoundsByPanel = [null, null];
   waferAngleByPanel = [0, 0];
+  waferMirrorByPanel = [false, false];
   for (let i = 0; i < 2; i++) {
     const { cells, bounds } = waferCellsFromApiCells(savedCells[i] || []);
     // Restored sessions always come back at angle=0 — what was saved is
@@ -1420,6 +1433,14 @@ function wireWaferPanelEvents(panelIndex) {
   if (angleEl) {
     angleEl.addEventListener("change", () => {
       waferAngleByPanel[panelIndex] = Number(angleEl.value);
+      applyWaferAngleFromRaw(panelIndex);
+      renderAll();
+    });
+  }
+  const mirrorEl = document.getElementById(ids.mirrorCheckbox);
+  if (mirrorEl) {
+    mirrorEl.addEventListener("change", () => {
+      waferMirrorByPanel[panelIndex] = mirrorEl.checked;
       applyWaferAngleFromRaw(panelIndex);
       renderAll();
     });

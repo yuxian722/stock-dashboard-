@@ -142,20 +142,24 @@
     </div>
     <button type="button" class="secondary" id="btn-convert-visual-ref">換算填入T點</button>
     <div class="notice" style="margin-top:0.6rem">
-      wafer角度（選填）——<b>座標0,0永遠固定在畫面右上角</b>，不會因為選了哪個角度而改變；如果畫面上
-      的圖跟WaferCoordinate.exe看起來位置對不上，換一個角度試試看哪個能讓bin7/bin1的分布吻合。換角度
-      會直接重新算出每一顆die的座標(連待寫入/已寫入的座標也是同一套算法)，不是單純換排列順序。每次
-      重新載入這個panel的wafer資料(自動讀取FRM／貼文字／清除)都會自動把角度重設回0°，不會被上一片
-      wafer調整過的角度帶到新載入的這一片。
+      wafer角度／鏡像（選填）——<b>座標0,0永遠固定在畫面右上角</b>，不會因為角度或鏡像改變；如果畫面上
+      的圖跟WaferCoordinate.exe看起來位置對不上，先試角度看哪個能讓bin7/bin1的分布吻合，四個角度都不
+      吻合的話再加勾鏡像(角度只能旋轉、湊不出鏡像的效果，是不同的對稱操作)。調整會直接重新算出每一顆
+      die的座標(連待寫入/已寫入的座標也是同一套算法)，不是單純換排列順序。每次重新載入這個panel的
+      wafer資料(自動讀取FRM／貼文字／清除)都會自動把角度/鏡像重設回預設值，不會被上一片wafer調整過的
+      方向帶到新載入的這一片。
     </div>
-    <label>wafer角度
-      <select id="wafer-angle">
-        <option value="0" selected>0°</option>
-        <option value="90">90°</option>
-        <option value="180">180°</option>
-        <option value="270">270°</option>
-      </select>
-    </label>
+    <div class="grid2">
+      <label>wafer角度
+        <select id="wafer-angle">
+          <option value="0" selected>0°</option>
+          <option value="90">90°</option>
+          <option value="180">180°</option>
+          <option value="270">270°</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="wafer-mirror"> 鏡像</label>
+    </div>
     <div class="legend">
       <span id="wafer-bin-legend" style="display:contents"></span>
       <span id="wafer-legend-picked"><i style="background:#fff;border-color:#1a3fd6"></i>已寫入某一層（格內數字＝第幾層）</span>

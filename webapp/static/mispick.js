@@ -10,18 +10,22 @@ let lastWaferData = null; // last {columns, rows, lot_no, wafer_id, cells} passe
 // 讀取這裡的角度設定，所以角度調整只影響這個預覽/複製文字，不影響分析
 // 結果正確性。
 let mpAngle = 0; // 0 | 90 | 180 | 270
-let mpRawWafer = null; // pristine {columns, rows, lot_no, wafer_id, cells} as loaded — angle changes re-derive from this
+let mpMirror = false;
+let mpRawWafer = null; // pristine {columns, rows, lot_no, wafer_id, cells} as loaded — angle/mirror changes re-derive from this
 
-// Same rotation formula as app.js's rotateWaferCells(), just operating on
-// the {x,y,bin}[] array shape this page's wafer object uses instead of a
-// Map — keep the two in sync if the formula ever needs to change.
-function rotateWaferArray(wafer, angleDeg) {
+// 2026/08/26：跟app.js同一次更正，見那邊rotateWaferCells()的完整註解——
+// 角度只能旋轉，湊不出鏡像，使用者比對真正的WaferCoordinate.exe後回報
+// 圖是鏡像的，加一個獨立的鏡像參數，對旋轉後的座標再做一次水平翻轉。
+// 跟app.js的rotateWaferCells()是同一條公式，只是操作的是這頁用的
+// {x,y,bin}[]陣列而不是Map，兩邊要保持公式一致。
+function rotateWaferArray(wafer, angleDeg, mirror) {
   if (!wafer || !wafer.cells.length) return wafer;
   const xs = wafer.cells.map((c) => c.x);
   const ys = wafer.cells.map((c) => c.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const spanX = maxX - minX, spanY = maxY - minY;
+  const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const cells = wafer.cells.map((c) => {
     const u = c.x - minX, v = c.y - minY;
     let nu, nv;
@@ -29,6 +33,7 @@ function rotateWaferArray(wafer, angleDeg) {
     else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
     else if (angleDeg === 270) { nu = spanY - v; nv = u; }
     else { nu = u; nv = v; }
+    if (mirror) nu = rotatedSpanX - nu;
     return { x: nu, y: nv, bin: c.bin };
   });
   return { ...wafer, cells, columns: angleDeg === 90 || angleDeg === 270 ? wafer.rows : wafer.columns, rows: angleDeg === 90 || angleDeg === 270 ? wafer.columns : wafer.rows };
@@ -276,7 +281,7 @@ function decisionClass(decision) {
 
 function renderResults(data) {
   mpRawWafer = data.wafer;
-  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle));
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
 
   const container = document.getElementById("mp-results");
   container.innerHTML = "";
@@ -485,11 +490,14 @@ async function previewWaferMap() {
   }
 
   // 2026/08/25：跟app.js同一次更正(見那邊setWaferRawData的完整註解)——換一片
-  // wafer要把角度重設回0°，不然上一片wafer調過的角度會無聲無息帶到這一片。
+  // wafer要把角度/鏡像重設回預設值，不然上一片wafer調過的方向會無聲無息
+  // 帶到這一片。
   mpRawWafer = data;
   mpAngle = 0;
+  mpMirror = false;
   document.getElementById("mp-wafer-angle").value = "0";
-  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle));
+  document.getElementById("mp-wafer-mirror").checked = false;
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
   saveState();
@@ -610,7 +618,11 @@ document.getElementById("mp-t-point-y").addEventListener("input", () => renderWa
 document.getElementById("mp-btn-convert-visual-ref").addEventListener("click", convertVisualRefPoint);
 document.getElementById("mp-wafer-angle").addEventListener("change", (e) => {
   mpAngle = Number(e.target.value);
-  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle));
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
+});
+document.getElementById("mp-wafer-mirror").addEventListener("change", (e) => {
+  mpMirror = e.target.checked;
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
 });
 
 restoreState();

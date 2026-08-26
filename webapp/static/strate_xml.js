@@ -112,19 +112,26 @@ const SECS_T_POINT = { x: 45, y: 14 };
 // wafer bin資料本身，還會疊一層「哪些格子屬於哪個基板」的顏色標示
 // (matchedSubstrates)，兩者用的是同一個wafer、同一個座標系統，所以要
 // 一起旋轉，不然基板標示會跟旋轉後的bin顏色對不齊。
-function rotateWaferMapAndSubstrates(wm, matchedSubstrates, angleDeg) {
+// 2026/08/26：跟app.js/mispick.js同一次更正——角度只能旋轉，湊不出鏡像，
+// 使用者比對真正的WaferCoordinate.exe後回報圖是鏡像的，加一個獨立的
+// mirror參數，對旋轉後的座標再做一次水平翻轉。
+function rotateWaferMapAndSubstrates(wm, matchedSubstrates, angleDeg, mirror) {
   if (!wm.cells.length) return { wm, matchedSubstrates };
   const xs = wm.cells.map((c) => c.x);
   const ys = wm.cells.map((c) => c.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const spanX = maxX - minX, spanY = maxY - minY;
+  const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const rotatePoint = (x, y) => {
     const u = x - minX, v = y - minY;
-    if (angleDeg === 90) return [v, spanX - u];
-    if (angleDeg === 180) return [spanX - u, spanY - v];
-    if (angleDeg === 270) return [spanY - v, u];
-    return [u, v]; // 0
+    let nu, nv;
+    if (angleDeg === 90) { nu = v; nv = spanX - u; }
+    else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+    else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+    else { nu = u; nv = v; } // 0
+    if (mirror) nu = rotatedSpanX - nu;
+    return [nu, nv];
   };
   const cells = wm.cells.map((c) => {
     const [nx, ny] = rotatePoint(c.x, c.y);
@@ -280,12 +287,13 @@ function renderWaferMaps(waferMaps, substrates) {
     const gridId = `sx-wafer-map-grid-${wm.index}`;
     const legendId = `sx-wafer-map-legend-${wm.index}`;
     const angleId = `sx-wafer-map-angle-${wm.index}`;
+    const mirrorId = `sx-wafer-map-mirror-${wm.index}`;
     box.innerHTML =
       `<b>Frame ID：${wm.frame_id}</b>　Wafer ID：${wm.wafer_id}　尺寸：${wm.columns}x${wm.rows}　有資料的格子：${wm.num_cells}顆<br>` +
       `<button type="button" class="secondary sx-btn-toggle-text">顯示/複製座標文字</button>` +
       `<button type="button" class="secondary sx-btn-copy-text" style="display:none">複製到剪貼簿</button>` +
       `<textarea id="${textareaId}" rows="6" readonly style="display:none;width:100%;margin-top:0.4rem"></textarea>` +
-      `<label style="margin-top:0.4rem;display:inline-block">wafer角度（座標0,0固定右上角，不受角度影響）
+      `<label style="margin-top:0.4rem;display:inline-block">wafer角度（座標0,0固定右上角，不受角度/鏡像影響）
         <select id="${angleId}">
           <option value="0" selected>0°</option>
           <option value="90">90°</option>
@@ -293,6 +301,7 @@ function renderWaferMaps(waferMaps, substrates) {
           <option value="270">270°</option>
         </select>
       </label>` +
+      `<label style="margin-left:0.6rem"><input type="checkbox" id="${mirrorId}"> 鏡像</label>` +
       `<div class="legend" id="${gridId}-bin-legend" style="margin-top:0.6rem"></div>` +
       `<div class="legend" id="${legendId}" style="margin-top:0.2rem"></div>` +
       `<div class="lyr-wafer-wrap"><div id="${gridId}" class="lyr-wafer-grid"></div></div>`;
@@ -319,15 +328,18 @@ function renderWaferMaps(waferMaps, substrates) {
     });
     list.appendChild(box);
 
-    const rerender = (angleDeg) => {
-      const rotated = rotateWaferMapAndSubstrates(wm, matchedSubstrates, angleDeg);
+    const rerender = () => {
+      const angleDeg = Number(box.querySelector(`#${angleId}`).value);
+      const mirror = box.querySelector(`#${mirrorId}`).checked;
+      const rotated = rotateWaferMapAndSubstrates(wm, matchedSubstrates, angleDeg, mirror);
       currentPasteText = rotated.wm.paste_text;
       textarea.value = currentPasteText;
       renderWaferLegend(legendId, rotated.matchedSubstrates);
       renderWaferGrid(gridId, rotated.wm, rotated.matchedSubstrates);
     };
-    box.querySelector(`#${angleId}`).addEventListener("change", (e) => rerender(Number(e.target.value)));
-    rerender(0);
+    box.querySelector(`#${angleId}`).addEventListener("change", rerender);
+    box.querySelector(`#${mirrorId}`).addEventListener("change", rerender);
+    rerender();
   });
 }
 
