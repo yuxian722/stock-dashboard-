@@ -103,6 +103,12 @@ const SECS_T_POINT = { x: 45, y: 14 };
 // `wm.cells`/`s.die_positions`都已經是`{x:col, y:row}`，跟這個網站
 // 其他頁面的wafer座標慣例一致)，這裡只要跟著把「x當col(水平)、
 // y當row(垂直)」畫，不用再自己另外判斷方向。
+// 2026/08/26補充：上面提到的`_swap_wafer_xy()`後來發現整個是誤判、已經
+// 從bingomap/secs_log.py刪除了(見那個檔案模組docstring的完整更正)——
+// log的DIE_INFO wafer_xy其實本來就是.strate格式的col:row，不需要任何
+// swap。但這對這裡(strate_xml.js)沒有任何影響：`wm.cells`/
+// `s.die_positions`收到的資料格式(`{x:col, y:row}`)完全沒變，只是後端
+// 算出這組資料的方式改對了，前端這裡不用跟著改。
 // 2026/08/25：使用者在①補資料/②誤吸偏移頁拿掉X/Y軸反轉勾選框、改成
 // 0/90/180/270度角度選單之後，直接說「其他分頁也一樣」——這裡的wafer圖
 // 跟那兩頁是同一種東西(真實wafer bin座標)，所以套用同一套設計：排列

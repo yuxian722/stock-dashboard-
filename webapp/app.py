@@ -680,10 +680,10 @@ def _substrate_die_positions(sf: StrateFile) -> list[dict]:
     """Every wafer coordinate this substrate consumed, across DIE_INFO and
     DIE_INFO_OTHER_LAYER — used to draw this substrate's footprint on its
     source wafer's bin map (see the wafer-map overlay in strate_xml.js).
-    `d.wafer_xy` is already col:row here (bingomap/secs_log.py's
-    `_swap_wafer_xy()` normalizes the log's raw row:col ordering to the
-    standard .strate convention before this ever sees it) — x/y below line
-    up directly with `_wafer_map_summary()`'s cells, both col:row."""
+    `d.wafer_xy` is already col:row here — a StrateMap's DIE_INFO wafer_xy
+    is natively in that format already, no transform needed (2026/08/26
+    correction, see bingomap/secs_log.py's module docstring) — x/y below
+    line up directly with `_wafer_map_summary()`'s cells, both col:row."""
     positions = []
     for d in sf.die_info + sf.other_layer_die_info:
         x_str, _, y_str = d.wafer_xy.partition(":")

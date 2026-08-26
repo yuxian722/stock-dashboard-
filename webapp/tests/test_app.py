@@ -422,17 +422,19 @@ def test_api_strate_xml_extract_real_log(client):
     assert "MAPPING_LOT=\r\n" in first["text"]
     assert "SUBSTRATE_ID=Z2570900444F" in first["text"]
     assert len(first["die_positions"]) == first["num_dies"] + first["num_other_layer_dies"]
-    # 2026/08/21: wafer_xy is now normalized to col:row (x:y) — see
-    # bingomap/secs_log.py's _swap_wafer_xy(); the log's raw DIE_INFO had
-    # this as row:col ("10:42"), extraction now flips it to "42:10".
-    assert first["die_positions"][0] == {"x": 42, "y": 10}
+    # 2026/08/26大更正：StrateMap的DIE_INFO wafer_xy不需要swap，log的原始
+    # DIE_INFO本身就是.strate格式自己的col:row，跟真正machine產生的
+    # .strate檔案逐byte比對完全一致(見bingomap/secs_log.py模組docstring)。
+    assert first["die_positions"][0] == {"x": 10, "y": 42}
 
     assert len(data["wafer_maps"]) == 1
     wm = data["wafer_maps"][0]
     assert wm["frame_id"] == "HD66D5"
     assert wm["wafer_id"] == "P0264807-24"
-    assert wm["columns"] == 46
-    assert wm["rows"] == 24
+    # WaferStart的ColCount/RowCount標籤跟.strate的col/row軸向對調，
+    # wafer_map_from_element()已經把columns/rows對調成(RowCount, ColCount)。
+    assert wm["columns"] == 24
+    assert wm["rows"] == 46
     assert wm["num_cells"] > 0
     assert len(wm["cells"]) == wm["num_cells"]
     assert all({"x", "y", "bin"} <= c.keys() for c in wm["cells"])
