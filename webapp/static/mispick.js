@@ -143,13 +143,25 @@ function currentOffsetDelta() {
 }
 
 // 畫一張wafer bin圖到指定的容器，refPoint(選填)是要標T點的那一格。抽出來
-// 是因為2026/08/27改成同時畫兩張圖(見下面renderWaferGrid())：左邊T點是
-// 手動輸入的原始位置(0:0，沒有套用偏移)，右邊是套用目前機台偏移量之後
-// T點實際落到的位置——使用者要求「數值變T點圖也要跟著變」，單一張圖
-// 沒辦法同時呈現「偏移前」跟「偏移後」兩種狀態給你比對。
-function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint) {
+// 是因為2026/08/27改成同時畫兩張圖(見下面renderWaferGrid())：左邊是原始
+// wafer圖(沒有套用偏移)，右邊套用目前機台偏移量。
+//
+// 2026/08/27再更正：一開始只把T點的標記移動、底下的bin色塊(green/purple/
+// gray)完全不動——結果兩張圖除了T點那一格幾乎長得一模一樣，使用者直接
+// 指出這是錯的：「因為T點代表整個圖的起始點，當偏移時應該整個圖檔都要
+// 跟這偏，本來這顆是bin1有可能把bin7變成bin1，T點往左偏但是應該也會有
+// 三顆灰色在旁邊」——也就是說，T點只是這個偏移(dx,dy)的其中一個點，應該
+// 是「整片bin色塊圖形」跟著T點做同一個剛體平移，T點附近原本的鄰居(灰色/
+// 紫色格子)要整組一起移動、彼此的相對位置不變，才看得出偏移之後哪個
+// 位置的die現在對應到哪個bin。改成`shift`參數：畫面上(x,y)這一格顯示的
+// bin，改成去查`cellMap.get(x-shift.dx, y-shift.dy)`——也就是「wafer原始
+// (x,y)這顆die，偏移後畫在螢幕(x+shift.dx, y+shift.dy)」，跟refPoint(T點)
+// 用同一個(x+dx, y+dy)規則搬移，兩者維持相對位置一致。
+function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shift) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
+  const dx = shift ? shift.dx : 0;
+  const dy = shift ? shift.dy : 0;
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
@@ -172,7 +184,7 @@ function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint) {
     rowLabel.textContent = y;
     row.appendChild(rowLabel);
     for (const x of xOrder) {
-      const bin = cellMap.get(`${x},${y}`);
+      const bin = cellMap.get(`${x - dx},${y - dy}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell";
       applyBinColor(cell, bin);
@@ -227,15 +239,20 @@ function renderWaferGrid(wafer) {
   const tx = parseInt(document.getElementById("mp-t-point-x").value, 10);
   const ty = parseInt(document.getElementById("mp-t-point-y").value, 10);
   const refPoint = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : null;
-  // 2026/08/27新增：右邊那張圖套用目前的機台偏移量(dx,dy)之後T點會落在
-  // 哪裡——偏移量是0(沒有偏移)時兩張圖的T點會是同一格，這是預期行為。
+  // 2026/08/27新增，同一天再更正成整片圖形一起平移(見renderOneWaferGrid()
+  // 的完整說明)：右邊那張圖套用目前的機台偏移量(dx,dy)，T點跟它附近的
+  // bin色塊整組一起移動，不是只有T點的標記自己動——偏移量是0(沒有偏移)
+  // 時兩張圖會完全一樣，這是預期行為。
   const { dx, dy } = currentOffsetDelta();
+  const shift = { dx, dy };
   const shiftedRefPoint = refPoint ? { x: refPoint.x + dx, y: refPoint.y + dy } : null;
   document.getElementById("mp-wafer-tpoint-legend").style.display = refPoint ? "" : "none";
   document.getElementById("mp-wafer-info").textContent =
     `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
   document.getElementById("mp-wafer-grid-shifted-label").textContent =
-    dx === 0 && dy === 0 ? "套用目前偏移後的T點（目前偏移量為0，跟左圖相同）" : `套用目前偏移後的T點（X${dx >= 0 ? "+" : ""}${dx}、Y${dy >= 0 ? "+" : ""}${dy}）`;
+    dx === 0 && dy === 0
+      ? "套用目前偏移後的整片wafer圖（目前偏移量為0，跟左圖相同）"
+      : `套用目前偏移後的整片wafer圖（X${dx >= 0 ? "+" : ""}${dx}、Y${dy >= 0 ? "+" : ""}${dy}）`;
 
   // 排列順序永遠固定(欄0在右邊、列0在最上面) — 方向調整交給mpAngle在座標
   // 本身上處理(見rotateWaferArray())，不再是可切換的顯示順序。
@@ -245,8 +262,8 @@ function renderWaferGrid(wafer) {
   const yOrder = [];
   for (let y = minY; y <= maxY; y++) yOrder.push(y);
 
-  renderOneWaferGrid("mp-wafer-grid", xOrder, yOrder, cellMap, refPoint);
-  renderOneWaferGrid("mp-wafer-grid-shifted", xOrder, yOrder, cellMap, shiftedRefPoint);
+  renderOneWaferGrid("mp-wafer-grid", xOrder, yOrder, cellMap, refPoint, { dx: 0, dy: 0 });
+  renderOneWaferGrid("mp-wafer-grid-shifted", xOrder, yOrder, cellMap, shiftedRefPoint, shift);
 }
 
 function renderSubstrateGrid(containerId, sub) {
