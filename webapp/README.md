@@ -750,6 +750,56 @@ wafer_xy、用`frm.die_map.get((col,row))`查」——兩個方向相反的獨�
 「A轉換過的結果」對「B查表出來的結果」(兩邊都可能各自帶錯)，不如直接比對兩份完全獨立、沒有經過
 任何己方轉換的真實資料原始輸出，中間環節越少，能藏兩個互相抵消的bug的空間就越小。**
 
+### 再後續更正（2026/08/27）：`frm_reader.py`自己的`die_map` key順序bug，這次真的修了
+
+上面那則只修正了SECS log這一側(`_swap_wafer_xy()`刪除、`wafer_map_from_element()`的
+`ColCount`/`RowCount`對調)，`frm_reader.py`的`frm_to_wafer_bin_map()`本身當時只是被**診斷**出
+key順序有問題(「`die_map`真正的key其實是`(row,col)`」)，沒有真的動手修——這是因為當時的顧慮是
+`frm.col`/`frm.row`這兩個欄位本身已經被T點公式(`webapp/static/app.js`的`convertVisualRefPoint()`)
+獨立驗證過，貿然對調怕連T點也一起壞掉，所以先擱置了。
+
+2026/08/27使用者用②誤吸偏移／BIN點除頁角度=90°的畫面回報：「我有發現一個問題為什麼18:4那一顆是
+顯示bin 7，我實際作業是顯示bin1，還有開發軟體的bin6跟機台的圖無法對起來」。第一次回應時的判斷是
+「旋轉本來就會讓不同的die佔到同一個顯示座標，bin不同是預期行為，不是bug」——但使用者直接點出這個
+判斷本身的物理前提是錯的：「但是我確認機台上的bin code跟即使轉方向bin code是不可能變，bin7就是
+粉紅色，bin1就是綠色」，並指示直接拿之前給過的SECS log(`BAB1420260801_04.0.log`)跟`.strate`
+(`Z25709007096`)的`WaferUpload`/`WAFER_INFO`資料回頭核對。
+
+照指示重新交叉比對，這次用**三個完全獨立的來源**確認`die_map`的key順序問題是真的、而且必須修：
+1. 前面已經有的49顆FC2643真實die(`.strate`已知col:row、已知bin=1)：不對調key只有35/49(71%)對得上，
+   對調後49/49(100%)全對
+2. 從真實log的`PickDie` XML(`<X>`/`<Y>`)按時間戳跟同一枚基板(`Z25709007096`)的`DIE_INFO`時間戳
+   對照，反推出`col = 9 − raw_Y`、`row = raw_X + 45`，224筆全部驗證通過，獨立佐證了軸向對調的方向
+3. **這次新增的比對**：拿同一片wafer(FC2643)、已經修正過的SECS-log-derived wafer map
+   (`wafer_map_from_element()`)去對FRM-derived wafer map——854顆die裡，不對調只有378顆(44%)座標
+   空間對得上(其中336顆bin一致)；對調後844顆(98.8%)座標空間對得上(其中756顆/89.6%bin一致，
+   剩下的差距是`.strate`本來就有的、記錄時間差造成的重新分類率，不是新的不一致)
+
+三個獨立來源方向一致，這次真的修了`bingomap/frm_reader.py`的`frm_to_wafer_bin_map()`：`die_map`的
+raw key `(a,b)`對調成查表時的`(b,a)`、輸出的`WaferBinMap`的`columns`/`rows`也對調成`frm.row`/
+`frm.col`，讓算出來的x,y座標才能直接對上`.strate`的col:row語意(誤吸偏移分析`bin_at(nominal_x,
+nominal_y)`用的正是這個語意)——`mispick_analysis.py`吃的正是這個函式的輸出，這個修正直接讓
+②誤吸偏移／BIN點除頁的實際分析結果變正確，不只是畫面顯示。
+
+**刻意保留、沒有動的部分**：`frm.col`/`frm.row`這兩個欄位本身(header讀出來的原始值，46/24這種)
+維持不變，`webapp/app.py`的`/api/frm`跟`/api/mispick/analyze`回傳JSON的`"columns"`/`"rows"`欄位
+也刻意繼續用`frm.col`/`frm.row`(不對調)——因為T點公式就是拿這兩個值算的、已經用真實資料驗證過，
+貿然對調會讓T點公式跟著跑掉。確認過前端(`app.js`的`waferCellsFromApiCells()`、`mispick.js`同樣的
+邏輯)畫wafer格子的範圍是從`cells`陣列自己的x/y最大最小值算出來的，不是用`columns`/`rows`去框，
+所以`"cells"`(已對調、正確)跟`"columns"/"rows"`(不對調、只給T點用)雖然軸向意義不完全一致，
+不影響畫面呈現正確性——這是已知、刻意的取捨，不是疏漏，之後有空要處理T點公式時可以一併訂正。
+
+新增回歸測試`bingomap/tests/test_frm_reader_real_sample.py`的
+`test_frm_to_wafer_bin_map_bin_at_matches_real_strate_col_row()`：直接用真實FC2643的49顆die，
+只靠`.strate`的原始col:row(不在測試裡手動對調)呼叫`wafer_map.bin_at(col, row)`，49顆全部斷言
+等於`"1"`——鎖定這次的修正，之後不會再退回去。
+
+教訓：**上一則「兩個bug互相抵消」的教訓已經寫過「要縮短驗證鏈路、找完全獨立的來源」，但光是「找到
+了正確的診斷」不代表「已經修好了」——這次`frm_reader.py`的問題早在上一輪調查就已經被正確診斷出來，
+只是因為擔心波及T點公式而暫時擱置，結果過了幾天，使用者拿另一個完全不相關的症狀(角度旋轉後bin
+對不上)又撞到同一個根因。已經診斷出來、但因為其他顧慮而暫緩的已知問題，需要一個明確的後續計畫
+(這次是靠使用者又一次具體回報才重新排上時程)，不能診斷完就當作已經處理掉了。**
+
 ## SECS格式化參數（`/secs-params`）
 
 2026/08/19使用者要求「機台內secs參數與excel檔案的參數去比較」。2026/08/20使用者提供了真實的目標

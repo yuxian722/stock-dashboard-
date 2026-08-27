@@ -152,6 +152,10 @@ def test_parse_frm_rejects_truncated_header():
 
 
 def test_frm_to_wafer_bin_map_converts_correctly():
+    # 2026/08/27大更正：frm_to_wafer_bin_map()把die_map的raw key(a,b)對調成
+    # (b,a)、columns/rows也對調(見該函式docstring的完整證據)，這裡的期望值
+    # 跟著更新——raw(0,0)/(1,0)/(2,1) -> 對調後(0,0)/(0,1)/(1,2)，
+    # columns=frm.row=2、rows=frm.col=3。
     data = _build_format_ii(
         row=2, col=3, lot_no="V27NVJH", wafer_id="A27572", wafer_id_seq="01",
         wafer_type="AW191", ref_x=0, ref_y=0,
@@ -159,11 +163,11 @@ def test_frm_to_wafer_bin_map_converts_correctly():
     )
     frm = parse_frm(data)
     wafer_map = frm_to_wafer_bin_map(frm)
-    assert wafer_map.columns == 3
-    assert wafer_map.rows == 2
+    assert wafer_map.columns == 2
+    assert wafer_map.rows == 3
     assert wafer_map.bin_at(0, 0) == "1"
-    assert wafer_map.bin_at(1, 0) == "1"
-    assert wafer_map.bin_at(2, 1) == "7"
+    assert wafer_map.bin_at(0, 1) == "1"
+    assert wafer_map.bin_at(1, 2) == "7"
     assert wafer_map.bin_at(9, 9) is None
 
 

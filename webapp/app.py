@@ -198,6 +198,19 @@ def api_parse_strate():
     )
 
 
+def _frm_cells_json(frm) -> list[dict]:
+    """Cells for the frontend, using the corrected `.strate` col:row x/y
+    (see frm_to_wafer_bin_map()'s docstring for the full swap evidence) —
+    NOT frm.die_map's raw (row,col)-ordered keys. Safe to do independently
+    of the "columns"/"rows" JSON fields staying unswapped (T點-preserving,
+    see api_frm()'s comment): the frontend (webapp/static/app.js's
+    waferCellsFromApiCells()) derives the rendered grid's bounds from the
+    cells' own min/max x/y, not from "columns"/"rows" — those two fields
+    are only ever read for the T點 formula."""
+    wafer_map = frm_to_wafer_bin_map(frm)
+    return [{"x": x, "y": y, "bin": bin_kind} for (x, y), bin_kind in wafer_map.cells.items()]
+
+
 @app.post("/api/frm")
 def api_frm():
     """Auto-load the wafer bin map straight from the FRM file — the
@@ -244,6 +257,13 @@ def api_frm():
 
     return jsonify(
         {
+            # 2026/08/27：columns/rows刻意保持用frm.col/frm.row(不對調)——
+            # T點的換算公式(webapp/static/app.js的convertVisualRefPoint())
+            # 是拿這兩個值算出來、且已經用真實資料驗證過(T點X=columns-Ref.Y)，
+            # 貿然對調會讓那個已驗證過的公式跑掉。cells則必須對調，是真正
+            # 影響bin正確性的部分，見_frm_cells_json()的完整說明。這兩個
+            # 欄位「column/row軸向」目前不完全一致是已知、刻意的取捨，不是
+            # 疏漏——之後有空要處理T點公式的話再一起訂正。
             "columns": frm.col,
             "rows": frm.row,
             "lot_no": frm.lot_no,
@@ -251,7 +271,7 @@ def api_frm():
             "wafer_type": frm.wafer_type,
             "reference_point_x": frm.reference_point_x,
             "reference_point_y": frm.reference_point_y,
-            "cells": [{"x": x, "y": y, "bin": str(bin_kind)} for (x, y), bin_kind in frm.die_map.items()],
+            "cells": _frm_cells_json(frm),
         }
     )
 
@@ -529,11 +549,14 @@ def api_mispick_analyze():
     return jsonify(
         {
             "wafer": {
+                # columns/rows刻意保持frm.col/frm.row(不對調)，理由同api_frm()——
+                # 這個"wafer"物件目前沒有實際餵給任何T點公式，但保持跟api_frm()
+                # 一致比較不容易之後混淆。cells對調的理由跟細節見_frm_cells_json()。
                 "columns": frm.col,
                 "rows": frm.row,
                 "lot_no": frm.lot_no,
                 "wafer_id": frm.wafer_id,
-                "cells": [{"x": x, "y": y, "bin": str(bin_kind)} for (x, y), bin_kind in frm.die_map.items()],
+                "cells": _frm_cells_json(frm),
             },
             "substrates": substrates_out,
             "csv": _csv_text(csv_rows),

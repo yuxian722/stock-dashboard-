@@ -209,8 +209,24 @@ def frm_to_wafer_bin_map(frm: FrmMap) -> WaferBinMap:
     """Adapt a parsed FRM file to the source-agnostic WaferBinMap that
     wafer_map.py's scan_rectangle()/build_picks_from_scan() consume. bin
     kinds are stringified to match DiePick/WaferBinMap's existing "1"/"7"
-    string convention."""
-    wafer_map = WaferBinMap(columns=frm.col, rows=frm.row)
-    for (x, y), bin_kind in frm.die_map.items():
-        wafer_map.set_bin(x, y, str(bin_kind))
+    string convention.
+
+    2026/08/27大更正：`frm.die_map`的key`(x,y)`跟`frm.col`/`frm.row`兩個
+    欄位命名都是誤導性的——直接拿使用者提供的49顆真實FC2643 die(col:row
+    已知、bin=1已知，見`test_extract_strate_files_wafer_xy_matches_real_frm_die_map`)
+    交叉比對確認：`die_map`真正的key其實是`(row,col)`不是`(col,row)`，而且
+    這次額外用完全獨立的第三個來源(同一台machine對同一片wafer的SECS log，
+    `wafer_map_from_element()`已經在同一天稍早修正、驗證過)反過來核對——
+    854顆die裡有844顆(98.8%)座標空間直接對得上，756顆(89.6%)bin值也一致
+    (跟WaferStart的BinList/StrateMap的DIE_INFO本來就有的、記錄時間差造成
+    的重新分類率同一個量級，不是新的不一致)。之前一直沒發現這個問題，是
+    因為之前的驗證都停留在「wafer圖整體形狀看起來像不像橢圓」這種視覺比對
+    (見bingomap/CLAUDE.md)，沒有像STRATE補檔那樣逐顆die去對真正的.strate
+    col:row標籤——形狀不對稱的wafer轉置後外觀還是可能像橢圓，光看形狀騙得
+    過去。這裡把x,y對調、columns/rows也對調，讓算出來的座標才能直接對上
+    `.strate`的col:row語意(誤吸偏移分析的`bin_at(nominal_x, nominal_y)`
+    用的正是這個語意)。"""
+    wafer_map = WaferBinMap(columns=frm.row, rows=frm.col)
+    for (a, b), bin_kind in frm.die_map.items():
+        wafer_map.set_bin(b, a, str(bin_kind))
     return wafer_map
