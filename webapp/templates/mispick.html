@@ -110,7 +110,7 @@
           <option value="Y">Y 偏移</option>
         </select>
       </label>
-      <label>機台偏移量（非0整數） <input id="mp_offset_value" type="number" value="1" step="1"></label>
+      <label>機台偏移量（整數，0＝T點沒有偏移） <input id="mp_offset_value" type="number" value="0" step="1"></label>
       <label>正常 Good BIN <input id="mp_good_bins" value="1"></label>
       <label>強制點除 BIN <input id="mp_ng_bins" value="7,9"></label>
       <label>人工確認 BIN <input id="mp_review_bins" value="2"></label>
@@ -142,7 +142,21 @@
       <span id="mp-wafer-bin-legend" style="display:contents"></span>
       <span id="mp-wafer-tpoint-legend" style="display:none"><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點</span>
     </div>
-    <div class="lyr-wafer-wrap"><div id="mp-wafer-grid" class="lyr-wafer-grid"></div></div>
+    <p class="hint" style="font-size:0.78rem;color:var(--muted)">
+      左圖是你手動輸入的T點座標本身(T點沒有偏移，等於套用「3 偏移與BIN設定」目前是0的情況)；右圖是
+      套用目前設定的機台偏移量之後，T點實際落到的位置——偏移量改變(包含按方向微調按鈕)兩張圖都會即時
+      重新畫，方便直接比對T點被偏移到哪裡。
+    </p>
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
+      <div>
+        <div class="small" style="margin-bottom:0.3rem">T點無偏移（0:0）</div>
+        <div class="lyr-wafer-wrap"><div id="mp-wafer-grid" class="lyr-wafer-grid"></div></div>
+      </div>
+      <div>
+        <div class="small" style="margin-bottom:0.3rem" id="mp-wafer-grid-shifted-label">套用目前偏移後的T點</div>
+        <div class="lyr-wafer-wrap"><div id="mp-wafer-grid-shifted" class="lyr-wafer-grid"></div></div>
+      </div>
+    </div>
   </section>
 
   <section class="panel" id="mispick-results-panel" style="grid-column:1/-1">

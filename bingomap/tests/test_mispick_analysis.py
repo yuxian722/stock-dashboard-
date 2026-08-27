@@ -246,9 +246,15 @@ def test_rejects_block_count_that_does_not_divide_evenly():
         )
 
 
-def test_make_offset_rejects_zero():
-    with pytest.raises(ValueError):
-        make_offset("X", 0)
+def test_make_offset_allows_zero():
+    # 2026/08/27更正：0代表T點沒有偏移的基準狀態，不再是錯誤輸入(見
+    # make_offset()的docstring)。
+    offset = make_offset("X", 0)
+    assert offset.dx == 0
+    assert offset.dy == 0
+    offset_y = make_offset("Y", 0)
+    assert offset_y.dx == 0
+    assert offset_y.dy == 0
 
 
 def test_make_offset_rejects_bad_axis():

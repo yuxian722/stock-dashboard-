@@ -226,7 +226,10 @@ def test_analyze_missing_frm_file_returns_404(client, tmp_path):
     assert res.status_code == 404
 
 
-def test_analyze_rejects_zero_offset(client, frm_root):
+def test_analyze_accepts_zero_offset_as_identity(client, frm_root):
+    # 2026/08/27更正：0代表T點沒有偏移的基準狀態，不再被拒絕(見
+    # bingomap/mispick_analysis.py的make_offset()) —— nominal座標等於
+    # 實際座標，wafer_xy=1:1在5x5合成wafer map上是Good("1")，應該分類成OK。
     payload = {
         "wafer_ring": WAFER_RING,
         "offset_axis": "X",
@@ -235,4 +238,7 @@ def test_analyze_rejects_zero_offset(client, frm_root):
         "strate_files": [{"name": "x.strate", "text": _strate_text([_die(1, "0:0", "1:1")])}],
     }
     res = client.post("/api/mispick/analyze", json=payload)
-    assert res.status_code == 400
+    assert res.status_code == 200
+    sub = res.get_json()["substrates"][0]
+    assert sub["error"] is None
+    assert sub["summary"] == {"force_delete": 0, "review": 0, "anomaly": 0, "ok": 1, "other": 0}

@@ -116,10 +116,13 @@ class Offset:
 
 
 def make_offset(axis: str, value: int) -> Offset:
+    # 2026/08/27更正：0是合法值，代表T點沒有偏移的基準狀態——之前這裡拒絕
+    # 0(逼使用者一定要選一個非0偏移量)，但使用者指出「如果T點沒有偏當然
+    # 就是0，T點偏移才會有(1:0)(-1:0)(0:1)(0:-1)」，0本身就是一個有意義、
+    # 應該可以選的狀態，不是輸入錯誤。value=0時dx=dy=0，axis選哪一個都
+    # 沒有實際差別(見_classify_row()只用得到offset.dx/offset.dy)。
     if axis not in ("X", "Y"):
         raise ValueError(f"axis must be 'X' or 'Y', got {axis!r}")
-    if value == 0:
-        raise ValueError("偏移量必須是非0的整數")
     dx = value if axis == "X" else 0
     dy = value if axis == "Y" else 0
     return Offset(axis=axis, value=value, dx=dx, dy=dy)

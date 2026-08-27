@@ -133,56 +133,23 @@ function convertVisualRefPoint() {
   renderWaferGrid(lastWaferData);
 }
 
-function renderWaferGrid(wafer) {
-  const panel = document.getElementById("mispick-wafer-panel");
-  const container = document.getElementById("mp-wafer-grid");
+// 目前選定的機台偏移量(dx,dy) — 跟bingomap/mispick_analysis.py的
+// make_offset()算dx/dy的規則完全一樣(單軸，X填dx、Y填dy)，只用在下面
+// 「套用目前偏移後的T點」那張圖，不影響實際分析(分析是後端算的)。
+function currentOffsetDelta() {
+  const axis = document.getElementById("mp_offset_axis").value;
+  const value = parseInt(document.getElementById("mp_offset_value").value, 10) || 0;
+  return { dx: axis === "X" ? value : 0, dy: axis === "Y" ? value : 0 };
+}
+
+// 畫一張wafer bin圖到指定的容器，refPoint(選填)是要標T點的那一格。抽出來
+// 是因為2026/08/27改成同時畫兩張圖(見下面renderWaferGrid())：左邊T點是
+// 手動輸入的原始位置(0:0，沒有套用偏移)，右邊是套用目前機台偏移量之後
+// T點實際落到的位置——使用者要求「數值變T點圖也要跟著變」，單一張圖
+// 沒辦法同時呈現「偏移前」跟「偏移後」兩種狀態給你比對。
+function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint) {
+  const container = document.getElementById(containerId);
   container.innerHTML = "";
-  if (!wafer || !wafer.cells || !wafer.cells.length) {
-    panel.style.display = "none";
-    return;
-  }
-  lastWaferData = wafer;
-  panel.style.display = "";
-  lastWaferPasteText = wafer.cells
-    .slice()
-    .sort((a, b) => a.x - b.x || a.y - b.y)
-    .map((c) => `${c.x},${c.y},${c.bin}`)
-    .join("\n");
-  document.getElementById("mp-wafer-text").value = lastWaferPasteText;
-
-  const cellMap = new Map(wafer.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
-  renderBinLegend("mp-wafer-bin-legend", cellMap);
-  const xs = wafer.cells.map((c) => c.x);
-  const ys = wafer.cells.map((c) => c.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
-
-  // T點 (2026/08/19 ask: "誤吸的圖檔沒有顯示T點 要補充出來這樣我才知道
-  // 移動的位置在哪裡") — originally computed from reference_point_x via
-  // the same formula as app.js's main-page marker, but 2026/08/19 later
-  // that day: decompiled the real WaferCoordinate.exe (user provided the
-  // .exe itself) and confirmed ReferencePointX/Y are parsed from the FRM
-  // file but never referenced anywhere in its drawing code — the real
-  // tool doesn't compute or mark a T點 from them at all. The user
-  // explained their own method: eyeballing the (purely geometric) center
-  // crosshair against where bin7/bin1 fall nearby — a manual visual call,
-  // not a derivable value. So this is a manual input now (see
-  // #mp-t-point-x/y), read fresh on every render, same as app.js's
-  // currentRefPoint().
-  const tx = parseInt(document.getElementById("mp-t-point-x").value, 10);
-  const ty = parseInt(document.getElementById("mp-t-point-y").value, 10);
-  const refPoint = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : null;
-  document.getElementById("mp-wafer-tpoint-legend").style.display = refPoint ? "" : "none";
-  document.getElementById("mp-wafer-info").textContent =
-    `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
-
-  // 排列順序永遠固定(欄0在右邊、列0在最上面) — 方向調整交給mpAngle在座標
-  // 本身上處理(見rotateWaferArray())，不再是可切換的顯示順序。
-  const xOrder = [];
-  for (let x = minX; x <= maxX; x++) xOrder.push(x);
-  xOrder.reverse();
-  const yOrder = [];
-  for (let y = minY; y <= maxY; y++) yOrder.push(y);
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
@@ -219,6 +186,67 @@ function renderWaferGrid(wafer) {
     }
     container.appendChild(row);
   }
+}
+
+function renderWaferGrid(wafer) {
+  const panel = document.getElementById("mispick-wafer-panel");
+  if (!wafer || !wafer.cells || !wafer.cells.length) {
+    document.getElementById("mp-wafer-grid").innerHTML = "";
+    document.getElementById("mp-wafer-grid-shifted").innerHTML = "";
+    panel.style.display = "none";
+    return;
+  }
+  lastWaferData = wafer;
+  panel.style.display = "";
+  lastWaferPasteText = wafer.cells
+    .slice()
+    .sort((a, b) => a.x - b.x || a.y - b.y)
+    .map((c) => `${c.x},${c.y},${c.bin}`)
+    .join("\n");
+  document.getElementById("mp-wafer-text").value = lastWaferPasteText;
+
+  const cellMap = new Map(wafer.cells.map((c) => [`${c.x},${c.y}`, c.bin]));
+  renderBinLegend("mp-wafer-bin-legend", cellMap);
+  const xs = wafer.cells.map((c) => c.x);
+  const ys = wafer.cells.map((c) => c.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+  // T點 (2026/08/19 ask: "誤吸的圖檔沒有顯示T點 要補充出來這樣我才知道
+  // 移動的位置在哪裡") — originally computed from reference_point_x via
+  // the same formula as app.js's main-page marker, but 2026/08/19 later
+  // that day: decompiled the real WaferCoordinate.exe (user provided the
+  // .exe itself) and confirmed ReferencePointX/Y are parsed from the FRM
+  // file but never referenced anywhere in its drawing code — the real
+  // tool doesn't compute or mark a T點 from them at all. The user
+  // explained their own method: eyeballing the (purely geometric) center
+  // crosshair against where bin7/bin1 fall nearby — a manual visual call,
+  // not a derivable value. So this is a manual input now (see
+  // #mp-t-point-x/y), read fresh on every render, same as app.js's
+  // currentRefPoint().
+  const tx = parseInt(document.getElementById("mp-t-point-x").value, 10);
+  const ty = parseInt(document.getElementById("mp-t-point-y").value, 10);
+  const refPoint = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : null;
+  // 2026/08/27新增：右邊那張圖套用目前的機台偏移量(dx,dy)之後T點會落在
+  // 哪裡——偏移量是0(沒有偏移)時兩張圖的T點會是同一格，這是預期行為。
+  const { dx, dy } = currentOffsetDelta();
+  const shiftedRefPoint = refPoint ? { x: refPoint.x + dx, y: refPoint.y + dy } : null;
+  document.getElementById("mp-wafer-tpoint-legend").style.display = refPoint ? "" : "none";
+  document.getElementById("mp-wafer-info").textContent =
+    `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
+  document.getElementById("mp-wafer-grid-shifted-label").textContent =
+    dx === 0 && dy === 0 ? "套用目前偏移後的T點（目前偏移量為0，跟左圖相同）" : `套用目前偏移後的T點（X${dx >= 0 ? "+" : ""}${dx}、Y${dy >= 0 ? "+" : ""}${dy}）`;
+
+  // 排列順序永遠固定(欄0在右邊、列0在最上面) — 方向調整交給mpAngle在座標
+  // 本身上處理(見rotateWaferArray())，不再是可切換的顯示順序。
+  const xOrder = [];
+  for (let x = minX; x <= maxX; x++) xOrder.push(x);
+  xOrder.reverse();
+  const yOrder = [];
+  for (let y = minY; y <= maxY; y++) yOrder.push(y);
+
+  renderOneWaferGrid("mp-wafer-grid", xOrder, yOrder, cellMap, refPoint);
+  renderOneWaferGrid("mp-wafer-grid-shifted", xOrder, yOrder, cellMap, shiftedRefPoint);
 }
 
 function renderSubstrateGrid(containerId, sub) {
@@ -438,8 +466,13 @@ function updateEsecWarning() {
 
 function updateOffsetDisplay() {
   const axis = document.getElementById("mp_offset_axis").value;
-  const value = document.getElementById("mp_offset_value").value;
-  document.getElementById("mp-offset-display").textContent = `目前偏移：${axis} ${value > 0 ? "+" : ""}${value}`;
+  const value = parseInt(document.getElementById("mp_offset_value").value, 10) || 0;
+  // 2026/08/27更正：0是合法值，代表「T點沒有偏移」的基準狀態——之前這裡
+  // (跟下面nudgeOffset()、mispick_analysis.py的make_offset())都把0當成
+  // 不該出現的例外，使用者指出機台偏移量本來就應該能是0(沒偏移時就是0，
+  // 只有真的量到偏移才會是非0)。
+  document.getElementById("mp-offset-display").textContent =
+    value === 0 ? "目前偏移：無（0，T點沒有偏移）" : `目前偏移：${axis} ${value > 0 ? "+" : ""}${value}`;
 }
 
 // Direction buttons (2026/08/18 ask: "當我將WAFER T點移動往右或往左或
@@ -460,10 +493,12 @@ function nudgeOffset(axis, delta) {
     axisSelect.value = axis;
     valueInput.value = delta;
   } else {
-    const next = (parseInt(valueInput.value, 10) || 0) + delta;
-    valueInput.value = next === 0 ? delta : next; // offset must never be 0
+    // 2026/08/27更正：0是合法的偏移量(代表T點沒有偏移)，不用再特別跳過
+    // ——之前這裡會把算出來的0強制改回±1，導致方向微調永遠碰不到0。
+    valueInput.value = (parseInt(valueInput.value, 10) || 0) + delta;
   }
   updateOffsetDisplay();
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
   analyze();
 }
 
@@ -543,8 +578,15 @@ document.getElementById("mp-btn-copy-wafer-text").addEventListener("click", asyn
 document.getElementById("mp-btn-analyze").addEventListener("click", analyze);
 document.getElementById("mp-btn-download-csv").addEventListener("click", downloadCsv);
 document.getElementById("mp_machine_type").addEventListener("change", updateEsecWarning);
-document.getElementById("mp_offset_axis").addEventListener("change", updateOffsetDisplay);
-document.getElementById("mp_offset_value").addEventListener("input", updateOffsetDisplay);
+// 2026/08/27新增：改軸向/改偏移量的當下就要讓下面「套用目前偏移後的T點」
+// 那張預覽圖跟著重畫(不用等按「分析」)，跟T點X/Y欄位本來就有的即時重畫是
+// 同一個道理(見下面mp-t-point-x/y的input監聽器)。
+function updateOffsetDisplayAndPreview() {
+  updateOffsetDisplay();
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
+}
+document.getElementById("mp_offset_axis").addEventListener("change", updateOffsetDisplayAndPreview);
+document.getElementById("mp_offset_value").addEventListener("input", updateOffsetDisplayAndPreview);
 document.getElementById("mp-btn-nudge-up").addEventListener("click", () => nudgeOffset("Y", -1));
 document.getElementById("mp-btn-nudge-down").addEventListener("click", () => nudgeOffset("Y", 1));
 document.getElementById("mp-btn-nudge-left").addEventListener("click", () => nudgeOffset("X", -1));
