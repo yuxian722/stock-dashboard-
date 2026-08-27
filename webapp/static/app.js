@@ -431,28 +431,62 @@ async function loadTemplate(text) {
   document.getElementById("multi_layer_enabled").checked = multiLayerEnabled;
   document.getElementById("num_layers").value = numLayers;
   document.getElementById("multi-layer-fields").style.display = multiLayerEnabled ? "" : "none";
-  // "跨兩片wafer" (multiWaferEnabled) is deliberately left untouched here —
-  // a .strate file carries no notion of "which physical wafer panel" a die
-  // came from, so there's nothing in the template to derive it from either
-  // way, but that's not a reason to silently override whatever the user
-  // currently has set. This used to force it to false unconditionally,
-  // which meant checking "跨兩片wafer" and then loading a template made
-  // the second wafer panel vanish with no explanation — exactly the
-  // "找不到第二片wafer" bug report.
+
+  // 2026/08/27更正：上面舊的假設「.strate檔案完全沒有記錄die來自哪片物理
+  // wafer」其實是錯的——每一顆die自己的wafer_ring欄位就是這個資訊(見
+  // webapp/app.py的_die_info_to_picks())，只是之前沒有用它。真實案例
+  // (Z25709007096)證實一份.strate可以同時混合兩片物理wafer(FC2643/
+  // FCEEB7)的die，而且是同一層裡面就混著兩片，不是「第1層一片、第2層
+  // 另一片」這種乾淨的切法——所以要照每一顆die自己的wafer_ring分配面板，
+  // 不能用「這一層整層算哪一片」的假設。
+  const waferRingOrder = [];
+  for (const layerPicks of data.layer_picks) {
+    for (const p of layerPicks) {
+      if (p.wafer_ring && !waferRingOrder.includes(p.wafer_ring)) waferRingOrder.push(p.wafer_ring);
+    }
+  }
+  const panelForWaferRing = new Map(waferRingOrder.slice(0, 2).map((wr, i) => [wr, i]));
+  let tooManyWafersNote = "";
+  if (waferRingOrder.length === 2) {
+    // 只有剛好兩片物理wafer時才自動開「跨兩片wafer」——這是目前介面能
+    // 表達的上限。只有一片的話維持原本行為：不強制關閉使用者自己開著的
+    // 「跨兩片wafer」(這是之前修過的「找不到第二片wafer」那個bug，這裡
+    // 沒有理由重新引入)。
+    multiWaferEnabled = true;
+    document.getElementById("multi_wafer_enabled").checked = true;
+  } else if (waferRingOrder.length > 2) {
+    tooManyWafersNote =
+      `　⚠️這份範本的die實際來自${waferRingOrder.length}片不同的物理wafer(${waferRingOrder.join("、")})，` +
+      "目前畫面最多只能同時處理兩片，座標暫時全部歸在第一片wafer面板下，請自行確認/手動調整。";
+  }
+
   resetLayerState();
-  // A template file carries no notion of "which physical wafer panel" —
-  // treat every loaded pick as panel 0 (the default single-wafer source).
   picksByLayer = data.layer_picks.length
-    ? data.layer_picks.map((picks) => picks.map((p) => ({ ...p, panel: 0 })))
+    ? data.layer_picks.map((picks) =>
+        picks.map((p) => ({ ...p, panel: panelForWaferRing.get(p.wafer_ring) ?? 0 }))
+      )
     : [[]];
   rebuildLayerUi();
   renderAll();
 
+  // 每片物理wafer的FRM Lot No/Barcode ID先幫忙填好(這份.strate自己的
+  // mapping_lot就是FRM LotNo、每顆die的wafer_ring就是FRM Barcode ID——
+  // 用WPQ5310156SS/FC2643這組真實資料驗證過，見bingomap/CLAUDE.md)，
+  // 使用者只需要各自按一次「自動讀取FRM檔案」，不用重新手動輸入。
+  for (const [wr, panelIdx] of panelForWaferRing) {
+    const ids = waferIds(panelIdx);
+    const lotEl = document.getElementById(ids.frmLotNo);
+    const barcodeEl = document.getElementById(ids.frmBarcodeId);
+    if (lotEl) lotEl.value = data.mapping_lot;
+    if (barcodeEl) barcodeEl.value = wr;
+  }
+
   status.className = "ok";
   const layerNote = multiLayerEnabled ? `（共${data.num_layers}層）` : "";
+  const waferNote = waferRingOrder.length === 2 ? "，偵測到兩片物理wafer，已自動開啟「跨兩片wafer」並各自填好FRM Lot No/Barcode ID，請分別按「自動讀取FRM檔案」" : "";
   status.textContent =
-    `已載入範本：共 ${data.total_qty} 個基板位置${layerNote}。` +
-    `基板位置順序沿用範本原本的順序。可以直接調整基板流水號/時間後產生，或繼續編輯座標。`;
+    `已載入範本：共 ${data.total_qty} 個基板位置${layerNote}${waferNote}。` +
+    `基板位置順序沿用範本原本的順序。可以直接調整基板流水號/時間後產生，或繼續編輯座標。${tooManyWafersNote}`;
   document.getElementById("blank-status").textContent = "（目前使用範本的基板位置順序，不需要再按「產生空白骨架」——除非要改用DB/ESEC規則重新產生）";
   setStepFlow(4, { done: [1, 2, 3] });
 }

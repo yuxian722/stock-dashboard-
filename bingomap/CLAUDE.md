@@ -554,3 +554,51 @@ PickDie時間戳反推公式，三個獨立來源方向一致，這次才真的�
 的使用者體驗成本(這次是又一輪「你的解釋不對，回頭查證據」的來回)其實是可以避免的。發現一個bug
 但決定不修時，至少要留下清楚的紀錄講明白「為什麼沒修、擔心什麼」(這次CLAUDE.md/README.md都有記
 到這個顧慮)，這樣至少下次重新處理時能直接對症下藥、不用重新從頭診斷一次。**
+
+## `.strate`的`wafer_ring`欄位是逐顆die各自記錄的，不是整份基板共用一個值——之前一直假設是後者
+
+2026/08/27使用者回報：把Z25709007096這份.strate當範本載入①補資料頁，畫面上顯示這枚基板「有兩片wafer
+id FCEEB7/FC2643」，應該要出現兩片wafer的圖跟分布位置，但只出現一片。
+
+追查發現這個假設本身就是錯的，錯在兩個地方：
+1. `webapp/app.py`的`_substrate_summary()`只取`sf.die_info[0].wafer_ring`當作整份基板唯一的
+   wafer_ring，`_substrate_die_positions()`把`die_info`跟`other_layer_die_info`的座標全部攤平成
+   一個清單，完全沒有保留每一列自己的wafer_ring
+2. `webapp/static/app.js`的`loadTemplate()`更明確地寫著「a .strate file carries no notion of
+   which physical wafer panel a die came from」，所以無條件把每一顆讀進來的pick指派成panel 0
+
+實際去查`DieInfo`的欄位定義(`bingomap/strate.py`)，`wafer_ring`從一開始就是`(index,wafer_ring,
+wafer_xy,sub_pos,bin,f6,f7,timestamp,f9)`這9個逐列欄位之一，不是檔頭的整份基板常數——用真實的
+Z25709007096檔案實際统计才發現，這份基板的224顆die(56顆die_info+168顆other_layer_die_info)裡
+**同一層(同一個f9)內部就同時混著FC2643(每層12~13顆)跟FCEEB7(每層43~44顆)兩片物理wafer**，不是乾淨的
+「第1層算一片wafer、第2層算另一片」——這代表就算之前用「每層對應一片wafer」的方式去分配panel也是錯的，
+必須逐顆die照它自己的wafer_ring分配，沒有更簡單的規律可以走捷徑。
+
+已修正：
+- `_die_info_to_picks()`把每顆die自己的`wafer_ring`一起帶出去(見它的完整docstring)，不再只在
+  `_substrate_summary()`那層取第一顆的值
+- `app.js`的`loadTemplate()`改成先掃過所有pick蒐集出現過的wafer_ring(照第一次出現的順序)，剛好兩種
+  的話自動開啟「跨兩片wafer」、逐顆die照自己的wafer_ring分配panel 0/1(不是整層分配)；超過兩種的話
+  (目前介面只能表達2片)全部先歸在panel 0並在狀態文字裡明確警告，不假裝處理得了；剛好一種(最常見的
+  單一wafer情況)行為跟以前一樣全部panel 0
+- 順便驗證了`wafer_ring`(如FC2643/FCEEB7)就是FRM的Barcode ID、`.strate`自己的`mapping_lot`就是FRM
+  的LotNo(這次用的正是這個專案一路驗證下來的WPQ5310156SS/FC2643這組真實資料交叉確認)，所以載入範本
+  時順便把兩片panel的FRM Lot No/Barcode ID都自動填好，使用者各自按一次「自動讀取FRM檔案」就能把兩片
+  wafer的圖都叫出來，不用手動查/打這兩個欄位
+- 過程中抓到一個相關的小bug：panel 0(靜態HTML)的FRM Lot No/Barcode ID欄位原本有一組開發時期留下的
+  預設值(`8P065800A1`/`T3DA62`)，第一版修正用「欄位是空的才填」當防呆條件，結果被這組非空的舊預設值
+  擋住、填不進去——跟其他所有範本欄位(assy_lot/mapping_lot/...)一樣直接無條件覆蓋才對，範本載入本來
+  就應該讓範本自己的資料說了算，不需要顧慮「使用者可能手動填過」這種在其他欄位從來沒有的假設
+- Playwright實際載入真實的Z25709007096範本＋真實FC2643 FRM檔案驗證：224顆pick正確拆成49(FC2643)+
+  175(FCEEB7)兩組、`multi_wafer_enabled`自動勾選、兩片panel的LotNo/Barcode ID都正確填成
+  `WPQ5310156SS`+各自的wafer_ring、FC2643那49顆pick座標全部落在該片真實wafer範圍內(x:0-23,y:0-45)
+  沒有跑出界外
+- 新增後端回歸測試`test_api_parse_strate_picks_carry_the_real_per_die_wafer_ring_not_a_single_value`：
+  直接用這份真實檔案鎖定每一層都真的混著兩片wafer(不是乾淨的per-layer切法)，避免以後又退回「一層一片
+  wafer」的簡化假設
+
+教訓：**跟前面「die_map key順序命名誤導」是同一種陷阱的變體——這次是「以為某個資料格式沒有記錄某項
+資訊」，但實際上資訊就在那裡(`wafer_ring`一直都是逐列欄位)，只是程式一路以來都只取第一筆代表全部，
+沒人质疑過「這樣夠嗎」。遇到「這個檔案格式應該無法回答X」的假設時，值得先去翻一下格式定義本身(這裡是
+`DieInfo`的dataclass欄位)確認是不是真的沒有，而不是直接把「目前程式沒有用到它」當成「格式裡本來就沒
+有」。**

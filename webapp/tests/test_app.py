@@ -24,6 +24,13 @@ REAL_EIGHT_LAYER_STRATE_FIXTURE = (
     / "fixtures"
     / "2070_V25NVDY_F2006908_20260702203138.strate"
 )
+REAL_TWO_PHYSICAL_WAFER_STRATE_FIXTURE = (
+    Path(__file__).parent.parent.parent
+    / "bingomap"
+    / "tests"
+    / "fixtures"
+    / "2070_V30EUC6_Z25709007096_20260801024007.strate"
+)
 REAL_SECS_LOG_FIXTURE = (
     Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "secs_log_sample.log"
 )
@@ -336,7 +343,7 @@ def test_api_parse_strate_extracts_header_positions_and_picks(client):
     assert data["positions"][0] == "0:0"
     assert data["positions"][-1] == "19:3"
     assert len(data["picks"]) == 75
-    assert data["picks"][0] == {"x": 23, "y": 195, "bin": "1"}
+    assert data["picks"][0] == {"x": 23, "y": 195, "bin": "1", "wafer_ring": "A27572"}
     assert data["num_layers"] == 1
     assert data["layer_picks"] == [data["picks"]]
 
@@ -353,7 +360,36 @@ def test_api_parse_strate_splits_real_eight_layer_file_by_f9(client):
     # layer_picks[-1] is the DIE_INFO (topmost/current) layer
     assert data["layer_picks"][-1] == data["picks"]
     # layer_picks[0] is f9=1's picks — first row's wafer_xy is "3:66"
-    assert data["layer_picks"][0][0] == {"x": 3, "y": 66, "bin": "1"}
+    assert data["layer_picks"][0][0] == {"x": 3, "y": 66, "bin": "1", "wafer_ring": "B6844E"}
+
+
+def test_api_parse_strate_picks_carry_the_real_per_die_wafer_ring_not_a_single_value(client):
+    # 2026/08/27 regression test: Z25709007096 is a real substrate whose
+    # dies genuinely come from TWO different physical wafers (FC2643 and
+    # FCEEB7) mixed together WITHIN every single layer — not "layer 1 from
+    # one wafer, layer 2 from the other". _substrate_summary()/the old
+    # frontend loadTemplate() only ever looked at wafer_ring on the first
+    # die_info row (or ignored it and forced panel:0 outright), so this
+    # substrate's second wafer's dies had nowhere correct to go — see
+    # webapp/README.md's "STRATE補檔 XML合併" 2026/08/27 entry. Locks in
+    # that every pick now carries its own die's real wafer_ring.
+    with open(REAL_TWO_PHYSICAL_WAFER_STRATE_FIXTURE, encoding="ascii", newline="") as f:
+        text = f.read()
+    res = client.post("/api/parse_strate", json={"text": text})
+    assert res.status_code == 200
+    data = res.get_json()
+
+    all_picks = [p for layer in data["layer_picks"] for p in layer]
+    assert len(all_picks) == 56 + 168
+
+    wafer_rings_seen = {p["wafer_ring"] for p in all_picks}
+    assert wafer_rings_seen == {"FC2643", "FCEEB7"}
+
+    # every layer (not just one) genuinely mixes both wafers — confirms
+    # this isn't a "layer N = wafer N" situation a per-layer split could
+    # have handled.
+    for layer in data["layer_picks"]:
+        assert {p["wafer_ring"] for p in layer} == {"FC2643", "FCEEB7"}
 
 
 def test_api_parse_strate_rejects_malformed_text(client):

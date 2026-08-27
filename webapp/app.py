@@ -131,7 +131,14 @@ def _die_info_to_picks(die_list: list) -> list[dict]:
             x, y = int(x_str), int(y_str)
         except ValueError:
             continue
-        picks.append({"x": x, "y": y, "bin": d.bin})
+        # wafer_ring is a per-die field (not a whole-substrate constant) —
+        # a single .strate can genuinely mix dies from two different
+        # physical wafers within the very same layer (confirmed on a real
+        # Z25709007096 substrate: ~12-13 dies/layer from wafer FC2643,
+        # ~43-44/layer from wafer FCEEB7, no clean per-layer split). Handing
+        # it through lets the frontend assign each pick to the wafer panel
+        # it actually came from instead of assuming everything is panel 0.
+        picks.append({"x": x, "y": y, "bin": d.bin, "wafer_ring": d.wafer_ring})
     return picks
 
 

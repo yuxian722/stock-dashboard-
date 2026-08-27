@@ -80,6 +80,40 @@ CRLF自動正規化成純LF(這是HTML規格行為，不是bug)，而`StrateFile
 碰到被正規化過的內容就直接判定成格式錯誤。已經修成`parse()`同時接受CRLF跟純LF(內部先正規化
 再切割)，輸出的部分完全沒動——`to_text()`還是永遠寫CRLF，不影響機台讀取。）
 
+### 後續更正(2026/08/27)：範本可能橫跨兩片物理wafer，載入時要照每顆die自己的wafer_ring分配面板
+
+使用者回報：Z25709007096這份`.strate`載入範本後，畫面上顯示這枚基板「有兩片wafer id FCEEB7/FC2643」，
+應該要出現兩片wafer的圖跟分布位置，但只出現一片。
+
+追出原因：`.strate`的`DIE_INFO`/`DIE_INFO_OTHER_LAYER`每一列本來就各自記錄`wafer_ring`欄位(9欄CSV的
+第2欄)，這不是整份基板共用一個值，是逐顆die各自記錄——但`loadTemplate()`原本無條件把每一顆讀進來的
+pick都指派成panel 0，理由寫的是「a .strate file carries no notion of which physical wafer panel a
+die came from」，這個假設本身是錯的。用真實檔案實際統計才發現問題比想像中更細：這枚基板的224顆die
+(56顆DIE_INFO+168顆DIE_INFO_OTHER_LAYER)**同一層(同一個f9)裡面就同時混著FC2643(每層12~13顆)跟
+FCEEB7(每層43~44顆)兩片物理wafer**，不是「第1層算一片wafer、第2層算另一片」這種乾淨的切法，所以修
+的時候不能用「整層對應一片wafer」的簡化，得逐顆die照它自己的wafer_ring分配。
+
+已修正：
+- `webapp/app.py`的`_die_info_to_picks()`把每顆die自己的`wafer_ring`一起回傳(不再只在
+  `_substrate_summary()`那層取整份基板第一顆的值)
+- `app.js`的`loadTemplate()`：先掃過所有pick蒐集出現過的wafer_ring(照第一次出現的順序)——剛好兩種的
+  話自動勾選「跨兩片wafer」、逐顆die照自己的wafer_ring分配panel 0/1；超過兩種(目前介面只能表達2片)的
+  話全部先歸在panel 0，並在狀態文字裡明確標注警告，不假裝處理得了；剛好一種(最常見的單一wafer情況)
+  行為維持跟以前一樣
+- 順便驗證了`wafer_ring`(如`FC2643`)就是FRM的Barcode ID、`.strate`自己的`mapping_lot`就是FRM的
+  LotNo(用這個專案一路驗證下來的`WPQ5310156SS`/`FC2643`這組真實資料交叉確認)，所以載入範本時順便把
+  兩片panel的「FRM Lot No」「Barcode ID」都自動填好，使用者各自按一次「自動讀取FRM檔案」就能把兩片
+  wafer的圖都叫出來，不用手動查/打這兩個欄位
+- 修正過程抓到一個相關小bug：panel 0(頁面靜態HTML)的FRM Lot No/Barcode ID欄位本來就有一組開發時期
+  留下的預設值(`8P065800A1`/`T3DA62`)，第一版用「欄位是空的才填」防呆，結果被這組非空的舊預設值擋住
+  填不進去——改成跟其他所有範本欄位一樣無條件覆蓋
+- 用Playwright實際載入這份真實範本＋真實FC2643 FRM檔案驗證：224顆pick正確拆成49(FC2643)+175(FCEEB7)
+  兩組、「跨兩片wafer」自動勾選、兩片panel的LotNo/Barcode ID都正確填好，FC2643那49顆pick座標全部落在
+  該片真實wafer範圍內，沒有跑出界外
+- 新增回歸測試`webapp/tests/test_app.py`的
+  `test_api_parse_strate_picks_carry_the_real_per_die_wafer_ring_not_a_single_value()`，直接鎖定這份
+  真實檔案「每一層都真的混著兩片wafer」這個事實，避免以後又退回「一層一片wafer」的簡化假設
+
 ## 疊層(一次上多顆，支援到8層以上)
 
 2026/08/17：使用者提供了一份真實的**8層**`.strate`範例(`bingomap/tests/fixtures/
