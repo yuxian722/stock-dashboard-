@@ -209,6 +209,27 @@ def test_analyze_db_accepts_any_notch(client, frm_root):
     assert sub["error"] is None
 
 
+def test_analyze_reports_actual_wafer_rings_when_all_dies_excluded(client, frm_root):
+    # 2026/08/27新增：使用者回報一份STRATE分析結果全部被排除(非目標
+    # Wafer)、BINGO MAP整片空白，看不出來是自己Wafer ID打錯還是這份
+    # STRATE真的是另一片wafer——排除清單本身要能告訴使用者「這份STRATE
+    # 裡實際記錄的wafer_ring是什麼」，不用自己開檔案找。
+    dies = [_die(1, "0:0", "0:0", wafer_ring="OTHERWAFER")]
+    payload = {
+        "wafer_ring": WAFER_RING,  # 跟die自己記錄的"OTHERWAFER"不一樣
+        "offset_axis": "X",
+        "offset_value": 0,
+        "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
+        "strate_files": [{"name": "x.strate", "text": _strate_text(dies)}],
+    }
+    res = client.post("/api/mispick/analyze", json=payload)
+    assert res.status_code == 200
+    sub = res.get_json()["substrates"][0]
+    assert sub["excluded_count"] == 1
+    assert sub["excluded_wafer_rings"] == ["OTHERWAFER"]
+    assert sub["summary"] == {"force_delete": 0, "review": 0, "anomaly": 0, "ok": 0, "other": 0}
+
+
 def test_analyze_requires_wafer_ring(client):
     res = client.post("/api/mispick/analyze", json={})
     assert res.status_code == 400

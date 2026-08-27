@@ -334,6 +334,31 @@ function renderResults(data) {
       `排除(非目標Wafer) ${sub.excluded_count}`;
     container.appendChild(head);
 
+    // 2026/08/27新增：排除數字本身看不出來是「使用者Wafer ID打錯字」還是
+    // 「這份STRATE本來就是同一個LOT裡別的實體wafer」——把STRATE裡實際
+    // 記錄到的wafer_ring攤開來跟目前輸入框比對，直接告訴使用者差在哪，
+    // 不用自己開檔案找。排除比例達100%(整份STRATE一顆都沒分析到、BINGO
+    // MAP格子圖會整片空白)時特別用醒目樣式標出來，這是最容易被誤以為
+    // 「軟體壞了/沒資料」的情況。
+    if (sub.excluded_count > 0 && sub.excluded_wafer_rings && sub.excluded_wafer_rings.length) {
+      const targetWaferRing = document.getElementById("mp_wafer_ring").value.trim();
+      const totalDies = s.force_delete + s.review + s.anomaly + s.ok + s.other + sub.excluded_count;
+      const allExcluded = sub.excluded_count === totalDies;
+      const note = document.createElement("div");
+      note.className = allExcluded ? "notice error" : "notice";
+      note.style.marginTop = "0.3rem";
+      note.innerHTML =
+        (allExcluded
+          ? `⚠️ 這份STRATE全部${sub.excluded_count}顆die都被排除，沒有任何一顆進入分析(BINGO MAP會是空白)。`
+          : `這份STRATE有${sub.excluded_count}顆die被排除。`) +
+        `實際記錄到的wafer_ring是：<b>${sub.excluded_wafer_rings.join("、")}</b>` +
+        (targetWaferRing
+          ? `，你目前填的「要比對的完整Wafer ID」是：<b>${targetWaferRing}</b>——請確認是否打錯字，` +
+            "或這份STRATE本來就是同一個LOT裡另一片實體wafer(改填正確的Wafer ID重新分析即可)。"
+          : "，「要比對的完整Wafer ID」欄位目前是空的，請填入這份STRATE實際對應的Wafer ID。");
+      container.appendChild(note);
+    }
+
     const gridId = `mp-substrate-grid-${idx}`;
     const gridWrap = document.createElement("div");
     gridWrap.className = "lyr-wafer-wrap";

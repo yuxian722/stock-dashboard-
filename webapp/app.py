@@ -546,6 +546,13 @@ def api_mispick_analyze():
                 "error": None,
                 "summary": summary,
                 "excluded_count": len(result.excluded),
+                # 2026/08/27新增：排除(非目標Wafer)的數字本身不會告訴你「這份
+                # STRATE實際記錄的wafer_ring到底是什麼」——使用者填錯Wafer ID
+                # (打錯字、或這份STRATE其實是同一個LOT裡另一片實體wafer)時，
+                # 之前只看得到一個排除數字，猜不出來是打錯還是真的對不上。
+                # 把實際遇到的wafer_ring(去重複、排序)一起回傳，前端可以直接
+                # 跟輸入框比對顯示出來，不用使用者自己開檔案找。
+                "excluded_wafer_rings": sorted({d.wafer_ring for d in result.excluded}),
                 "action_rows": action_rows_out,
                 "substrate_column": substrate.substrate_column,
                 "substrate_row": substrate.substrate_row,
