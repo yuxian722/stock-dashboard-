@@ -228,6 +228,12 @@ def test_analyze_reports_actual_wafer_rings_when_all_dies_excluded(client, frm_r
     assert sub["excluded_count"] == 1
     assert sub["excluded_wafer_rings"] == ["OTHERWAFER"]
     assert sub["summary"] == {"force_delete": 0, "review": 0, "anomaly": 0, "ok": 0, "other": 0}
+    # 2026/08/31新增：使用者回報「0:0,0:1明明有die，BINGO MAP卻顯示空白」
+    # ——排除的die也要能在BINGO MAP畫出來(用不同樣式)，不能讓它們完全
+    # 從grid_cells/excluded_grid_cells裡消失，變得跟真正沒上片的位置
+    # 分不出來。
+    assert sub["grid_cells"] == []
+    assert sub["excluded_grid_cells"] == [{"tx": 0, "ty": 0, "wafer_ring": "OTHERWAFER"}]
 
 
 def test_analyze_requires_wafer_ring(client):

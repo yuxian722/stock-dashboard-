@@ -49,6 +49,7 @@ from bingomap.mispick_analysis import (
     make_offset,
     output_coord,
     parse_bin_set,
+    parse_xy,
 )
 from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_wafer_maps
 from bingomap.secs_params import (
@@ -539,6 +540,22 @@ def api_mispick_analyze():
                 )
         action_rows_out.sort(key=lambda r: r["action_no"])
 
+        # 2026/08/31新增：使用者回報「0:0,0:1明明有die，BINGO MAP卻顯示
+        # 空白」——查出來是這個位置的die屬於別的wafer_ring(跟
+        # excluded_wafer_rings同一批，被analyze_substrate()排除、不會進
+        # result.rows)，所以完全沒有grid_cells資料，畫面上只能顯示成
+        # 跟「這個位置本來就沒上片」一樣的空白格，兩種情況使用者完全分不
+        # 出來。這裡額外把被排除的位置也標出來(用它自己的sub_pos，跟
+        # grid_cells_out用的row.tx/ty是同一個座標語意，都是原始sub_pos，
+        # 不經過output_position()轉換)，前端可以畫成有別於「真的空白」的
+        # 樣式，並在hover文字直接告訴使用者這個位置的die實際上屬於哪個
+        # wafer_ring。
+        excluded_grid_cells_out = []
+        for die in result.excluded:
+            xy = parse_xy(die.sub_pos)
+            if xy is not None:
+                excluded_grid_cells_out.append({"tx": xy[0], "ty": xy[1], "wafer_ring": die.wafer_ring})
+
         substrates_out.append(
             {
                 "name": name,
@@ -557,6 +574,7 @@ def api_mispick_analyze():
                 "substrate_column": substrate.substrate_column,
                 "substrate_row": substrate.substrate_row,
                 "grid_cells": grid_cells_out,
+                "excluded_grid_cells": excluded_grid_cells_out,
             }
         )
 

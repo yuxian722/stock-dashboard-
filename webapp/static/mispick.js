@@ -292,6 +292,20 @@ function renderSubstrateGrid(containerId, sub) {
     byPos.get(key).push(c);
   }
 
+  // 2026/08/31新增：使用者回報「0:0,0:1明明.strate裡有die，BINGO MAP卻
+  // 顯示空白」——這個位置的die其實屬於別的wafer_ring，被這次分析排除
+  // (analyze_substrate()的wafer_ring過濾，跟上面「排除(非目標Wafer)」的
+  // 提示同一批)，所以完全不會進grid_cells，畫面上只能顯示成跟「這個位置
+  // 本來就沒上片」一樣的空白格，兩種情況肉眼完全分不出來。用
+  // sub.excluded_grid_cells把這些位置另外標出來(斜紋灰底)，跟真正空白
+  // 的格子區分開。
+  const excludedByPos = new Map();
+  for (const c of sub.excluded_grid_cells || []) {
+    const key = `${c.tx},${c.ty}`;
+    if (!excludedByPos.has(key)) excludedByPos.set(key, []);
+    excludedByPos.get(key).push(c);
+  }
+
   // 2026/08/31：跟①補資料頁app.js的renderSubstrateGridInto()同一次修正
   // ——欄(col)由小到大要畫在螢幕「右邊」，0:0固定在右上角，使用者拿①補
   // 資料頁跟機台實際作業畫面現場核對過，見bingomap/CLAUDE.md。這裡是
@@ -324,6 +338,7 @@ function renderSubstrateGrid(containerId, sub) {
       const cell = document.createElement("div");
       cell.className = "substrate-cell";
       const infos = byPos.get(`${x},${y}`);
+      const excludedInfos = excludedByPos.get(`${x},${y}`);
       if (infos && infos.length) {
         cell.classList.add("filled");
         const sorted = [...infos].sort(
@@ -332,9 +347,20 @@ function renderSubstrateGrid(containerId, sub) {
         const winner = sorted[0];
         if (winner.decision === "FORCE_DELETE_ACTUAL_BIN_NG") cell.classList.add("mp-force");
         else if (winner.decision === "REVIEW_ACTUAL_BIN_REVIEW") cell.classList.add("mp-review");
-        cell.title =
+        let title =
           `${x}:${y} — ` +
           sorted.map((info) => `${decisionLabel(info.decision)}（第${info.layer === "other" ? "2" : "1"}層）`).join("；");
+        // 同一個位置也可能「有些層屬於目前比對的wafer(分析了)、有些層
+        // 屬於別的wafer(被排除)」——兩種資訊都列出來，不要只顯示其中一種。
+        if (excludedInfos && excludedInfos.length) {
+          const rings = [...new Set(excludedInfos.map((c) => c.wafer_ring))].join("、");
+          title += `；另有其他層屬於wafer_ring=${rings}(非目標wafer，未分析)`;
+        }
+        cell.title = title;
+      } else if (excludedInfos && excludedInfos.length) {
+        cell.classList.add("mp-excluded");
+        const rings = [...new Set(excludedInfos.map((c) => c.wafer_ring))].join("、");
+        cell.title = `${x}:${y} — 此位置有die，但屬於wafer_ring=${rings}(不是你目前比對的目標wafer，未列入這次分析)`;
       } else {
         cell.title = `${x}:${y}`;
       }

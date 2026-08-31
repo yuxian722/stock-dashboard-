@@ -185,6 +185,14 @@ button.secondary.active-layer:hover{background:#0c7550}
    的「下一格待填」橘框視覺上分開。 */
 .substrate-cell.mp-force{outline:3px solid #ef4444;outline-offset:-3px}
 .substrate-cell.mp-review{outline:3px solid #facc15;outline-offset:-3px}
+/* 2026/08/31新增：這個位置的die確實存在(.strate裡有這一列)，只是屬於
+   別的wafer_ring、被這次分析排除(跟上面"排除(非目標Wafer)"的提示同一批)
+   ——跟「這個位置本來就沒上片」的空白格用同一種灰底但加斜紋區分，不要
+   讓使用者誤以為是資料不見了。hover文字會直接告訴他實際的wafer_ring。 */
+.substrate-cell.mp-excluded{
+  background-image:repeating-linear-gradient(45deg,#9ca3af 0,#9ca3af 2px,transparent 2px,transparent 5px);
+  background-color:#e5e7eb;border-color:#9ca3af;cursor:not-allowed;
+}
 
 .grid-axis-cell,.substrate-axis-cell{
   width:20px;height:20px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
