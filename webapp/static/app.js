@@ -869,8 +869,14 @@ function convertVisualRefPoint(panelIndex) {
     }
     return;
   }
-  document.getElementById(ids.tPointX).value = dims.columns - refY;
-  document.getElementById(ids.tPointY).value = dims.rows + refX;
+  // 2026/08/31更正：跟mispick.js的convertVisualRefPoint()同一次修正，
+  // 見那邊的完整說明——公式本身(哪個算式對應哪個Ref.軸)不變，但兩個算式
+  // 的輸出要對調填進T點X/T點Y欄位，因為wafer圖實際渲染用的cells座標系
+  // 早就對調過(frm_to_wafer_bin_map()的x/y swap)，這裡的columns/rows
+  // 卻刻意保持沒對調(為了不動到這條公式本身)，兩邊沒有同步更新會讓算出
+  // 來的T點Y超出wafer圖實際範圍，標記永遠不會出現。
+  document.getElementById(ids.tPointX).value = dims.rows + refX;
+  document.getElementById(ids.tPointY).value = dims.columns - refY;
   renderAll();
 }
 
