@@ -272,7 +272,25 @@ function renderSubstrateGrid(containerId, sub) {
   container.innerHTML = "";
   if (!sub.substrate_column || !sub.substrate_row) return;
 
-  const cellInfo = new Map(sub.grid_cells.map((c) => [`${c.tx},${c.ty}`, c]));
+  // 2026/08/31更正：一個基板位置(tx,ty)可能同時被好幾層(f9)的die佔用
+  // (疊層基板)，每一層各自獨立分類、可能有不同的判定結果——原本直接把
+  // grid_cells建成單一Map(同一個key重複出現時後面的蓋掉前面的)，導致
+  // 「強制點除」被同一格另一層的「正常」判定悄悄蓋掉，畫面上完全看不到
+  // 紅框，即使上方文字統計仍然正確算出「強制點除N」——使用者發現數字對
+  // 但畫面上找不到那幾顆紅框，才抓到這個問題(「強制點除應該會出現紅色
+  // 框框在bingomap圖檔內，這樣我不知道是哪一顆」)。
+  //
+  // 已改成：同一個位置的所有判定都保留(byPos是位置→判定陣列)，畫面優先
+  // 顯示最需要處理的那個(強制點除>人工確認>其他)決定要不要畫紅/黃框，
+  // hover文字列出這一格全部層的判定，不會只顯示贏的那一個、讓其他層的
+  // 資訊完全消失。
+  const DECISION_PRIORITY = { FORCE_DELETE_ACTUAL_BIN_NG: 2, REVIEW_ACTUAL_BIN_REVIEW: 1 };
+  const byPos = new Map();
+  for (const c of sub.grid_cells) {
+    const key = `${c.tx},${c.ty}`;
+    if (!byPos.has(key)) byPos.set(key, []);
+    byPos.get(key).push(c);
+  }
 
   // 2026/08/31：跟①補資料頁app.js的renderSubstrateGridInto()同一次修正
   // ——欄(col)由小到大要畫在螢幕「右邊」，0:0固定在右上角，使用者拿①補
@@ -305,12 +323,18 @@ function renderSubstrateGrid(containerId, sub) {
     for (const x of colOrder) {
       const cell = document.createElement("div");
       cell.className = "substrate-cell";
-      const info = cellInfo.get(`${x},${y}`);
-      if (info) {
+      const infos = byPos.get(`${x},${y}`);
+      if (infos && infos.length) {
         cell.classList.add("filled");
-        if (info.decision === "FORCE_DELETE_ACTUAL_BIN_NG") cell.classList.add("mp-force");
-        else if (info.decision === "REVIEW_ACTUAL_BIN_REVIEW") cell.classList.add("mp-review");
-        cell.title = `${x}:${y} — ${decisionLabel(info.decision)}（第${info.layer === "other" ? "2" : "1"}層）`;
+        const sorted = [...infos].sort(
+          (a, b) => (DECISION_PRIORITY[b.decision] || 0) - (DECISION_PRIORITY[a.decision] || 0)
+        );
+        const winner = sorted[0];
+        if (winner.decision === "FORCE_DELETE_ACTUAL_BIN_NG") cell.classList.add("mp-force");
+        else if (winner.decision === "REVIEW_ACTUAL_BIN_REVIEW") cell.classList.add("mp-review");
+        cell.title =
+          `${x}:${y} — ` +
+          sorted.map((info) => `${decisionLabel(info.decision)}（第${info.layer === "other" ? "2" : "1"}層）`).join("；");
       } else {
         cell.title = `${x}:${y}`;
       }
@@ -323,6 +347,8 @@ function renderSubstrateGrid(containerId, sub) {
 function decisionLabel(decision) {
   if (decision === "FORCE_DELETE_ACTUAL_BIN_NG") return "強制點除";
   if (decision === "REVIEW_ACTUAL_BIN_REVIEW") return "人工確認";
+  if (decision === "OK_ACTUAL_GOOD_BIN") return "正常";
+  if (decision === "ACTUAL_OTHER_BIN_DIAGNOSTIC") return "異常";
   return decision;
 }
 
