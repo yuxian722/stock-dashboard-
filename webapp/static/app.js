@@ -641,12 +641,22 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
   const nextPos = fillable[layerPicks.length];
   const { minCol, maxCol, minRow, maxRow } = substrateBounds;
 
+  // 2026/08/31：使用者直接確認過(拿①補資料頁跟機台實際作業畫面現場核對)，
+  // 欄(col)由小到大應該畫在螢幕「右邊」，不是左邊——0:0永遠固定在右上角，
+  // 跟wafer圖那邊「0,0永遠固定在畫面右上角」是同一個、早就驗證過的規則
+  // (見bingomap/CLAUDE.md「Wafer圖方向最終改版」)，之前BINGO MAP格子圖
+  // 自己這裡沒有套用同一個規則，是原本設計時的疏漏，不是可以選的選項，
+  // 直接修正、不用勾選框。
+  const colOrder = [];
+  for (let col = minCol; col <= maxCol; col++) colOrder.push(col);
+  colOrder.reverse();
+
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let col = minCol; col <= maxCol; col++) {
+  for (const col of colOrder) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
     label.textContent = col;
@@ -674,7 +684,7 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
     rowLabel.className = "grid-axis-cell";
     rowLabel.textContent = row;
     rowEl.appendChild(rowLabel);
-    for (let col = minCol; col <= maxCol; col++) {
+    for (const col of colOrder) {
       const pos = `${col}:${row}`;
       const cell = document.createElement("div");
       cell.className = "substrate-cell";

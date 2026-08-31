@@ -274,12 +274,20 @@ function renderSubstrateGrid(containerId, sub) {
 
   const cellInfo = new Map(sub.grid_cells.map((c) => [`${c.tx},${c.ty}`, c]));
 
+  // 2026/08/31：跟①補資料頁app.js的renderSubstrateGridInto()同一次修正
+  // ——欄(col)由小到大要畫在螢幕「右邊」，0:0固定在右上角，使用者拿①補
+  // 資料頁跟機台實際作業畫面現場核對過，見bingomap/CLAUDE.md。這裡是
+  // 同一種BINGO MAP格子圖，套用同一個規則。
+  const colOrder = [];
+  for (let x = 0; x < sub.substrate_column; x++) colOrder.push(x);
+  colOrder.reverse();
+
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
   corner.className = "grid-axis-cell grid-axis-corner";
   headerRow.appendChild(corner);
-  for (let x = 0; x < sub.substrate_column; x++) {
+  for (const x of colOrder) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
     label.textContent = x;
@@ -294,7 +302,7 @@ function renderSubstrateGrid(containerId, sub) {
     rowLabel.className = "grid-axis-cell";
     rowLabel.textContent = y;
     row.appendChild(rowLabel);
-    for (let x = 0; x < sub.substrate_column; x++) {
+    for (const x of colOrder) {
       const cell = document.createElement("div");
       cell.className = "substrate-cell";
       const info = cellInfo.get(`${x},${y}`);
