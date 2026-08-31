@@ -23,15 +23,18 @@ practical question — generate_blank()'s raw sub_pos convention is the
 machine's own fixed internal coordinate frame, independent of which way
 gold-edge faced during that run, and needs NO code change.
 
-(Separately, converting those same 9 gaps to Bingo Map Query's own
-1-indexed letter-column/number-row labels lines up with 8 of the 9 real
-fail labels read off Bingo Map Query's report under a "reflect ROW only,
-column unchanged" relabeling — consistent with Bingo Map Query applying
-its own orientation-aware display correction downstream of the raw file.
-The 9th label is ambiguous in the source photo (Y vs AA column) and
-isn't pinned down here — it doesn't change the conclusion above, since
-that relabeling is Bingo Map Query's own display concern, not something
-the raw .strate needs to reproduce.)
+(Separately, and now confirmed with a clear, legible screenshot of the
+same real Bingo Map Query report — 2026/08/31, after an earlier blurry
+photo left 1 of 9 labels ambiguous: converting those same 9 gaps to
+Bingo Map Query's own 1-indexed letter-column/number-row labels lines up
+EXACTLY, 9 of 9, with the real fail labels Bingo Map Query reports
+(G9, G10, H10, I10, I11, O6, P6, Y5, AA11) under a "reflect ROW only,
+column unchanged" relabeling (`row_label = row_count - row_0indexed`,
+column letter untouched) — confirming Bingo Map Query applies its own
+orientation-aware display correction downstream of the raw file. This
+doesn't change the conclusion above — that relabeling is Bingo Map
+Query's own display concern, not something the raw .strate needs to
+reproduce — but it is now fully pinned down rather than 8/9-confirmed.)
 """
 from pathlib import Path
 
@@ -48,6 +51,24 @@ REAL_GAP_POSITIONS = {
     (6, 1), (6, 2), (7, 1), (8, 0), (8, 1),
     (14, 5), (15, 5), (24, 6), (26, 0),
 }
+
+# Bingo Map Query's own real fail-position labels for the same strip
+# (Strip ID Z26306101253, Fail Qty=9) — read straight off a clear, legible
+# screenshot of the real report (2026/08/31, superseding an earlier blurry
+# photo that left one label ambiguous).
+BINGO_MAP_QUERY_FAIL_LABELS = {
+    "G9", "G10", "H10", "I10", "I11", "O6", "P6", "Y5", "AA11",
+}
+
+
+def _col_letter(col_1indexed: int) -> str:
+    """Spreadsheet-style column letters (1=A, 26=Z, 27=AA, 28=AB, ...)."""
+    letters = ""
+    n = col_1indexed
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(ord("A") + rem) + letters
+    return letters
 
 
 def _load_real_strate_map():
@@ -89,3 +110,17 @@ def test_generate_blank_db_epoxy_already_matches_real_gold_edge_down_walk_order(
         if tuple(int(v) for v in p.split(":")) not in REAL_GAP_POSITIONS
     ]
     assert predicted_positions == real_positions
+
+
+def test_real_gap_positions_match_bingo_map_query_labels_reflecting_row_only():
+    # The secondary finding, now fully confirmed (9/9, see module docstring):
+    # Bingo Map Query's own row-relabeling is a ROW-only reflection — the
+    # column letter is untouched. This is Bingo Map Query's own downstream
+    # display transform, not something generate_blank()/the raw .strate
+    # needs to apply — see the two tests above for why no code change is
+    # needed regardless of this.
+    row_count = 11
+    reflected_labels = {
+        f"{_col_letter(col + 1)}{row_count - row}" for col, row in REAL_GAP_POSITIONS
+    }
+    assert reflected_labels == BINGO_MAP_QUERY_FAIL_LABELS
