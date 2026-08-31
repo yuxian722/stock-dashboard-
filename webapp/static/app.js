@@ -20,15 +20,20 @@ let multiLayerEnabled = false;
 let numLayers = 2; // only meaningful when multiLayerEnabled
 let multiWaferEnabled = false; // true = a second, independent physical wafer panel exists
 // 2026/08/31：純顯示用的開關，不影響任何實際儲存/寫入的座標——真實ChipMOS
-// 內部「Bingo Map Query」報表，跟這裡BINGO MAP格子圖畫面的「列(row)」編號
-// 方向不一樣：用真實SECS log(gold-edge-down機台，Strip ID Z26306101253)
-// 反查證實，.strate自己記錄的sub_pos(0起算)本身完全不用改(見
-// bingomap/CLAUDE.md)，但Bingo Map Query報表顯示時會把列反過來
-// (`列標籤 = 總列數 − 0起算的列`)，欄(字母/數字)不動。使用者拿我們的畫面
-// 跟Bingo Map Query或機台實際畫面並排比對時，兩張圖列的順序會相反、看起來
-// 像是「上下顛倒」，即使底層座標資料完全一致。這個勾選框只改變畫面上
-// 「列」的排列順序跟顯示的數字標籤，每一格的`dataset.pos`(真正的col:row，
-// 點擊/查詢/CSV/產生檔案都用這個)完全不受影響。
+// 內部「Bingo Map Query」報表，跟這裡BINGO MAP格子圖畫面的「列(row)」順序
+// 不一樣：用真實SECS log(gold-edge-down機台，Strip ID Z26306101253)反查
+// 證實，.strate自己記錄的sub_pos(0起算)本身完全不用改(見
+// bingomap/CLAUDE.md)，但Bingo Map Query報表顯示時會把「哪一列畫在畫面
+// 哪個位置」反過來(第0列畫在最下面，不是最上面)，使用者拿我們的畫面跟
+// Bingo Map Query或機台實際畫面並排比對時，兩張圖整體形狀看起來像是上下
+// 顛倒，即使底層座標資料完全一致。
+//
+// 這個勾選框只改變「哪一列排在畫面哪個垂直位置」，**不改變任何列標題或
+// 格子title顯示的數字**——第一版曾經把列標題也換算成一個推算出來的號碼，
+// 使用者立刻指出這樣一來畫面上印的數字反而跟.strate檔案自己的0:0、0:1
+// 對不起來，比不勾選還容易混淆。修正後不管有沒有勾選，每一列標題永遠
+// 顯示它真正的row值(跟每一格的title/dataset.pos一致，也是點擊/查詢/CSV/
+// 產生檔案實際用的值)，勾選只決定該把哪一列畫在畫面上方、哪一列畫在下方。
 let bingoMapRowReversed = false;
 let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin, panel}[] — panel = which wafer panel it was staged from (0 or 1), for dedup/rendering only; stripped before /api/generate
 let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not yet written into any layer
@@ -649,8 +654,15 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
   }
   container.appendChild(headerRow);
 
-  // bingoMapRowReversed只影響畫面畫的順序跟列標籤數字，不影響pos本身
-  // (仍然是真正的col:row，見上面宣告處的完整說明)。
+  // 2026/08/31更正：第一版這裡連列標籤數字也一起換成「反推出來的」號碼
+  // (maxRow-row+1)，使用者立刻抓到問題：「這樣我檔案state 0:0,0:1跟
+  // BINGO MAP跑出來的座標位置不一致」——螢幕上列標題印的數字，理應永遠
+  // 就是那一列真正的row值，不能因為勾了這個顯示選項就變成別的數字，
+  // 不然使用者盯著某一列的標題看，跟滑鼠移過去那一格的title(仍然是真正
+  // 的col:row)兜不起來，反而更容易搞混。bingoMapRowReversed現在**只**
+  // 決定畫面上「哪一列排在哪個垂直位置」，列標題(跟每一格的pos/title)
+  // 永遠原封不動顯示真正的row值——單純把整批列的排列順序倒過來，讓畫面
+  // 的整體「形狀」對得上Bingo Map Query，不會讓任何數字看起來是假的。
   const rowOrder = [];
   for (let row = minRow; row <= maxRow; row++) rowOrder.push(row);
   if (bingoMapRowReversed) rowOrder.reverse();
@@ -660,7 +672,7 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
     rowEl.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
-    rowLabel.textContent = bingoMapRowReversed ? maxRow - row + 1 : row;
+    rowLabel.textContent = row;
     rowEl.appendChild(rowLabel);
     for (let col = minCol; col <= maxCol; col++) {
       const pos = `${col}:${row}`;
