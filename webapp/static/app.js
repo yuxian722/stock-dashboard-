@@ -19,6 +19,17 @@ let targetQty = null;
 let multiLayerEnabled = false;
 let numLayers = 2; // only meaningful when multiLayerEnabled
 let multiWaferEnabled = false; // true = a second, independent physical wafer panel exists
+// 2026/08/31：純顯示用的開關，不影響任何實際儲存/寫入的座標——真實ChipMOS
+// 內部「Bingo Map Query」報表，跟這裡BINGO MAP格子圖畫面的「列(row)」編號
+// 方向不一樣：用真實SECS log(gold-edge-down機台，Strip ID Z26306101253)
+// 反查證實，.strate自己記錄的sub_pos(0起算)本身完全不用改(見
+// bingomap/CLAUDE.md)，但Bingo Map Query報表顯示時會把列反過來
+// (`列標籤 = 總列數 − 0起算的列`)，欄(字母/數字)不動。使用者拿我們的畫面
+// 跟Bingo Map Query或機台實際畫面並排比對時，兩張圖列的順序會相反、看起來
+// 像是「上下顛倒」，即使底層座標資料完全一致。這個勾選框只改變畫面上
+// 「列」的排列順序跟顯示的數字標籤，每一格的`dataset.pos`(真正的col:row，
+// 點擊/查詢/CSV/產生檔案都用這個)完全不受影響。
+let bingoMapRowReversed = false;
 let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin, panel}[] — panel = which wafer panel it was staged from (0 or 1), for dedup/rendering only; stripped before /api/generate
 let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not yet written into any layer
 let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -> bin (index 1 only used when multiWaferEnabled)
@@ -638,12 +649,18 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
   }
   container.appendChild(headerRow);
 
-  for (let row = minRow; row <= maxRow; row++) {
+  // bingoMapRowReversed只影響畫面畫的順序跟列標籤數字，不影響pos本身
+  // (仍然是真正的col:row，見上面宣告處的完整說明)。
+  const rowOrder = [];
+  for (let row = minRow; row <= maxRow; row++) rowOrder.push(row);
+  if (bingoMapRowReversed) rowOrder.reverse();
+
+  for (const row of rowOrder) {
     const rowEl = document.createElement("div");
     rowEl.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
-    rowLabel.textContent = row;
+    rowLabel.textContent = bingoMapRowReversed ? maxRow - row + 1 : row;
     rowEl.appendChild(rowLabel);
     for (let col = minCol; col <= maxCol; col++) {
       const pos = `${col}:${row}`;
@@ -1613,6 +1630,10 @@ document.getElementById("multi_wafer_enabled").addEventListener("change", (e) =>
 wireWaferPanelEvents(0);
 wireBingoBlockEvents(0);
 document.getElementById("btn-skip-mode").addEventListener("click", () => setSkipMode(!skipModeEnabled));
+document.getElementById("bingo-map-row-reversed").addEventListener("change", (e) => {
+  bingoMapRowReversed = e.target.checked;
+  renderSubstrateGrid();
+});
 document.getElementById("btn-apply-effective-qty").addEventListener("click", () => {
   const n = parseInt(document.getElementById("effective_qty_input").value, 10);
   const result = applyEffectiveQty(n);
