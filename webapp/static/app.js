@@ -1109,12 +1109,24 @@ function renderWaferGrid() {
   for (let i = 0; i < numWaferPanels(); i++) renderWaferPanel(i);
 }
 
+// 2026/09/02更正：原本不管往哪個方向拖曳，這裡一律用Math.min/max把範圍
+// 排序成「X由小到大、Y由小到大」再掃描——drag起點/終點的先後順序(也就是
+// 使用者實際拖曳的方向)整個被丟掉，選出來的順序永遠固定同一種。使用者
+// 回報「拉選要讓順序自動遞增或遞減，結果順序都會亂跑」，並拿真實.strate
+// 檔案的DIE_INFO佐證：同一列(Y相同)的wafer_xy是由大到小排列(23,22,...,9)
+// ——這正是「由右拖到左」這個方向本身帶的資訊，被原本的Math.min/max抹掉
+// 了，不管往哪個方向拖，選出來的都是由小到大，跟使用者想重現的真實順序
+// 對不上，也跟「我這樣拖應該由大到小」的直覺不一致，才會覺得「順序亂跑」
+// (實際上是「順序固定不變」，但使用者以為拖曳方向會影響它，兩者對不上)。
+// 已修正：直接沿用drag起點→終點的方向逐格前進(x1→x2、y1→y2)，不再排序成
+// 固定的小到大——往右拖選出來就是遞增，往左拖就是遞減，跟使用者拖曳的
+// 方向一致。
 function scanRectangle(x1, x2, y1, y2, panelIndex) {
-  const xLo = Math.min(x1, x2), xHi = Math.max(x1, x2);
-  const yLo = Math.min(y1, y2), yHi = Math.max(y1, y2);
   const cells = waferCellsByPanel[panelIndex];
-  for (let x = xLo; x <= xHi; x++) {
-    for (let y = yLo; y <= yHi; y++) {
+  const xStep = x1 <= x2 ? 1 : -1;
+  const yStep = y1 <= y2 ? 1 : -1;
+  for (let x = x1; xStep > 0 ? x <= x2 : x >= x2; x += xStep) {
+    for (let y = y1; yStep > 0 ? y <= y2 : y >= y2; y += yStep) {
       stagePickIfNew(panelIndex, x, y, cells.get(`${x},${y}`));
     }
   }
