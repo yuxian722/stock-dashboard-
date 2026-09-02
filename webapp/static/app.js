@@ -394,6 +394,11 @@ function rebuildLayerUi() {
   document.getElementById("wafer-legend-picked").style.display = n > 1 || multiWaferEnabled ? "" : "none";
   document.getElementById("wafer-legend-staged").style.display = "";
   document.getElementById("stage-controls").style.display = "";
+  // 多層(n>1)才需要「輪流分配」——只有1層時跟直接點那一層的BINGO MAP
+  // 沒有差別，不需要多一顆按鈕。
+  const distributeBtn = document.getElementById("btn-distribute-staged");
+  distributeBtn.style.display = n > 1 ? "" : "none";
+  distributeBtn.textContent = `依序輪流分配到全部${n}層（第1顆→第1層、第2顆→第2層...第${n}顆→第${n}層、第${n + 1}顆再回到第1層）`;
 }
 
 // ---- Header / blank / template -----------------------------------------
@@ -1038,6 +1043,24 @@ function commitStagedPicksToLayer(layerIndex) {
   return count;
 }
 
+// 2026/09/02新增：使用者反映「補資料四層的時候可以讓我一次框很多顆再
+// 幫我按照順序填入第一層、第二層、第三層、第四層，我現在一顆一顆選很
+// 累」——原本的commitStagedPicksToLayer()只能把整批待寫入座標全部塞進
+// 「使用者點的那一層」，要分到4層還是得分4次框選、每次點不同層的BINGO
+// MAP。這裡改成一次把整批待寫入座標依序輪流分配到全部N層：第1顆進第1
+// 層、第2顆進第2層...第N顆進第N層、第N+1顆再回到第1層，固定方向循環
+// (跟使用者確認過，不是每N顆就反向的蛇形掃描，是單純固定循環)。跟
+// commitStagedPicksToLayer()一樣，直接依序push進每層陣列的尾端，不影響
+// 每層原本已有的座標順序。
+function commitStagedPicksRoundRobin() {
+  if (!stagedPicks.length) return 0;
+  const n = effectiveNumLayers();
+  stagedPicks.forEach((pick, i) => picksByLayer[i % n].push(pick));
+  const count = stagedPicks.length;
+  stagedPicks = [];
+  return count;
+}
+
 const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style.css
 
 function renderWaferPanel(panelIndex) {
@@ -1282,8 +1305,11 @@ function renderQtyStatus() {
 function renderLayerStatus() {
   const status = document.getElementById("layer-status");
   const clearBtn = document.getElementById("btn-clear-staged");
+  const n = effectiveNumLayers();
   if (stagedPicks.length) {
-    status.textContent = `已選取 ${stagedPicks.length} 顆wafer座標，尚未寫入：點下方任一層的BINGO MAP即可整批寫入該層。`;
+    status.textContent = n > 1
+      ? `已選取 ${stagedPicks.length} 顆wafer座標，尚未寫入：點下方任一層的BINGO MAP整批寫入該層，或按「依序輪流分配到全部${n}層」自動輪流分配到每一層。`
+      : `已選取 ${stagedPicks.length} 顆wafer座標，尚未寫入：點下方任一層的BINGO MAP即可整批寫入該層。`;
     status.className = "notice";
     clearBtn.textContent = `清除待寫入的座標 (${stagedPicks.length})`;
   } else {
@@ -1734,6 +1760,10 @@ document.getElementById("btn-clear").addEventListener("click", () => {
 });
 document.getElementById("btn-clear-staged").addEventListener("click", () => {
   stagedPicks = [];
+  renderAll();
+});
+document.getElementById("btn-distribute-staged").addEventListener("click", () => {
+  commitStagedPicksRoundRobin();
   renderAll();
 });
 document.getElementById("btn-generate").addEventListener("click", generateStrate);
