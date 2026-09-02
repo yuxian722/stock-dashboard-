@@ -458,15 +458,25 @@ function renderResults(data) {
       const table = document.createElement("table");
       table.className = "tbl";
       table.style.marginTop = "0.5rem";
+      // 2026/09/02新增fx:fy(STRATE的原始wafer_xy)、原本BIN欄位——使用者回報
+      // 一個mis-pick案例，拿wafer預覽圖上滑鼠停留看到的座標去對這張表，結果
+      // 兜不起來；查出來預覽圖的座標是套用了wafer角度(0/90/180/270度)之後
+      // 的顯示座標，跟STRATE檔案裡真正的wafer_xy(這張表格底層用來算偏移的
+      // 那組數字)是兩個不同的座標系，肉眼比對很容易搞混。這張表原本只有
+      // TX:TY(基板位置)跟actual_bin(偏移後的BIN)，沒有任何欄位直接顯示
+      // 偏移計算實際用的原始wafer座標跟原本BIN，逼使用者得去猜——現在直接
+      // 把這兩個算式的輸入/輸出都攤在表格上，不用再對照預覽圖。
       table.innerHTML =
-        "<thead><tr><th>No.</th><th>判定</th><th>Layer</th><th>Block</th><th>座標</th><th>TX:TY</th><th>實際BIN</th></tr></thead>";
+        "<thead><tr><th>No.</th><th>判定</th><th>Layer</th><th>Block</th><th>座標</th><th>TX:TY</th>" +
+        "<th>原始Wafer座標</th><th>原本BIN</th><th>實際BIN</th></tr></thead>";
       const tbody = document.createElement("tbody");
       for (const r of sub.action_rows) {
         const tr = document.createElement("tr");
         tr.className = decisionClass(r.decision);
         tr.innerHTML =
           `<td>${r.action_no}</td><td>${decisionLabel(r.decision)}</td><td>${r.layer}</td>` +
-          `<td>${r.output_block ?? ""}</td><td>${r.output_coord}</td><td>${r.tx}:${r.ty}</td><td>${r.actual_bin}</td>`;
+          `<td>${r.output_block ?? ""}</td><td>${r.output_coord}</td><td>${r.tx}:${r.ty}</td>` +
+          `<td>${r.fx}:${r.fy}</td><td>${r.nominal_bin ?? ""}</td><td>${r.actual_bin}</td>`;
         tbody.appendChild(tr);
       }
       table.appendChild(tbody);

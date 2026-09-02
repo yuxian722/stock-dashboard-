@@ -521,6 +521,9 @@ def api_mispick_analyze():
                         "output_coord": output_coord(row),
                         "tx": row.tx,
                         "ty": row.ty,
+                        "fx": row.fx,
+                        "fy": row.fy,
+                        "nominal_bin": row.nominal_bin,
                         "actual_bin": row.actual_bin,
                     }
                 )

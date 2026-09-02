@@ -112,6 +112,15 @@ def test_analyze_esec_classifies_force_delete_review_and_ok(client, frm_root):
     assert sub["action_rows"][0]["decision"] == "REVIEW_ACTUAL_BIN_REVIEW"
     assert sub["action_rows"][1]["decision"] == "FORCE_DELETE_ACTUAL_BIN_NG"
     assert "FORCE_DELETE_ACTUAL_BIN_NG" in data["csv"]
+    # 2026/09/02: action_rows must expose the raw source wafer coordinate and
+    # its pre-shift bin — the results table's own display, not just the CSV
+    # export — so users can verify a decision without cross-referencing the
+    # (separately rotatable) wafer preview grid's coordinate space.
+    assert sub["action_rows"][0]["fx"] == 1  # die 3: wafer_xy "1:4"
+    assert sub["action_rows"][0]["fy"] == 4
+    assert sub["action_rows"][0]["nominal_bin"] is not None
+    assert sub["action_rows"][1]["fx"] == 2  # die 2: wafer_xy "2:3"
+    assert sub["action_rows"][1]["fy"] == 3
 
 
 def test_analyze_esec_rejects_notch_other_than_270_per_substrate(client, frm_root):
