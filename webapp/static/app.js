@@ -37,6 +37,14 @@ let multiWaferEnabled = false; // true = a second, independent physical wafer pa
 let bingoMapRowReversed = false;
 let picksByLayer = [[]]; // picksByLayer[i] = {x, y, bin, panel}[] — panel = which wafer panel it was staged from (0 or 1), for dedup/rendering only; stripped before /api/generate
 let stagedPicks = []; // {x, y, bin, panel}[] — selected on a wafer grid, not yet written into any layer
+// 2026/09/02：commitStagedPicksRoundRobin()「依序輪流分配到全部N層」的
+// 輪流指標——使用者回報「沒有先填進去第四層就跑到第一層」，查出來是每次
+// 按這顆按鈕都從第1層(i=0)重新算起，框選第二批時又從第1層開始輪流，
+// 導致前面的層(尤其第1層)在分好幾批操作時，一直搶到「這一批的第1顆」，
+// 越用越不平均。這個游標記住上一次輪流分配到第幾層，下一批接著從那裡
+// 繼續轉，不會每次都從第1層重新起跳；只有整個層狀態被重設時(換層數、
+// 清空選取、換範本等，見resetLayerState())才會歸零。
+let roundRobinCursor = 0;
 let waferCellsByPanel = [new Map(), new Map()]; // waferCellsByPanel[i]: "x,y" -> bin (index 1 only used when multiWaferEnabled)
 let waferBoundsByPanel = [null, null];
 // 2026/08/25大改版：先前用「X軸反轉/Y軸反轉」兩個勾選框處理不同wafer需要
@@ -358,6 +366,7 @@ function resetLayerState() {
   const n = effectiveNumLayers();
   picksByLayer = Array.from({ length: n }, () => []);
   stagedPicks = [];
+  roundRobinCursor = 0;
   waferCellsByPanel = [waferCellsByPanel[0] || new Map(), new Map()];
   waferBoundsByPanel = [waferBoundsByPanel[0] || null, null];
   waferDimsByPanel = [waferDimsByPanel[0] || null, null];
@@ -1052,11 +1061,22 @@ function commitStagedPicksToLayer(layerIndex) {
 // (跟使用者確認過，不是每N顆就反向的蛇形掃描，是單純固定循環)。跟
 // commitStagedPicksToLayer()一樣，直接依序push進每層陣列的尾端，不影響
 // 每層原本已有的座標順序。
+//
+// 2026/09/02再更正：使用者回報「沒有先填進去第四層就跑到第一層」——
+// 原本每次呼叫都用`i % n`重新從第1層(i=0)算起，框好幾批、每批分開按
+// 這顆按鈕時，每一批的「這批第1顆」永遠又落回第1層，久了第1層(以及
+// 靠前面的層)會比後面的層多分到幾顆，偏移量剛好等於「每批不是N的倍數
+// 時多出來的餘數」逐批累加。已改用`roundRobinCursor`記住上一批轉到
+// 第幾層，這一批接著從那裡繼續轉，不會每次都從第1層重新起跳——只有
+// resetLayerState()(換層數、清空選取、換範本/骨架...)會把游標歸零，
+// 因為那些情況下每一層的內容本來就整個被清空重來，游標接著算也沒有
+// 意義。
 function commitStagedPicksRoundRobin() {
   if (!stagedPicks.length) return 0;
   const n = effectiveNumLayers();
-  stagedPicks.forEach((pick, i) => picksByLayer[i % n].push(pick));
+  stagedPicks.forEach((pick, i) => picksByLayer[(roundRobinCursor + i) % n].push(pick));
   const count = stagedPicks.length;
+  roundRobinCursor = (roundRobinCursor + count) % n;
   stagedPicks = [];
   return count;
 }
@@ -1372,6 +1392,7 @@ function saveState() {
       skippedPositions: [...skippedPositions],
       picksByLayer,
       stagedPicks,
+      roundRobinCursor,
       waferCells: waferCellsByPanel.map(serializeWaferCells),
       referenceSubstrates: referenceSubstrates.map((r) => ({ ...r, positions: [...r.positions] })),
     };
@@ -1431,6 +1452,7 @@ function restoreState() {
   skippedPositions = new Set(saved.skippedPositions || []);
   picksByLayer = saved.picksByLayer && saved.picksByLayer.length ? saved.picksByLayer : [[]];
   stagedPicks = saved.stagedPicks || [];
+  roundRobinCursor = Number.isInteger(saved.roundRobinCursor) ? saved.roundRobinCursor : 0;
 
   const savedCells = saved.waferCells || [[], []];
   waferCellsByPanel = [new Map(), new Map()];
