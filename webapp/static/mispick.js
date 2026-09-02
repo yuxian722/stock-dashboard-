@@ -13,28 +13,53 @@ let mpAngle = 0; // 0 | 90 | 180 | 270
 let mpMirror = false;
 let mpRawWafer = null; // pristine {columns, rows, lot_no, wafer_id, cells} as loaded — angle/mirror changes re-derive from this
 
+// 2026/09/02新增：使用者回報「BINGO MAP的紅框要在正常的wafer圖檔對應
+// 哪一顆，我才可以知道那顆bingomap紅框跟wafer圖的那一顆是被誤吸」——
+// 每次分析完成後，把所有substrate的action_rows(強制點除/人工確認，帶
+// action_no)攤平存在這裡，raw座標(fx,fy)，renderWaferGrid()畫圖時再轉成
+// 當下角度/鏡像設定下的顯示座標，疊在wafer圖上——跟BINGO MAP結果表用
+// 同一個action_no當標籤，兩張圖上同一個數字就是同一顆。
+let lastMispickActionMarkers = []; // {fx, fy, decision, action_no, substrateName}[]
+
 // 2026/08/26：跟app.js同一次更正，見那邊rotateWaferCells()的完整註解——
 // 角度只能旋轉，湊不出鏡像，使用者比對真正的WaferCoordinate.exe後回報
 // 圖是鏡像的，加一個獨立的鏡像參數，對旋轉後的座標再做一次水平翻轉。
 // 跟app.js的rotateWaferCells()是同一條公式，只是操作的是這頁用的
 // {x,y,bin}[]陣列而不是Map，兩邊要保持公式一致。
-function rotateWaferArray(wafer, angleDeg, mirror) {
-  if (!wafer || !wafer.cells.length) return wafer;
-  const xs = wafer.cells.map((c) => c.x);
-  const ys = wafer.cells.map((c) => c.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
+function waferRawBounds(cells) {
+  if (!cells || !cells.length) return null;
+  const xs = cells.map((c) => c.x);
+  const ys = cells.map((c) => c.y);
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+}
+
+// Single-point version of rotateWaferArray()'s formula, pulled out so the
+// mis-pick marker overlay (see renderWaferGrid()'s `markers` — 2026/09/02)
+// can place a marker at a raw wafer_xy (from action_rows' fx/fy, NOT the
+// rotated display coords) without duplicating the rotation math a second
+// time and risking the two drifting apart, the same class of bug that
+// caused the T點公式 mismatch earlier in this project (see CLAUDE.md).
+function rotateWaferPoint(x, y, rawBounds, angleDeg, mirror) {
+  if (!rawBounds) return null;
+  const { minX, maxX, minY, maxY } = rawBounds;
   const spanX = maxX - minX, spanY = maxY - minY;
   const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
+  const u = x - minX, v = y - minY;
+  let nu, nv;
+  if (angleDeg === 90) { nu = v; nv = spanX - u; }
+  else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+  else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+  else { nu = u; nv = v; }
+  if (mirror) nu = rotatedSpanX - nu;
+  return { x: nu, y: nv };
+}
+
+function rotateWaferArray(wafer, angleDeg, mirror) {
+  if (!wafer || !wafer.cells.length) return wafer;
+  const rawBounds = waferRawBounds(wafer.cells);
   const cells = wafer.cells.map((c) => {
-    const u = c.x - minX, v = c.y - minY;
-    let nu, nv;
-    if (angleDeg === 90) { nu = v; nv = spanX - u; }
-    else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
-    else if (angleDeg === 270) { nu = spanY - v; nv = u; }
-    else { nu = u; nv = v; }
-    if (mirror) nu = rotatedSpanX - nu;
-    return { x: nu, y: nv, bin: c.bin };
+    const p = rotateWaferPoint(c.x, c.y, rawBounds, angleDeg, mirror);
+    return { x: p.x, y: p.y, bin: c.bin };
   });
   return { ...wafer, cells, columns: angleDeg === 90 || angleDeg === 270 ? wafer.rows : wafer.columns, rows: angleDeg === 90 || angleDeg === 270 ? wafer.columns : wafer.rows };
 }
@@ -167,7 +192,13 @@ function currentOffsetDelta() {
 // bin，改成去查`cellMap.get(x-shift.dx, y-shift.dy)`——也就是「wafer原始
 // (x,y)這顆die，偏移後畫在螢幕(x+shift.dx, y+shift.dy)」，跟refPoint(T點)
 // 用同一個(x+dx, y+dy)規則搬移，兩者維持相對位置一致。
-function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shift) {
+// `markers`(選填)：Map<"x,y", {decision, action_no, label}>，座標已經是
+// 這張圖當下的顯示座標(呼叫端先用rotateWaferPoint()轉過)。兩張圖(左邊
+// 原始/右邊套用偏移)畫的是同一組screen(x,y)位置——這一格「應該」對應
+// 哪個原始wafer座標(fx,fy)在兩張圖上永遠一樣，差別只在這一格「顯示的
+// bin顏色」(cellMap查表用的key)有沒有套用shift，所以標記直接疊在同一個
+// screen(x,y)即可，兩張圖都疊得上。
+function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shift, markers) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
   const dx = shift ? shift.dx : 0;
@@ -199,10 +230,16 @@ function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shif
       cell.className = "wafer-cell";
       applyBinColor(cell, bin);
       cell.title = `${x}:${y}`;
+      const marker = markers && markers.get(`${x},${y}`);
+      if (marker) {
+        cell.classList.add(marker.decision === "FORCE_DELETE_ACTUAL_BIN_NG" ? "mp-force-marker" : "mp-review-marker");
+        cell.textContent = String(marker.action_no);
+        cell.title = `${x}:${y} — ${marker.label}`;
+      }
       if (refPoint && refPoint.x === x && refPoint.y === y) {
         cell.classList.add("ref-point");
         cell.textContent = "T";
-        cell.title = `${x}:${y} — T點`;
+        cell.title = `${x}:${y} — T點` + (marker ? `／${marker.label}` : "");
       }
       row.appendChild(cell);
     }
@@ -257,6 +294,7 @@ function renderWaferGrid(wafer) {
   const shift = { dx, dy };
   const shiftedRefPoint = refPoint ? { x: refPoint.x + dx, y: refPoint.y + dy } : null;
   document.getElementById("mp-wafer-tpoint-legend").style.display = refPoint ? "" : "none";
+  document.getElementById("mp-wafer-marker-legend").style.display = lastMispickActionMarkers.length ? "" : "none";
   document.getElementById("mp-wafer-info").textContent =
     `LotNo=${wafer.lot_no} WaferID=${wafer.wafer_id}（${wafer.columns}x${wafer.rows}，共${wafer.cells.length}顆有資料）`;
   document.getElementById("mp-wafer-grid-shifted-label").textContent =
@@ -272,8 +310,27 @@ function renderWaferGrid(wafer) {
   const yOrder = [];
   for (let y = minY; y <= maxY; y++) yOrder.push(y);
 
-  renderOneWaferGrid("mp-wafer-grid", xOrder, yOrder, cellMap, refPoint, { dx: 0, dy: 0 });
-  renderOneWaferGrid("mp-wafer-grid-shifted", xOrder, yOrder, cellMap, shiftedRefPoint, shift);
+  // 誤吸標記(見lastMispickActionMarkers的說明)：fx/fy是STRATE的原始wafer
+  // 座標，這裡的xOrder/yOrder是「這張wafer(`wafer`參數)已經套用過目前
+  // mpAngle/mpMirror」之後的顯示座標——要疊上去，得先用同一套
+  // rotateWaferPoint()公式把fx/fy轉成顯示座標，用的bounds必須是「旋轉前」
+  // 的原始bounds(mpRawWafer.cells)，不能用這裡已經轉過的minX/maxX/minY/
+  // maxY，兩者不是同一個座標系。兩張圖(原始/套用偏移)疊在同一個screen
+  // (x,y)，理由見renderOneWaferGrid()的markers參數註解。
+  const rawBounds = waferRawBounds(mpRawWafer && mpRawWafer.cells);
+  const markers = new Map();
+  for (const m of lastMispickActionMarkers) {
+    const p = rotateWaferPoint(m.fx, m.fy, rawBounds, mpAngle, mpMirror);
+    if (!p) continue;
+    markers.set(`${p.x},${p.y}`, {
+      decision: m.decision,
+      action_no: m.action_no,
+      label: `第${m.action_no}顆(${m.substrateName})－${decisionLabel(m.decision)}`,
+    });
+  }
+
+  renderOneWaferGrid("mp-wafer-grid", xOrder, yOrder, cellMap, refPoint, { dx: 0, dy: 0 }, markers);
+  renderOneWaferGrid("mp-wafer-grid-shifted", xOrder, yOrder, cellMap, shiftedRefPoint, shift, markers);
 }
 
 function renderSubstrateGrid(containerId, sub) {
@@ -396,6 +453,13 @@ function decisionClass(decision) {
 
 function renderResults(data) {
   mpRawWafer = data.wafer;
+  lastMispickActionMarkers = data.substrates
+    .filter((sub) => !sub.error)
+    .flatMap((sub) =>
+      sub.action_rows.map((r) => ({
+        fx: r.fx, fy: r.fy, decision: r.decision, action_no: r.action_no, substrateName: sub.name,
+      }))
+    );
   renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
 
   const container = document.getElementById("mp-results");
@@ -652,6 +716,7 @@ async function previewWaferMap() {
   mpRawWafer = data;
   mpAngle = 0;
   mpMirror = false;
+  lastMispickActionMarkers = []; // 換一片wafer預覽，舊分析結果的標記不再對得上，清掉
   document.getElementById("mp-wafer-angle").value = "0";
   document.getElementById("mp-wafer-mirror").checked = false;
   renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));

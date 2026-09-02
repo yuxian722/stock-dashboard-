@@ -164,6 +164,13 @@ def test_analyze_db_is_default_and_classifies_correctly(client, frm_root):
     sub = res.get_json()["substrates"][0]
     assert sub["error"] is None
     assert sub["summary"] == {"force_delete": 1, "review": 1, "anomaly": 0, "ok": 1, "other": 0}
+    # 2026/09/02: action_rows must also expose actual_map_x/y (the position
+    # actually picked once the offset is applied) — the mispick.js wafer
+    # preview overlay uses this fx/fy pair to place a marker at the exact
+    # raw wafer position each BINGO MAP force-delete/review cell refers to.
+    force_row = next(r for r in sub["action_rows"] if r["decision"] == "FORCE_DELETE_ACTUAL_BIN_NG")
+    assert (force_row["fx"], force_row["fy"]) == (1, 2)
+    assert (force_row["actual_map_x"], force_row["actual_map_y"]) == (2, 2)
 
 
 def test_analyze_returns_wafer_cells_and_substrate_grid_cells(client, frm_root):

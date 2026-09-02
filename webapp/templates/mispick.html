@@ -141,12 +141,19 @@
     <div class="legend">
       <span id="mp-wafer-bin-legend" style="display:contents"></span>
       <span id="mp-wafer-tpoint-legend" style="display:none"><i style="background:repeating-linear-gradient(45deg,#1e293b 0,#1e293b 2px,transparent 2px,transparent 5px);border-color:#1e293b"></i>T點</span>
+      <span id="mp-wafer-marker-legend" style="display:none">
+        <i style="outline:2px solid #ef4444;outline-offset:-2px"></i>強制點除
+        <i style="outline:2px solid #b45309;outline-offset:-2px"></i>人工確認
+        （格子裡的數字＝下面結果表的「No.」，同一個數字＝同一顆）
+      </span>
     </div>
     <p class="hint" style="font-size:0.78rem;color:var(--muted)">
       左圖是原始wafer圖(沒有套用偏移)；右圖套用目前設定的機台偏移量後，<b>整片bin色塊圖形(不只是T點
       標記)一起平移</b>——T點附近原本的鄰居格子(綠/灰/紫)會整組一起移動、彼此相對位置不變，這樣才看得出
       偏移之後原本T點旁邊那幾顆die實際會對到哪個bin(例如原本是灰色bin7的位置，偏移後可能疊到原本是
-      綠色bin1的位置)。偏移量改變(包含按方向微調按鈕)兩張圖都會即時重新畫。
+      綠色bin1的位置)。偏移量改變(包含按方向微調按鈕)兩張圖都會即時重新畫。分析完成後，下面BINGO MAP
+      結果表裡每一列強制點除/人工確認的位置，也會疊在這兩張wafer圖上(紅/黃框+編號)，方便直接對照
+      「這個BINGO MAP紅框，實際是wafer上的哪一顆」。
     </p>
     <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
       <div>

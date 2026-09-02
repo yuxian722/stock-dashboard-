@@ -165,6 +165,13 @@ button.secondary.active-layer:hover{background:#0c7550}
   outline:2px solid #1e293b;outline-offset:-2px;
 }
 .wafer-cell.ref-point:not(.picked):not(.referenced){color:#fff}
+/* 誤吸偏移頁：把BINGO MAP結果表的每一列(帶action_no)疊回wafer圖上對應
+   的原始座標，跟.substrate-cell.mp-force/.mp-review用同一組紅/黃、格子
+   裡直接顯示action_no數字——BINGO MAP紅框跟wafer圖上同一個數字就是
+   同一顆，2026/09/02使用者要求"我才可以知道那顆bingomap紅框跟wafer圖
+   的那一顆是被誤吸"。 */
+.wafer-cell.mp-force-marker{outline:2px solid #ef4444;outline-offset:-2px;color:#111}
+.wafer-cell.mp-review-marker{outline:2px solid #b45309;outline-offset:-2px;color:#111}
 
 #bingo-maps-wrap{display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start}
 .bingo-map-block{min-width:0}

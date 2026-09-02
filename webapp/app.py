@@ -512,6 +512,7 @@ def api_mispick_analyze():
                 ]
             )
             if row.action_no is not None:
+                actual_map_x, actual_map_y = row.actual_map_xy or (None, None)
                 action_rows_out.append(
                     {
                         "action_no": row.action_no,
@@ -524,6 +525,8 @@ def api_mispick_analyze():
                         "fx": row.fx,
                         "fy": row.fy,
                         "nominal_bin": row.nominal_bin,
+                        "actual_map_x": actual_map_x,
+                        "actual_map_y": actual_map_y,
                         "actual_bin": row.actual_bin,
                     }
                 )
