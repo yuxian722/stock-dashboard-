@@ -640,6 +640,11 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
   const filled = new Set(fillable.slice(0, layerPicks.length));
   const nextPos = fillable[layerPicks.length];
   const { minCol, maxCol, minRow, maxRow } = substrateBounds;
+  // 2026/08/31新增：substrateBounds是涵蓋整個基板範圍的矩形bounding box，
+  // 但基板形狀不一定是完整矩形——box裡有些座標根本不在範本
+  // (substratePositions)裡，這種格子不算「還沒填的正常格子」，見下面
+  // 迴圈裡的.not-a-position處理跟樣式宣告處的完整說明。
+  const validPositions = new Set(substratePositions);
 
   // 2026/08/31：使用者直接確認過(拿①補資料頁跟機台實際作業畫面現場核對)，
   // 欄(col)由小到大應該畫在螢幕「右邊」，不是左邊——0:0永遠固定在右上角，
@@ -688,12 +693,17 @@ function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
       const pos = `${col}:${row}`;
       const cell = document.createElement("div");
       cell.className = "substrate-cell";
-      if (skippedPositions.has(pos)) cell.classList.add("skipped");
-      if (filled.has(pos)) cell.classList.add("filled");
-      if (pos === nextPos) cell.classList.add("next");
-      if (pos === focusedPos) cell.classList.add("focus");
+      if (!validPositions.has(pos)) {
+        cell.classList.add("not-a-position");
+        cell.title = `${pos} — 基板範本裡本來就沒有這個位置(不會填入座標，也不算不上片)`;
+      } else {
+        if (skippedPositions.has(pos)) cell.classList.add("skipped");
+        if (filled.has(pos)) cell.classList.add("filled");
+        if (pos === nextPos) cell.classList.add("next");
+        if (pos === focusedPos) cell.classList.add("focus");
+        cell.title = pos;
+      }
       cell.dataset.pos = pos;
-      cell.title = pos;
       rowEl.appendChild(cell);
     }
     container.appendChild(rowEl);
@@ -1427,6 +1437,12 @@ function skipRectangleBetween(pos1, pos2) {
 
 function handleSubstrateCellClick(pos, layerIndex) {
   if (skipModeEnabled) {
+    // 2026/08/31：跟skipRectangleBetween()同一個防呆——這一格如果根本不在
+    // substratePositions裡(基板形狀不是完整矩形，見renderSubstrateGridInto()
+    // 的.not-a-position處理)，不能被標記/取消不上片，不然會讓
+    // skippedPositions混進不存在的位置，effectiveTargetQty()之類的計算
+    // 會被污染。
+    if (!substratePositions.includes(pos)) return;
     if (skippedPositions.has(pos)) skippedPositions.delete(pos);
     else skippedPositions.add(pos);
     renderAll();
