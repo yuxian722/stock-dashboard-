@@ -1,3 +1,41 @@
+// ---- wafer角度/鏡像跨①②頁同步 --------------------------------------------
+// 跟app.js同一次更正，公式必須完全一致(兩邊各自維護一份)——見那邊
+// SHARED_WAFER_ANGLE_KEY的完整說明。使用者反映①②兩頁各自獨立記住角度，
+// 同一片wafer在兩頁角度沒對齊時分布位置看起來不一樣，容易誤會成資料錯。
+const SHARED_WAFER_ANGLE_KEY = "bingomap_shared_wafer_angle";
+
+function waferAngleStorageId(lotNo, barcodeId) {
+  const l = (lotNo || "").trim(), b = (barcodeId || "").trim();
+  if (!l || !b) return null;
+  return `${l}|${b}`;
+}
+
+function loadSharedWaferAngle(lotNo, barcodeId) {
+  const id = waferAngleStorageId(lotNo, barcodeId);
+  if (!id) return null;
+  try {
+    const raw = localStorage.getItem(SHARED_WAFER_ANGLE_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw)[id];
+    return entry && Number.isFinite(entry.angle) ? entry : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveSharedWaferAngle(lotNo, barcodeId, angle, mirror) {
+  const id = waferAngleStorageId(lotNo, barcodeId);
+  if (!id) return;
+  try {
+    const raw = localStorage.getItem(SHARED_WAFER_ANGLE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[id] = { angle, mirror };
+    localStorage.setItem(SHARED_WAFER_ANGLE_KEY, JSON.stringify(map));
+  } catch (err) {
+    // localStorage unavailable/quota exceeded — just don't persist
+  }
+}
+
 let lastCsv = null;
 let lastWaferData = null; // last {columns, rows, lot_no, wafer_id, cells} passed to renderWaferGrid() — so the T點 fields can re-render live on every keystroke without re-fetching
 // 2026/08/25大改版：跟app.js同一次更正，見那邊waferAngleByPanel/
@@ -712,13 +750,16 @@ async function previewWaferMap() {
 
   // 2026/08/25：跟app.js同一次更正(見那邊setWaferRawData的完整註解)——換一片
   // wafer要把角度/鏡像重設回預設值，不然上一片wafer調過的方向會無聲無息
-  // 帶到這一片。
+  // 帶到這一片。2026/09/02再更正：改成先查①頁有沒有存過這片wafer(同一組
+  // LotNo+BarcodeID)的角度/鏡像——有的話直接套用，不用使用者自己對照兩頁
+  // 手動調成一樣。
   mpRawWafer = data;
-  mpAngle = 0;
-  mpMirror = false;
+  const shared = loadSharedWaferAngle(payload.lot_no, payload.barcode_id);
+  mpAngle = shared ? shared.angle : 0;
+  mpMirror = shared ? !!shared.mirror : false;
   lastMispickActionMarkers = []; // 換一片wafer預覽，舊分析結果的標記不再對得上，清掉
-  document.getElementById("mp-wafer-angle").value = "0";
-  document.getElementById("mp-wafer-mirror").checked = false;
+  document.getElementById("mp-wafer-angle").value = String(mpAngle);
+  document.getElementById("mp-wafer-mirror").checked = mpMirror;
   renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
@@ -847,10 +888,35 @@ document.getElementById("mp-t-point-y").addEventListener("input", () => renderWa
 document.getElementById("mp-btn-convert-visual-ref").addEventListener("click", convertVisualRefPoint);
 document.getElementById("mp-wafer-angle").addEventListener("change", (e) => {
   mpAngle = Number(e.target.value);
+  saveSharedWaferAngle(
+    document.getElementById("mp_frm_lot_no").value,
+    document.getElementById("mp_frm_barcode_id").value,
+    mpAngle, mpMirror
+  );
   renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
 });
 document.getElementById("mp-wafer-mirror").addEventListener("change", (e) => {
   mpMirror = e.target.checked;
+  saveSharedWaferAngle(
+    document.getElementById("mp_frm_lot_no").value,
+    document.getElementById("mp_frm_barcode_id").value,
+    mpAngle, mpMirror
+  );
+  renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
+});
+// ①補資料頁改了同一片wafer的角度/鏡像時即時跟著換，見app.js同一段的完整
+// 說明——只在目前這裡載入的wafer身分剛好對得上時才套用。
+window.addEventListener("storage", (e) => {
+  if (e.key !== SHARED_WAFER_ANGLE_KEY || !mpRawWafer) return;
+  const shared = loadSharedWaferAngle(
+    document.getElementById("mp_frm_lot_no").value,
+    document.getElementById("mp_frm_barcode_id").value
+  );
+  if (!shared || (shared.angle === mpAngle && !!shared.mirror === mpMirror)) return;
+  mpAngle = shared.angle;
+  mpMirror = !!shared.mirror;
+  document.getElementById("mp-wafer-angle").value = String(mpAngle);
+  document.getElementById("mp-wafer-mirror").checked = mpMirror;
   renderWaferGrid(rotateWaferArray(mpRawWafer, mpAngle, mpMirror));
 });
 

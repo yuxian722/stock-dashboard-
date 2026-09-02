@@ -1,3 +1,45 @@
+// ---- wafer角度/鏡像跨①②頁同步 --------------------------------------------
+// 2026/09/02使用者反映：①②兩頁各自獨立記住自己的wafer角度/鏡像設定，同一
+// 片實體wafer在兩頁如果角度沒調成一樣，畫面上的分布位置看起來會不一樣，
+// 很容易被誤會成資料/計算錯誤(來回花了很久才查清楚純粹是角度沒對齊)。用
+// localStorage存「這片wafer(用LotNo+BarcodeID當key)上次設定的角度/鏡像」，
+// 兩頁共用同一把key——只針對panel 0(唯一/共用的那片wafer，跟referenceSubstrates
+// 的假設一樣，"跨兩片wafer"模式下的第二片不算，因為那不保證是②頁在分析
+// 的同一片)。這段函式在app.js/mispick.js各自維護一份、公式必須完全一致。
+const SHARED_WAFER_ANGLE_KEY = "bingomap_shared_wafer_angle";
+
+function waferAngleStorageId(lotNo, barcodeId) {
+  const l = (lotNo || "").trim(), b = (barcodeId || "").trim();
+  if (!l || !b) return null;
+  return `${l}|${b}`;
+}
+
+function loadSharedWaferAngle(lotNo, barcodeId) {
+  const id = waferAngleStorageId(lotNo, barcodeId);
+  if (!id) return null;
+  try {
+    const raw = localStorage.getItem(SHARED_WAFER_ANGLE_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw)[id];
+    return entry && Number.isFinite(entry.angle) ? entry : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveSharedWaferAngle(lotNo, barcodeId, angle, mirror) {
+  const id = waferAngleStorageId(lotNo, barcodeId);
+  if (!id) return;
+  try {
+    const raw = localStorage.getItem(SHARED_WAFER_ANGLE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[id] = { angle, mirror };
+    localStorage.setItem(SHARED_WAFER_ANGLE_KEY, JSON.stringify(map));
+  } catch (err) {
+    // localStorage unavailable/quota exceeded — just don't persist
+  }
+}
+
 // ---- State ----------------------------------------------------------------
 // Two independent axes, on purpose (2026/08/18 redesign — see
 // bingomap/CLAUDE.md): how many STACKED LAYERS (numLayers, f9=1..N) vs how
@@ -854,16 +896,21 @@ function applyWaferAngleFromRaw(panelIndex) {
 // here — always resets angle/mirror back to 0°/off (see waferAngleByPanel's
 // comment: a wafer's orientation must never silently carry over from
 // whatever the PREVIOUS wafer needed).
-function setWaferRawData(panelIndex, cells, bounds) {
+// waferKey(選填) = {lotNo, barcodeId} — 這片wafer的身分，有給的話(目前只有
+// loadFrmIntoPanel會給，因為只有那裡真的知道是哪片wafer)先查有沒有跨頁
+// 同步存過的角度/鏡像，有就直接套用，取代原本寫死的0°/不鏡像——panel 0以外
+// 或沒有身分資訊(手動貼wafer文字、清除)一律維持原本行為(歸零)。
+function setWaferRawData(panelIndex, cells, bounds, waferKey) {
   waferRawCellsByPanel[panelIndex] = cells;
   waferRawBoundsByPanel[panelIndex] = bounds;
-  waferAngleByPanel[panelIndex] = 0;
-  waferMirrorByPanel[panelIndex] = false;
+  const shared = panelIndex === 0 && waferKey ? loadSharedWaferAngle(waferKey.lotNo, waferKey.barcodeId) : null;
+  waferAngleByPanel[panelIndex] = shared ? shared.angle : 0;
+  waferMirrorByPanel[panelIndex] = shared ? !!shared.mirror : false;
   const ids = waferIds(panelIndex);
   const angleEl = document.getElementById(ids.angleSelect);
-  if (angleEl) angleEl.value = "0";
+  if (angleEl) angleEl.value = String(waferAngleByPanel[panelIndex]);
   const mirrorEl = document.getElementById(ids.mirrorCheckbox);
-  if (mirrorEl) mirrorEl.checked = false;
+  if (mirrorEl) mirrorEl.checked = waferMirrorByPanel[panelIndex];
   applyWaferAngleFromRaw(panelIndex);
 }
 
@@ -889,7 +936,7 @@ async function loadFrmIntoPanel(panelIndex) {
     return;
   }
   const { cells, bounds } = waferCellsFromApiCells(data.cells);
-  setWaferRawData(panelIndex, cells, bounds);
+  setWaferRawData(panelIndex, cells, bounds, { lotNo: payload.lot_no, barcodeId: payload.barcode_id });
   waferDimsByPanel[panelIndex] = { columns: data.columns, rows: data.rows };
   status.className = "ok";
   status.textContent = `已載入 LotNo=${data.lot_no} WaferID=${data.wafer_id} Layout=${data.wafer_type}（${data.columns}x${data.rows}，共${data.cells.length}顆有資料）`;
@@ -1665,11 +1712,21 @@ function wireWaferPanelEvents(panelIndex) {
   if (yEl) yEl.addEventListener("input", renderAll);
   const convertBtn = document.getElementById(ids.btnConvertVisualRef);
   if (convertBtn) convertBtn.addEventListener("click", () => convertVisualRefPoint(panelIndex));
+  // panel 0是唯一/共用的那片wafer(見SHARED_WAFER_ANGLE_KEY的說明)，角度/
+  // 鏡像改變時順手存一份供②誤吸偏移頁下次讀同一片wafer時直接套用；panel 1
+  // ("跨兩片wafer"的第二片)不保證是②頁在分析的那片，不同步。
   const angleEl = document.getElementById(ids.angleSelect);
   if (angleEl) {
     angleEl.addEventListener("change", () => {
       waferAngleByPanel[panelIndex] = Number(angleEl.value);
       applyWaferAngleFromRaw(panelIndex);
+      if (panelIndex === 0) {
+        saveSharedWaferAngle(
+          document.getElementById(ids.frmLotNo).value,
+          document.getElementById(ids.frmBarcodeId).value,
+          waferAngleByPanel[0], waferMirrorByPanel[0]
+        );
+      }
       renderAll();
     });
   }
@@ -1678,10 +1735,36 @@ function wireWaferPanelEvents(panelIndex) {
     mirrorEl.addEventListener("change", () => {
       waferMirrorByPanel[panelIndex] = mirrorEl.checked;
       applyWaferAngleFromRaw(panelIndex);
+      if (panelIndex === 0) {
+        saveSharedWaferAngle(
+          document.getElementById(ids.frmLotNo).value,
+          document.getElementById(ids.frmBarcodeId).value,
+          waferAngleByPanel[0], waferMirrorByPanel[0]
+        );
+      }
       renderAll();
     });
   }
 }
+
+// 另一個分頁(②誤吸偏移頁)改了同一片wafer的角度/鏡像時，這裡即時跟著換
+// (不用重新整理頁面)——只在panel 0目前載入的wafer身分剛好對得上時才套用，
+// 避免跟目前完全不相干的wafer被連動改掉。
+window.addEventListener("storage", (e) => {
+  if (e.key !== SHARED_WAFER_ANGLE_KEY || !waferRawBoundsByPanel[0]) return;
+  const shared = loadSharedWaferAngle(
+    document.getElementById("frm_lot_no").value,
+    document.getElementById("frm_barcode_id").value
+  );
+  if (!shared || (shared.angle === waferAngleByPanel[0] && !!shared.mirror === waferMirrorByPanel[0])) return;
+  waferAngleByPanel[0] = shared.angle;
+  waferMirrorByPanel[0] = !!shared.mirror;
+  const ids = waferIds(0);
+  document.getElementById(ids.angleSelect).value = String(shared.angle);
+  document.getElementById(ids.mirrorCheckbox).checked = !!shared.mirror;
+  applyWaferAngleFromRaw(0);
+  renderAll();
+});
 
 function wireBingoBlockEvents(layerIndex) {
   const ids = bingoIds(layerIndex);
