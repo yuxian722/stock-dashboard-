@@ -64,25 +64,67 @@ let waferRawBoundsByPanel = [null, null];
 // 換顯示順序)，勾選鏡像時對旋轉後的座標再做一次水平翻轉，這樣角度+鏡像
 // 兩個維度合起來可以湊出全部8種可能的方向(4個旋轉 x 有無鏡像)，理論上
 // 足夠比對任何真實wafer的方向。
+// Single-point version of the rotation formula, pulled out so every place
+// that needs to convert ONE coordinate (not a whole cell map) can share the
+// exact same math instead of re-deriving it — see rotateWaferCells() below
+// (which now just calls this per cell) and unrotateWaferPoint()'s inverse.
+// 2026/09/02: this used to be inlined only inside rotateWaferCells(), which
+// is how the bug below happened — nothing else had a correct way to convert
+// a raw wafer coordinate into "wherever it currently displays," so several
+// call sites quietly compared raw and rotated coordinates as if they were
+// the same space.
+function rotateWaferPoint(x, y, rawBounds, angleDeg, mirror) {
+  if (!rawBounds) return null;
+  const { minX, maxX, minY, maxY } = rawBounds;
+  const spanX = maxX - minX, spanY = maxY - minY;
+  const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
+  const u = x - minX, v = y - minY;
+  let nu, nv;
+  if (angleDeg === 90) { nu = v; nv = spanX - u; }
+  else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+  else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+  else { nu = u; nv = v; } // 0
+  if (mirror) nu = rotatedSpanX - nu;
+  return { x: nu, y: nv };
+}
+
+// The inverse of rotateWaferPoint(): given a DISPLAY coordinate (whatever's
+// currently shown on screen at the panel's current angle/mirror), returns
+// the RAW wafer coordinate it actually corresponds to. 2026/09/02新增——見
+// 下面「picked/staged/referenced座標跟旋轉設定對不上」那則教訓：使用者
+// 點擊的格子、拖曳選取的範圍，原本直接把當下畫面座標(dataset.x/y)存進
+// picksByLayer/stagedPicks，跟從範本/參考基板讀進來的座標(檔案自己的
+// wafer_xy，永遠是原始座標)不是同一個空間——角度=0時兩者剛好一樣，一旦
+// 轉了角度就對不起來。現在畫面互動(點擊/拖曳)在存進去之前，一律先用這個
+// 函式換算回原始座標，這樣picksByLayer/stagedPicks裡不管是使用者點出來
+// 的還是範本讀進來的，永遠是同一種(原始wafer座標)，渲染跟比對時再統一
+// 用rotateWaferPoint()轉成當下要畫的座標——也修正了另一個更嚴重的問題：
+// 之前如果在角度≠0時點選/拖曳過，`/api/generate`會直接把這些「畫面座標」
+// 當成wafer_xy寫進產生的.strate檔案，寫出來的座標其實是轉過的、不是這片
+// wafer真正的物理座標。
+function unrotateWaferPoint(nu, nv, rawBounds, angleDeg, mirror) {
+  if (!rawBounds) return null;
+  const { minX, maxX, minY, maxY } = rawBounds;
+  const spanX = maxX - minX, spanY = maxY - minY;
+  const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
+  const nu0 = mirror ? rotatedSpanX - nu : nu;
+  let u, v;
+  if (angleDeg === 90) { v = nu0; u = spanX - nv; }
+  else if (angleDeg === 180) { u = spanX - nu0; v = spanY - nv; }
+  else if (angleDeg === 270) { v = spanY - nu0; u = nv; }
+  else { u = nu0; v = nv; } // 0
+  return { x: u + minX, y: v + minY };
+}
+
 function rotateWaferCells(rawCells, rawBounds, angleDeg, mirror) {
   if (!rawBounds) return { cells: new Map(), bounds: null };
-  const { minX, maxX, minY, maxY } = rawBounds;
-  const spanX = maxX - minX;
-  const spanY = maxY - minY;
-  const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const newCells = new Map();
   let nMinX = Infinity, nMaxX = -Infinity, nMinY = Infinity, nMaxY = -Infinity;
   for (const [key, bin] of rawCells.entries()) {
     const commaIdx = key.indexOf(",");
     const x = Number(key.slice(0, commaIdx));
     const y = Number(key.slice(commaIdx + 1));
-    const u = x - minX, v = y - minY;
-    let nu, nv;
-    if (angleDeg === 90) { nu = v; nv = spanX - u; }
-    else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
-    else if (angleDeg === 270) { nu = spanY - v; nv = u; }
-    else { nu = u; nv = v; } // 0
-    if (mirror) nu = rotatedSpanX - nu;
+    const { x: nu, y: nv } = rotateWaferPoint(x, y, rawBounds, angleDeg, mirror);
     newCells.set(`${nu},${nv}`, bin);
     if (nu < nMinX) nMinX = nu;
     if (nu > nMaxX) nMaxX = nu;
@@ -943,6 +985,15 @@ function renderBinLegend(containerId, cells) {
 // A coordinate on a given physical wafer panel can only ever be consumed
 // once, regardless of which layer it eventually lands in — this is the
 // dedup rule that actually matters now that any panel can feed any layer.
+//
+// (x, y) here — and in every function below that takes a wafer coordinate
+// (isStagedOnPanel, stageIndexOnPanel, isReferencedAt, toggleStagePick,
+// stagePickIfNew, scanRectangle) — is always the RAW wafer coordinate
+// (matching picksByLayer/stagedPicks/referenceSubstrates' own storage,
+// and a loaded template's/reference file's own wafer_xy), never the
+// current-angle-rotated DISPLAY coordinate. A caller holding a display
+// coordinate (from dataset.x/y) must convert it via unrotateWaferPoint()
+// first — see wireGridDragEvents() and renderWaferPanel().
 function isCommittedOnPanel(panelIndex, x, y) {
   return picksByLayer.some((layerPicks) => layerPicks.some((p) => p.panel === panelIndex && p.x === x && p.y === y));
 }
@@ -1038,18 +1089,24 @@ function renderWaferPanel(panelIndex) {
       const cell = document.createElement("div");
       cell.className = "wafer-cell";
       applyBinColor(cell, bin);
+      // picksByLayer/stagedPicks/focusedWaferXYByLayer/referenceSubstrates
+      // all store RAW wafer coordinates now (see unrotateWaferPoint()'s
+      // comment) — x,y here are DISPLAY coordinates (this panel's current
+      // angle/mirror), so convert once per cell before comparing against
+      // any of them.
+      const rawXY = unrotateWaferPoint(x, y, waferRawBoundsByPanel[panelIndex], waferAngleByPanel[panelIndex], waferMirrorByPanel[panelIndex]);
       let committedLayer = null;
       for (let li = 0; li < picksByLayer.length; li++) {
-        if (picksByLayer[li].some((p) => p.panel === panelIndex && p.x === x && p.y === y)) {
+        if (picksByLayer[li].some((p) => p.panel === panelIndex && p.x === rawXY.x && p.y === rawXY.y)) {
           committedLayer = li;
           break;
         }
       }
-      const ref = committedLayer === null ? isReferencedAt(panelIndex, x, y) : null;
+      const ref = committedLayer === null ? isReferencedAt(panelIndex, rawXY.x, rawXY.y) : null;
       if (committedLayer !== null) {
         cell.classList.add("picked");
         cell.textContent = String(committedLayer + 1);
-      } else if (isStagedOnPanel(panelIndex, x, y)) {
+      } else if (isStagedOnPanel(panelIndex, rawXY.x, rawXY.y)) {
         cell.classList.add("staged");
       } else if (ref) {
         cell.classList.add("referenced");
@@ -1057,7 +1114,7 @@ function renderWaferPanel(panelIndex) {
         cell.textContent = ref.label;
         cell.title = `${x}:${y} — 已被參考基板「${ref.name}」占用`;
       }
-      const isFocused = focusedWaferXYByLayer.some((f) => f && f.panel === panelIndex && f.x === x && f.y === y);
+      const isFocused = focusedWaferXYByLayer.some((f) => f && f.panel === panelIndex && f.x === rawXY.x && f.y === rawXY.y);
       if (isFocused) cell.classList.add("focus");
       const isRefPoint = refPoint && refPoint.x === x && refPoint.y === y;
       if (isRefPoint) {
@@ -1121,8 +1178,15 @@ function renderWaferGrid() {
 // 已修正：直接沿用drag起點→終點的方向逐格前進(x1→x2、y1→y2)，不再排序成
 // 固定的小到大——往右拖選出來就是遞增，往左拖就是遞減，跟使用者拖曳的
 // 方向一致。
+// x1,x2,y1,y2 are RAW wafer coordinates (the caller — wireGridDragEvents()'s
+// mouseup handler — converts the drag's display start/end via
+// unrotateWaferPoint() before calling this, see that function's comment),
+// so the bin lookup here must use the RAW cell map (waferRawCellsByPanel),
+// not the current-angle-rotated one (waferCellsByPanel) — looking a raw
+// (x,y) up in the rotated map would silently miss/mis-color every cell
+// whenever the panel's angle/mirror isn't 0/off.
 function scanRectangle(x1, x2, y1, y2, panelIndex) {
-  const cells = waferCellsByPanel[panelIndex];
+  const cells = waferRawCellsByPanel[panelIndex];
   const xStep = x1 <= x2 ? 1 : -1;
   const yStep = y1 <= y2 ? 1 : -1;
   for (let x = x1; xStep > 0 ? x <= x2 : x >= x2; x += xStep) {
@@ -1391,18 +1455,34 @@ function hideGridTooltip(tooltipEl) {
 }
 
 // ---- Event wiring (per wafer panel / per BINGO MAP block) ------------
+// 2026/09/02：mousedown/mouseup讀到的dataset.x/y是「目前這個角度/鏡像
+// 設定下畫在螢幕上」的座標，不是這片wafer真正的原始座標——角度=0時兩者
+// 剛好一樣，一轉角度就不是了。之前這裡直接把dataset.x/y原封不動存進
+// stagedPicks/picksByLayer，結果(1)角度≠0時載入的範本/參考基板(存的是
+// 檔案自己的原始wafer_xy)跟使用者點擊/拖曳選出來的座標，其實活在兩個不同
+// 空間，畫面上兩者對不齊；(2)更嚴重的是`/api/generate`直接拿picksByLayer
+// 當wafer_xy寫進產生的.strate檔案——角度≠0時點選/拖曳過的座標，寫進檔案
+//的其實是「轉過的螢幕座標」，不是這片wafer真正的物理座標，檔案是錯的。
+// 已修正：點擊/拖曳一律在存進去之前，先用unrotateWaferPoint()換算回原始
+// wafer座標——這樣picksByLayer/stagedPicks不管是使用者點出來的、還是從
+// 範本/參考基板讀進來的，永遠是同一種(原始座標)，渲染時再用
+// rotateWaferPoint()統一轉成當下要畫的螢幕座標(見renderWaferPanel())。
 function wireGridDragEvents(containerId, hoverStatusId, tooltipId, panelIndex) {
   const container = document.getElementById(containerId);
   const hoverStatus = document.getElementById(hoverStatusId);
   const tooltip = document.getElementById(tooltipId);
+  const rawXYFromDataset = (target) => {
+    const x = parseInt(target.dataset.x, 10), y = parseInt(target.dataset.y, 10);
+    return unrotateWaferPoint(x, y, waferRawBoundsByPanel[panelIndex], waferAngleByPanel[panelIndex], waferMirrorByPanel[panelIndex]);
+  };
   let localDragStart = null;
   container.addEventListener("mousedown", (e) => {
     if (!e.target.classList.contains("wafer-cell")) return;
-    localDragStart = { x: parseInt(e.target.dataset.x, 10), y: parseInt(e.target.dataset.y, 10) };
+    localDragStart = rawXYFromDataset(e.target);
   });
   container.addEventListener("mouseup", (e) => {
     if (!e.target.classList.contains("wafer-cell") || !localDragStart) return;
-    const end = { x: parseInt(e.target.dataset.x, 10), y: parseInt(e.target.dataset.y, 10) };
+    const end = rawXYFromDataset(e.target);
     if (end.x === localDragStart.x && end.y === localDragStart.y) {
       toggleStagePick(panelIndex, end.x, end.y, e.target.dataset.bin);
     } else {
@@ -1414,7 +1494,8 @@ function wireGridDragEvents(containerId, hoverStatusId, tooltipId, panelIndex) {
   container.addEventListener("mouseover", (e) => {
     if (!e.target.classList.contains("wafer-cell")) return;
     const x = e.target.dataset.x, y = e.target.dataset.y;
-    const ref = isReferencedAt(panelIndex, parseInt(x, 10), parseInt(y, 10));
+    const rawXY = rawXYFromDataset(e.target);
+    const ref = isReferencedAt(panelIndex, rawXY.x, rawXY.y);
     const refPointNote = e.target.dataset.refPoint ? "（T點）" : "";
     const label = ref && !e.target.classList.contains("picked") && !e.target.classList.contains("staged")
       ? `${x}:${y}（已被參考基板「${ref.name}」占用，不能選）${refPointNote}`

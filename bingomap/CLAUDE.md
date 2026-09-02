@@ -936,3 +936,51 @@ mouseup事件驗證。
 資訊丟棄」的典型案例——`Math.min`/`Math.max`看起來像是常見、安全的「正規化範圍」寫法，但正規化的
 同時也把「方向」這個語意抹掉了，而這裡「方向」剛好是使用者真正在意、真正想控制的那個維度。寫排序/
 正規化邏輯時，值得多想一步：這個正規化動作是不是順手丟掉了呼叫端原本刻意保留、之後會需要的資訊。**
+
+## ①補資料頁：wafer角度≠0時，範本/參考基板的座標跟畫面對不齊——連產生出來的.strate檔案都可能是錯的
+
+使用者比對①②兩頁「同一片wafer、同一份.strate、同樣角度90°、無鏡像、同樣T點座標」跑出來的圖，發現
+①頁的座標分佈跑到wafer下方、②頁卻跑到wafer左邊，懷疑兩頁的座標規則不一樣。先用真實FRM資料交叉驗證
+①②兩頁在角度=0/鏡像=off時wafer圖逐格(2576格)完全一致，排除底層資料/公式不同的可能；再追查角度≠0
+時①頁本身的行為，才挖出一個範圍遠比使用者原本問題更大的bug。
+
+根源：`renderWaferPanel()`畫格子的迴圈永遠在**當下角度/鏡像轉過的顯示座標**空間裡跑(`xOrder`/`yOrder`
+來自`waferBoundsByPanel`，是`rotateWaferCells()`轉過的)，但判斷「這一格是不是已經被選過/來自範本/
+被參考基板占用」的三處比對——`picksByLayer[li].some(p=>p.x===x&&p.y===y)`、`isReferencedAt()`、
+`isStagedOnPanel()`——用的`picksByLayer`/`referenceSubstrates`裡的座標，只要是從`loadTemplate()`
+(讀範本.strate)或`loadReferenceFiles()`(讀參考基板)進來的，全部是**檔案自己記錄的原始wafer_xy**
+(`_die_info_to_picks()`直接`wafer_xy.partition(":")`，完全沒有套用旋轉)——角度=0時原始座標剛好等於
+顯示座標，兩者看起來一致，一旦轉了角度，「畫格子用顯示座標、判斷用原始座標」這兩個迴圈其實活在兩個
+不同的座標系，比對永遠對不上，範本/參考基板讀進來的座標會顯示在完全錯誤的位置。
+
+更嚴重的是：使用者用**滑鼠點擊/拖曳**選取的座標，走的是相反的路——`wireGridDragEvents()`直接把
+`dataset.x/y`(當下顯示座標)存進`stagedPicks`/`picksByLayer`，這條路徑在角度=0時沒問題，但角度≠0時
+存進去的其實是「轉過的螢幕座標」，不是這片wafer真正的物理座標——而`generateStrate()`把`picksByLayer`
+直接(只拿掉`panel`欄位)當成`wafer_xy`送進`/api/generate`寫進檔案。也就是說：**只要在角度≠0時點選/
+拖曳過wafer格子，產生出來的.strate檔案裡wafer_xy欄位寫的是螢幕上轉過的座標，不是這片wafer真正的
+物理座標**——這是本來要修的「畫面對不齊」問題之外，另一個獨立、更嚴重、會直接寫壞產出檔案的bug，是
+在往回查「①頁畫面座標為什麼跟②頁不一樣」的過程中才發現的。
+
+已修正：把`rotateWaferCells()`裡的旋轉公式抽出成單點函式`rotateWaferPoint(x,y,rawBounds,angleDeg,
+mirror)`(原始→顯示)，新增其反函式`unrotateWaferPoint(nu,nv,rawBounds,angleDeg,mirror)`(顯示→原始，
+逐一角度手推、用真實座標範圍跑960組round-trip驗證無誤)。統一儲存慣例：`picksByLayer`/`stagedPicks`
+一律存**原始wafer座標**(範本/參考基板讀進來的本來就是，現在點擊/拖曳存進去之前也先用
+`unrotateWaferPoint()`換算回原始座標)；`renderWaferPanel()`的比對迴圈、`wireGridDragEvents()`的
+mouseover提示，改成先把畫面座標轉成原始座標再去查`isCommittedOnPanel`/`isStagedOnPanel`/
+`isReferencedAt`；`scanRectangle()`收到的座標改成原始座標，bin色查表跟著換成`waferRawCellsByPanel`
+(原始cell map)而不是`waferCellsByPanel`(轉過的)。這樣一來，不管座標是使用者點出來的、還是從範本/
+參考基板讀進來的，`picksByLayer`裡永遠是同一種(真正的物理wafer座標)——畫面永遠正確對齊，
+`generateStrate()`寫進檔案的`wafer_xy`也永遠是真正的物理座標，不受目前顯示角度影響。
+
+用Playwright在角度=90°下驗證：(1)載入的範本，picked格子的顯示座標精確吻合手算的旋轉公式(不管範本是
+在讀wafer之前還是之後載入)；(2)點擊某個顯示格子，pick-table顯示的座標是手算的原始座標，不是螢幕
+座標；(3)角度=0時的行為完全沒變(維持恆等變換，跟修正前一致)；(4)單點選取/取消選取、拖曳矩形批次
+選取、參考基板佔用格阻擋，三者在角度=90°下都正確運作。
+
+教訓：**這次的根源是「同一份狀態(`picksByLayer`)，被兩條不同的資料來源(使用者互動 vs. 讀檔案)用
+兩種不同的座標慣例填入，程式本身沒有任何機制強制兩者一致」——角度=0是這個系統長期以來事實上的
+「安全區」(兩種慣例剛好重合)，只要沒人踩出這個安全區，問題永遠不會被看見；使用者一旦帶著角度≠0
+的設定去讀取範本/參考基板(這正是「角度」這個功能存在的理由——修正wafer的實際擺放方向)，兩種慣例
+的落差立刻現形。跟這幾天處理過的其他座標系混淆案例(T點公式配對、BINGO MAP欄列順序)同一個更大的
+主題：**一個座標，只要它可能被多個入口(互動、讀檔、產生輸出)分別存取，就必須明確定義並強制統一
+它「活在哪個座標系」，不能讓某個入口自己選一種方便的慣例，指望角度剛好等於0的巧合幫忙掩蓋分歧。**
