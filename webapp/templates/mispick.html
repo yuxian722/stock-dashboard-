@@ -16,14 +16,9 @@
 </div>
 
 <div class="notice">
-  <b>機型</b>預設<b>DB</b>（已用2026/08/17你提供的真實DB案例核對：wafer_xy就是wafer MAP自己的原始座標，
-  不用轉換）。選<b>ESEC</b>則套用ESEC 2100參考工具的公式(NOTCH鎖定270，其他角度直接拒絕分析)——那套公式
-  沒有用你的真實資料驗證過，不是這個系統實際在用的機型，僅供參考/保留。原始wafer MAP讀的是跟「補資料」
-  頁面同一種FRM檔案格式，需要這台電腦連得到 <code>F:\SMAP\FRM\</code> 網路磁碟機。
-</div>
-<div class="notice error" id="mp-esec-warning" style="display:none">
-  <b>⚠ 目前選的是ESEC機型：座標公式只針對ESEC 2100參考工具驗證過，不是這個系統實際在用的DB機型規則，
-  結果僅供參考。</b>
+  座標公式已用2026/08/17你提供的真實DB案例核對：wafer_xy就是wafer MAP自己的原始座標，不用轉換。原始
+  wafer MAP讀的是跟「補資料」頁面同一種FRM檔案格式，需要這台電腦連得到 <code>F:\SMAP\FRM\</code>
+  網路磁碟機。
 </div>
 
 <div class="layout">
@@ -67,7 +62,7 @@
       wafer角度／鏡像（選填）——<b>座標0,0永遠固定在畫面右上角</b>，不會因為角度或鏡像改變；如果畫面跟
       WaferCoordinate.exe對不上，先試角度看哪個能讓bin7/bin1分布吻合，四個角度都不吻合的話再加勾鏡像
       (角度只能旋轉、湊不出鏡像效果)。這裡只影響下面的wafer圖預覽/複製座標文字，不影響誤吸偏移分析
-      結果——分析是後端用既有DB/ESEC公式計算的，跟這裡的設定無關。每次重新讀取wafer都會自動重設回
+      結果——分析是後端用固定的DB座標公式計算的，跟這裡的設定無關。每次重新讀取wafer都會自動重設回
       預設值。
     </div>
     <div class="grid2">
@@ -98,12 +93,6 @@
     <h2><span class="step-badge">3</span>偏移與BIN設定</h2>
     <div class="notice">偏移量使用「機台轉向後方向」。X：負數往左、正數往右；Y：負數往上、正數往下。</div>
     <div class="grid2">
-      <label>機型
-        <select id="mp_machine_type">
-          <option value="DB" selected>DB（預設，已用真實案例驗證座標對應關係）</option>
-          <option value="ESEC">ESEC 2100（參考工具公式，未用本系統真實資料驗證，NOTCH鎖定270）</option>
-        </select>
-      </label>
       <label>偏移方向
         <select id="mp_offset_axis">
           <option value="X" selected>X 偏移</option>

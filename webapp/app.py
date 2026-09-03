@@ -43,8 +43,6 @@ from bingomap.mispick_analysis import (
     DECISION_OK,
     DECISION_REVIEW,
     InvalidGeometryError,
-    UnknownMachineTypeError,
-    UnsupportedNotchError,
     analyze_substrate,
     make_offset,
     output_coord,
@@ -100,7 +98,6 @@ def _blank_from_header(data: dict):
         t2_flat=data.get("t2_flat", "NA"),
         out_mgz_slot_no=data.get("out_mgz_slot_no", ""),
         convention=data.get("convention", "EPOXY"),
-        machine_type=data.get("machine_type", "DB"),
     )
 
 
@@ -171,7 +168,7 @@ def api_parse_strate():
     """複製既有.strate為範本：parse an existing real file and hand back
     everything the frontend needs to prefill the form and picks — header
     fields, the file's own substrate position order (verbatim, so
-    regenerating never has to re-guess convention/machine_type), and the
+    regenerating never has to re-guess convention), and the
     wafer picks already made, split by layer if the file has a stacked
     OTHER_LAYER section."""
     data = request.get_json(force=True)
@@ -322,7 +319,7 @@ def api_generate():
         if template_positions:
             # 複製既有.strate為範本 path: reuse the source file's own
             # position order verbatim instead of re-deriving it from
-            # convention/machine_type — see blank_from_positions()'s
+            # convention — see blank_from_positions()'s
             # docstring for why that's the safer choice here.
             blank = blank_from_positions(
                 assy_lot=data["assy_lot"],
@@ -427,17 +424,15 @@ def api_mispick_analyze():
     """誤吸偏移／BIN點除: given a known machine pick offset, the original
     wafer bin map (FRM), and one or more already-produced STRATE files,
     figure out which placed dies actually landed on a bad wafer BIN and
-    need to be point-removed. See bingomap/mispick_analysis.py —
-    machine_type="DB" (the default, this project's real machine type,
-    confirmed against a real DB case 2026/08/17) or "ESEC" (ported from a
-    reference tool, NOTCH=270 only, not this project's own machine)."""
+    need to be point-removed. See bingomap/mispick_analysis.py — this
+    project's real machine type is DB, confirmed against a real case
+    2026/08/17 (ESEC support was removed 2026/09/03 per the user's
+    request, see mispick_analysis.py's module docstring)."""
     data = request.get_json(force=True)
 
     wafer_ring = (data.get("wafer_ring") or "").strip()
     if not wafer_ring:
         return jsonify({"error": "請輸入要比對的完整Wafer ID"}), 400
-
-    machine_type = data.get("machine_type", "DB")
 
     try:
         offset = make_offset(data.get("offset_axis", "X"), int(data.get("offset_value", 0)))
@@ -466,11 +461,7 @@ def api_mispick_analyze():
             frm = parse_frm(f.read())
     except FrmFormatError as exc:
         return jsonify({"error": f"原始wafer MAP格式解析失敗：{exc}"}), 422
-    # 2026/09/03：ESEC(NOTCH=270限定)需要的wafer_map座標軸跟DB(這個專案
-    # 實際的機台，identity轉換)相反——見_frm_cells_json()的完整說明，這裡
-    # 的swap_xy比照那邊的邏輯，但不用另外加勾選框：machine_type本來就是
-    # 使用者自己選的(DB/ESEC)，選ESEC時直接連動打開，不算自動判斷。
-    wafer_map = frm_to_wafer_bin_map(frm, swap_xy=(machine_type == "ESEC"))
+    wafer_map = frm_to_wafer_bin_map(frm)
 
     strate_files = data.get("strate_files") or []
     if not strate_files:
@@ -495,9 +486,8 @@ def api_mispick_analyze():
                 good_bins=good_bins,
                 ng_bins=ng_bins,
                 review_bins=review_bins,
-                machine_type=machine_type,
             )
-        except (UnsupportedNotchError, InvalidGeometryError, UnknownMachineTypeError) as exc:
+        except InvalidGeometryError as exc:
             substrates_out.append({"name": name, "substrate_id": substrate.substrate_id, "error": str(exc)})
             continue
 
@@ -548,13 +538,10 @@ def api_mispick_analyze():
             # Every placed die (not just the ones needing an action) — for
             # drawing the substrate's own BINGO MAP grid with force-delete
             # positions outlined in red, per the user's explicit ask
-            # 2026/08/18 ("要反紅框讓我知道"). tx/ty are the substrate's
-            # own DIE_INFO sub_pos, not the machine-type output-mirrored
-            # position — fine since this project's real machine type (DB)
-            # is an identity mapping between the two (see output_position()
-            # in mispick_analysis.py); only ESEC substrates would visually
-            # differ from the existing "output_coord" table column, and
-            # ESEC already carries its own prominent warning on this page.
+            # 2026/08/18 ("要反紅框讓我知道"). tx/ty are the substrate's own
+            # DIE_INFO sub_pos, which output_position() maps identically to
+            # this page's "output_coord" table column (see
+            # mispick_analysis.py's module docstring).
             if row.tx is not None and row.ty is not None:
                 grid_cells_out.append(
                     {"tx": row.tx, "ty": row.ty, "decision": row.decision, "layer": row.layer}
@@ -665,8 +652,6 @@ def api_crack_analyze():
     if not strate_files:
         return jsonify({"error": "請至少上傳一份STRATE檔案"}), 400
 
-    machine_type = data.get("machine_type", "DB")
-
     docs = []
     for item in strate_files:
         name = item.get("name", "")
@@ -678,8 +663,8 @@ def api_crack_analyze():
         docs.append((name, substrate))
 
     try:
-        session = build_session(docs, machine_type=machine_type)
-    except (InvalidGeometryError, MissingNotchError, UnknownMachineTypeError, ValueError) as exc:
+        session = build_session(docs)
+    except (InvalidGeometryError, MissingNotchError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 422
 
     marked_keys = [k for k in (data.get("marked_keys") or []) if k in session.by_key]
@@ -692,7 +677,7 @@ def api_crack_analyze():
 
     docs_out = [_crack_doc_payload(i, name, substrate, session.candidates) for i, (name, substrate) in enumerate(docs)]
 
-    rng, notch, points = wafer_scatter(session, focus_wafer_id, marked_keys, machine_type=machine_type)
+    rng, notch, points = wafer_scatter(session, focus_wafer_id, marked_keys)
     scatter = {
         "range": {"min_x": rng.min_x, "max_x": rng.max_x, "min_y": rng.min_y, "max_y": rng.max_y},
         "notch": notch,
@@ -726,7 +711,7 @@ def api_crack_analyze():
             "focus_wafer_id": focus_wafer_id,
             "scatter": scatter,
             "crack_table": crack_table,
-            "csv": _csv_text(crack_csv_rows(session, marked_keys, machine_type=machine_type)),
+            "csv": _csv_text(crack_csv_rows(session, marked_keys)),
         }
     )
 

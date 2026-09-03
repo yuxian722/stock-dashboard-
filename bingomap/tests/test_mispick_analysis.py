@@ -6,8 +6,6 @@ from bingomap.mispick_analysis import (
     DECISION_OK,
     DECISION_REVIEW,
     InvalidGeometryError,
-    UnknownMachineTypeError,
-    UnsupportedNotchError,
     analyze_substrate,
     col_name,
     make_offset,
@@ -32,7 +30,7 @@ def _wafer_map():
     return m
 
 
-def _substrate(die_info, other_layer_die_info=None, notch="270"):
+def _substrate(die_info, other_layer_die_info=None, notch="180"):
     return StrateFile(
         assy_lot="V27NVJH",
         mapping_lot="S7MJS",
@@ -52,14 +50,18 @@ def _die(index, sub_pos, wafer_xy, wafer_ring=WAFER_RING, bin="1"):
     return DieInfo(index=index, wafer_ring=wafer_ring, wafer_xy=wafer_xy, sub_pos=sub_pos, bin=bin)
 
 
-# --- ESEC coordinate math (machine_type="ESEC" — NOT this project's real
-# machine type; DB is, see the tests below and module docstring) ---
+# --- Coordinate math (DB, this project's only/real machine type,
+# confirmed 2026/08/17 against a real DB case the user provided: wafer_xy
+# is the wafer MAP's own raw coordinate directly, no X-flip/rotation at
+# all. See module docstring — ESEC support was removed 2026/09/03 per the
+# user's request. ---
 
 
 def test_offset_lands_on_ng_bin_is_force_delete():
-    # Hand-derived (see PR/commit description): fx=2,fy=3 -> nominal raw-MAP
-    # (2,3)=Good -> machine (1,2) -> +X1 -> machine (2,2) -> raw-MAP (2,2)="7".
-    substrate = _substrate([_die(1, "1:0", "2:3")])
+    # nominal raw-MAP (2,3)=Good -> +X1 -> raw-MAP (3,3)... wait, use a
+    # position landing on the NG bin directly: fx=1,fy=2 -> nominal (1,2)
+    # =Good -> +X1 -> (2,2)="7".
+    substrate = _substrate([_die(1, "1:0", "1:2")])
     result = analyze_substrate(
         substrate,
         _wafer_map(),
@@ -68,7 +70,6 @@ def test_offset_lands_on_ng_bin_is_force_delete():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     assert len(result.rows) == 1
     row = result.rows[0]
@@ -80,9 +81,8 @@ def test_offset_lands_on_ng_bin_is_force_delete():
 
 
 def test_offset_lands_on_review_bin():
-    # fx=1,fy=4 -> nominal raw-MAP (3,4)=Good -> machine (0,3) -> +X1 ->
-    # machine (1,3) -> raw-MAP (3,3)="2" (review).
-    substrate = _substrate([_die(1, "2:0", "1:4")])
+    # nominal (2,3)=Good -> +X1 -> (3,3)="2" (review).
+    substrate = _substrate([_die(1, "0:0", "2:3")])
     result = analyze_substrate(
         substrate,
         _wafer_map(),
@@ -91,16 +91,14 @@ def test_offset_lands_on_review_bin():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     row = result.rows[0]
     assert row.actual_map_xy == (3, 3)
     assert row.decision == DECISION_REVIEW
-    assert row.action_no == 1  # output_xy (0,0) sorts before the force-delete row's (1,0)
 
 
 def test_offset_lands_back_on_good_bin_is_ok():
-    substrate = _substrate([_die(1, "0:0", "1:1")])
+    substrate = _substrate([_die(1, "0:0", "0:0")])
     result = analyze_substrate(
         substrate,
         _wafer_map(),
@@ -109,7 +107,6 @@ def test_offset_lands_back_on_good_bin_is_ok():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     row = result.rows[0]
     assert row.decision == DECISION_OK
@@ -117,7 +114,7 @@ def test_offset_lands_back_on_good_bin_is_ok():
 
 
 def test_nominal_position_not_good_is_dropped_not_an_action():
-    # fx=2,fy=2 -> nominal raw-MAP (2,2)="7", never Good in the first place.
+    # nominal raw-MAP (2,2)="7", never Good in the first place.
     substrate = _substrate([_die(1, "0:2", "2:2")])
     result = analyze_substrate(
         substrate,
@@ -127,7 +124,6 @@ def test_nominal_position_not_good_is_dropped_not_an_action():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     row = result.rows[0]
     assert row.decision == DECISION_NOMINAL_NOT_GOOD
@@ -135,8 +131,8 @@ def test_nominal_position_not_good_is_dropped_not_an_action():
 
 
 def test_action_numbering_ordered_by_output_position():
-    force_delete = _die(1, "1:0", "2:3")
-    review = _die(2, "2:0", "1:4")
+    force_delete = _die(1, "1:0", "1:2")  # nominal (1,2)=Good -> +X1 -> (2,2)="7"
+    review = _die(2, "2:0", "2:3")  # nominal (2,3)=Good -> +X1 -> (3,3)="2"
     substrate = _substrate([force_delete, review])
     result = analyze_substrate(
         substrate,
@@ -146,18 +142,17 @@ def test_action_numbering_ordered_by_output_position():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     by_index = {r.source_die.index: r for r in result.rows}
-    assert by_index[2].output_xy == (0, 0)
     assert by_index[1].output_xy == (1, 0)
-    assert by_index[2].action_no == 1
-    assert by_index[1].action_no == 2
+    assert by_index[2].output_xy == (2, 0)
+    assert by_index[1].action_no == 1
+    assert by_index[2].action_no == 2
 
 
 def test_wrong_wafer_ring_is_excluded_not_classified():
-    matching = _die(1, "0:0", "1:1", wafer_ring=WAFER_RING)
-    other_wafer = _die(2, "1:0", "2:3", wafer_ring="SOME_OTHER_WAFER")
+    matching = _die(1, "0:0", "0:0", wafer_ring=WAFER_RING)
+    other_wafer = _die(2, "1:0", "1:2", wafer_ring="SOME_OTHER_WAFER")
     substrate = _substrate([matching, other_wafer])
     result = analyze_substrate(
         substrate,
@@ -167,7 +162,6 @@ def test_wrong_wafer_ring_is_excluded_not_classified():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     assert len(result.rows) == 1
     assert result.rows[0].source_die.index == 1
@@ -179,7 +173,7 @@ def test_wafer_ring_matching_is_case_and_whitespace_insensitive():
     # Matches the reference tool's own comparison
     # (String(r.strateWaferId||'').trim().toUpperCase()), not a stricter
     # exact match.
-    die = _die(1, "0:0", "1:1", wafer_ring="  testwafer  ")
+    die = _die(1, "0:0", "0:0", wafer_ring="  testwafer  ")
     substrate = _substrate([die])
     result = analyze_substrate(
         substrate,
@@ -189,7 +183,6 @@ def test_wafer_ring_matching_is_case_and_whitespace_insensitive():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     assert len(result.rows) == 1
     assert not result.excluded
@@ -197,8 +190,8 @@ def test_wafer_ring_matching_is_case_and_whitespace_insensitive():
 
 def test_stacked_other_layer_is_processed_too():
     # The reference tool silently ignored OTHER_LAYER; this module doesn't.
-    primary = _die(1, "0:0", "1:1")
-    other = _die(1, "1:0", "2:3")  # same shape as the force-delete case above
+    primary = _die(1, "0:0", "0:0")
+    other = _die(1, "1:0", "1:2")  # same shape as the force-delete case above
     substrate = _substrate([primary], other_layer_die_info=[other])
     result = analyze_substrate(
         substrate,
@@ -208,7 +201,6 @@ def test_stacked_other_layer_is_processed_too():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     layers = {r.layer for r in result.rows}
     assert layers == {"primary", "other"}
@@ -216,23 +208,8 @@ def test_stacked_other_layer_is_processed_too():
     assert other_row.decision == DECISION_FORCE_DELETE
 
 
-def test_esec_rejects_notch_other_than_270():
-    substrate = _substrate([_die(1, "0:0", "1:1")], notch="180")
-    with pytest.raises(UnsupportedNotchError):
-        analyze_substrate(
-            substrate,
-            _wafer_map(),
-            wafer_ring=WAFER_RING,
-            offset=make_offset("X", 1),
-            good_bins={"1"},
-            ng_bins={"7", "9"},
-            review_bins={"2"},
-            machine_type="ESEC",
-        )
-
-
 def test_rejects_block_count_that_does_not_divide_evenly():
-    substrate = _substrate([_die(1, "0:0", "1:1")])
+    substrate = _substrate([_die(1, "0:0", "0:0")])
     substrate.substrate_block = 2  # 3 columns / 2 blocks doesn't divide evenly
     with pytest.raises(InvalidGeometryError):
         analyze_substrate(
@@ -277,7 +254,7 @@ def test_col_name_spreadsheet_style():
 
 
 def test_output_coord_combines_col_name_and_1_based_row():
-    substrate = _substrate([_die(1, "1:0", "2:3")])
+    substrate = _substrate([_die(1, "1:0", "1:2")])
     result = analyze_substrate(
         substrate,
         _wafer_map(),
@@ -286,80 +263,20 @@ def test_output_coord_combines_col_name_and_1_based_row():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="ESEC",
     )
     row = result.rows[0]
     assert row.output_xy == (1, 0)
     assert output_coord(row) == "B1"
 
 
-# --- DB coordinate math (machine_type="DB", the default — this project's
-# real machine type, confirmed 2026/08/17 against a real DB case the user
-# provided: wafer_xy is the wafer MAP's own raw coordinate directly, no
-# X-flip/rotation at all — unlike ESEC above. See module docstring. ---
+def test_output_position_is_identity():
+    assert output_position(0, 0) == (0, 0)
+    assert output_position(3, 5) == (3, 5)
 
 
-def test_db_is_the_default_machine_type():
-    # Omitting machine_type entirely behaves exactly like machine_type="DB".
-    substrate = _substrate([_die(1, "0:0", "1:2")], notch="180")  # nominal (1,2)="1" Good
-    result = analyze_substrate(
-        substrate,
-        _wafer_map(),
-        wafer_ring=WAFER_RING,
-        offset=make_offset("X", 1),
-        good_bins={"1"},
-        ng_bins={"7", "9"},
-        review_bins={"2"},
-    )
-    row = result.rows[0]
-    assert row.nominal_map_xy == (1, 2)  # identity, no X-flip
-    assert row.actual_map_xy == (2, 2)  # offset added directly, no machine-frame rotation
-    assert row.decision == DECISION_FORCE_DELETE
-
-
-def test_db_offset_lands_on_review_bin():
-    substrate = _substrate([_die(1, "0:0", "2:3")], notch="180")  # nominal (2,3)="1" Good
-    result = analyze_substrate(
-        substrate,
-        _wafer_map(),
-        wafer_ring=WAFER_RING,
-        offset=make_offset("X", 1),
-        good_bins={"1"},
-        ng_bins={"7", "9"},
-        review_bins={"2"},
-        machine_type="DB",
-    )
-    row = result.rows[0]
-    assert row.actual_map_xy == (3, 3)
-    assert row.decision == DECISION_REVIEW
-
-
-def test_db_offset_lands_back_on_good_bin_is_ok():
-    substrate = _substrate([_die(1, "0:0", "0:0")], notch="180")
-    result = analyze_substrate(
-        substrate,
-        _wafer_map(),
-        wafer_ring=WAFER_RING,
-        offset=make_offset("X", 1),
-        good_bins={"1"},
-        ng_bins={"7", "9"},
-        review_bins={"2"},
-        machine_type="DB",
-    )
-    row = result.rows[0]
-    assert row.decision == DECISION_OK
-    assert row.action_no is None
-
-
-def test_db_output_position_is_identity_not_flipped():
-    # substrate_column=3: DB keeps tx as-is; ESEC would flip 0 -> 2.
-    assert output_position(0, 0, substrate_column=3, machine_type="DB") == (0, 0)
-    assert output_position(0, 0, substrate_column=3, machine_type="ESEC") == (2, 0)
-
-
-def test_db_accepts_any_notch_unlike_esec():
+def test_accepts_any_notch():
     # The real DB sample the user provided had NOTCH=180 — DB has no
-    # NOTCH restriction at all (unlike ESEC's NOTCH=270 lock).
+    # NOTCH restriction at all.
     for notch in ("180", "270", "0", "90", ""):
         substrate = _substrate([_die(1, "0:0", "0:0")], notch=notch)
         result = analyze_substrate(
@@ -370,21 +287,5 @@ def test_db_accepts_any_notch_unlike_esec():
             good_bins={"1"},
             ng_bins={"7", "9"},
             review_bins={"2"},
-            machine_type="DB",
         )
         assert len(result.rows) == 1
-
-
-def test_unknown_machine_type_is_rejected():
-    substrate = _substrate([_die(1, "0:0", "0:0")])
-    with pytest.raises(UnknownMachineTypeError):
-        analyze_substrate(
-            substrate,
-            _wafer_map(),
-            wafer_ring=WAFER_RING,
-            offset=make_offset("X", 1),
-            good_bins={"1"},
-            ng_bins={"7", "9"},
-            review_bins={"2"},
-            machine_type="CM700",
-        )

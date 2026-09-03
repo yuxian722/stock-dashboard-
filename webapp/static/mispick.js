@@ -44,7 +44,7 @@ let lastWaferData = null; // last {columns, rows, lot_no, wafer_id, cells} passe
 // 座標文字也是算過的這組)，畫格子的順序永遠固定(欄0在右邊、列0在最上
 // 面)，這樣「0,0永遠在右上角」是結構上保證成立。這裡的預覽圖純粹是給
 // 使用者「看一下這片wafer的bin圖、複製座標文字用」的參考功能，實際誤吸
-// 偏移分析(/api/mispick/analyze)完全在後端用DB/ESEC既有公式計算，不會
+// 偏移分析(/api/mispick/analyze)完全在後端用固定的DB公式計算，不會
 // 讀取這裡的角度設定，所以角度調整只影響這個預覽/複製文字，不影響分析
 // 結果正確性。
 let mpAngle = 0; // 0 | 90 | 180 | 270
@@ -630,7 +630,6 @@ async function analyze() {
 
   const payload = {
     wafer_ring: document.getElementById("mp_wafer_ring").value,
-    machine_type: document.getElementById("mp_machine_type").value,
     offset_axis: document.getElementById("mp_offset_axis").value,
     offset_value: document.getElementById("mp_offset_value").value,
     good_bins: document.getElementById("mp_good_bins").value,
@@ -676,11 +675,6 @@ function downloadCsv() {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-function updateEsecWarning() {
-  const isEsec = document.getElementById("mp_machine_type").value === "ESEC";
-  document.getElementById("mp-esec-warning").style.display = isEsec ? "" : "none";
 }
 
 function updateOffsetDisplay() {
@@ -800,7 +794,6 @@ document.getElementById("mp-btn-copy-wafer-text").addEventListener("click", asyn
 
 document.getElementById("mp-btn-analyze").addEventListener("click", analyze);
 document.getElementById("mp-btn-download-csv").addEventListener("click", downloadCsv);
-document.getElementById("mp_machine_type").addEventListener("change", updateEsecWarning);
 // 2026/08/27新增：改軸向/改偏移量的當下就要讓下面「套用目前偏移後的T點」
 // 那張預覽圖跟著重畫(不用等按「分析」)，跟T點X/Y欄位本來就有的即時重畫是
 // 同一個道理(見下面mp-t-point-x/y的input監聽器)。
@@ -814,7 +807,6 @@ document.getElementById("mp-btn-nudge-up").addEventListener("click", () => nudge
 document.getElementById("mp-btn-nudge-down").addEventListener("click", () => nudgeOffset("Y", 1));
 document.getElementById("mp-btn-nudge-left").addEventListener("click", () => nudgeOffset("X", -1));
 document.getElementById("mp-btn-nudge-right").addEventListener("click", () => nudgeOffset("X", 1));
-updateEsecWarning();
 updateOffsetDisplay();
 
 // ---- Persistence (2026/08/19 ask: "每個分頁在切換的時候資料不要不見" —
@@ -826,7 +818,7 @@ updateOffsetDisplay();
 const MP_STORAGE_KEY = "bingomap_mispick_state";
 const MP_FIELD_IDS = [
   "mp_frm_lot_no", "mp_frm_barcode_id", "mp_frm_path", "mp_wafer_ring",
-  "mp_machine_type", "mp_offset_axis", "mp_offset_value",
+  "mp_offset_axis", "mp_offset_value",
   "mp_good_bins", "mp_ng_bins", "mp_review_bins",
   "mp-t-point-x", "mp-t-point-y",
   "mp-visual-ref-x", "mp-visual-ref-y",
@@ -861,7 +853,6 @@ function restoreState() {
   for (const id of MP_FIELD_IDS) {
     if (saved.fields && saved.fields[id] !== undefined) document.getElementById(id).value = saved.fields[id];
   }
-  updateEsecWarning();
   updateOffsetDisplay();
 
   if (!saved.strateFiles || !saved.strateFiles.length) return;
@@ -872,7 +863,7 @@ function restoreState() {
 for (const id of MP_FIELD_IDS) {
   const el = document.getElementById(id);
   el.addEventListener("input", saveState);
-  el.addEventListener("change", saveState); // belt-and-suspenders for <select> (machine_type/offset_axis)
+  el.addEventListener("change", saveState); // belt-and-suspenders for <select> (offset_axis)
 }
 
 // T點 fields need a live re-render (not just a save) on every keystroke,

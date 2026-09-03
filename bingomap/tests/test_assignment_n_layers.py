@@ -48,7 +48,7 @@ def _layer_picks():
 
 
 def test_assign_layers_reproduces_real_8layer_sample_structure():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     filled = assign_layers(
         blank,
         _layer_picks(),
@@ -77,7 +77,7 @@ def test_assign_layers_reproduces_real_8layer_sample_structure():
 
 
 def test_assign_layers_writes_a_valid_file_that_round_trips():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     filled = assign_layers(
         blank, _layer_picks(), start_time=datetime(2026, 7, 2, 20, 26, 40), expected_qty=7,
     )
@@ -90,7 +90,7 @@ def test_assign_layers_writes_a_valid_file_that_round_trips():
 
 
 def test_assign_layers_checks_every_layer_independently():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     picks = _layer_picks()
     picks[3] = picks[3][:5]  # layer 4 short by 2
     try:
@@ -101,7 +101,7 @@ def test_assign_layers_checks_every_layer_independently():
 
 
 def test_assign_layers_rejects_empty_layer_list():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     try:
         assign_layers(blank, [], start_time=datetime(2026, 7, 2, 20, 26, 40))
         assert False, "expected ValueError"
@@ -112,7 +112,7 @@ def test_assign_layers_rejects_empty_layer_list():
 def test_assign_layers_with_a_single_layer_matches_assign_dies_shape():
     # N=1 degenerates to "no OTHER_LAYER section at all" — same as
     # assign_dies()'s plain single-layer output.
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     picks = _layer_picks()[:1]
     filled = assign_layers(blank, picks, start_time=datetime(2026, 7, 2, 20, 26, 40), expected_qty=7)
     assert filled.other_layer_die_info == []

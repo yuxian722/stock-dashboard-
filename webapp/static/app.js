@@ -481,13 +481,12 @@ function headerPayload() {
     notch: document.getElementById("notch").value,
     ref: document.getElementById("ref").value,
     convention: document.getElementById("convention").value,
-    machine_type: document.getElementById("machine_type").value,
   };
 }
 
 async function loadBlank() {
-  // Explicitly regenerating via convention/machine_type supersedes any
-  // previously loaded template's position order — and any "不上片" marks,
+  // Explicitly regenerating via convention supersedes any previously
+  // loaded template's position order — and any "不上片" marks,
   // since they're tied to the old position list which may no longer apply.
   usingTemplate = false;
   skippedPositions.clear();
@@ -608,7 +607,7 @@ async function loadTemplate(text) {
   status.textContent =
     `已載入範本：共 ${data.total_qty} 個基板位置${layerNote}${waferNote}。` +
     `基板位置順序沿用範本原本的順序。可以直接調整基板流水號/時間後產生，或繼續編輯座標。${tooManyWafersNote}`;
-  document.getElementById("blank-status").textContent = "（目前使用範本的基板位置順序，不需要再按「產生空白骨架」——除非要改用DB/ESEC規則重新產生）";
+  document.getElementById("blank-status").textContent = "（目前使用範本的基板位置順序，不需要再按「產生空白骨架」——除非要改用編號慣例重新產生）";
   setStepFlow(4, { done: [1, 2, 3] });
 }
 
@@ -1417,7 +1416,7 @@ function renderAll() {
 const APP_STORAGE_KEY = "bingomap_main_state";
 const APP_FIELD_IDS = [
   "assy_lot", "mapping_lot", "eqpid", "oper", "substrate_id", "substrate_row",
-  "substrate_column", "substrate_block", "notch", "ref", "convention", "machine_type",
+  "substrate_column", "substrate_block", "notch", "ref", "convention",
   "wafer_ring", "start_time", "interval_seconds", "t-point-x", "t-point-y",
   "visual-ref-x", "visual-ref-y",
 ];
@@ -1819,7 +1818,7 @@ async function generateStrate() {
   }
   if (usingTemplate) {
     // Send the template's own position order verbatim so the backend
-    // bypasses convention/machine_type re-derivation entirely.
+    // bypasses convention re-derivation entirely.
     payload.template_positions = substratePositions;
   }
 
@@ -1947,7 +1946,7 @@ for (const id of APP_FIELD_IDS) {
   const el = document.getElementById(id);
   if (!el) continue;
   el.addEventListener("input", saveState);
-  el.addEventListener("change", saveState); // belt-and-suspenders for <select> (convention/machine_type)
+  el.addEventListener("change", saveState); // belt-and-suspenders for <select> (convention)
 }
 
 restoreState();

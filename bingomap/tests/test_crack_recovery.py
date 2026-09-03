@@ -40,46 +40,16 @@ def _substrate(die_info, other_layer_die_info=None, notch="270", substrate_id="Z
 
 
 # --- local_view geometry, hand-derived (range fx:1..3, fy:5..7) ---
-# machine_type="ESEC" explicitly below since these test the reference
-# tool's rotation formulas — NOT this project's real machine type. See the
-# DB section further down.
 
 RNG = WaferPoolRange(min_x=1, max_x=3, min_y=5, max_y=7)
 
 
-def test_local_view_notch_270():
-    assert local_view(2, 6, RNG, 270, machine_type="ESEC") == (1, 1)
-    assert local_view(1, 5, RNG, 270, machine_type="ESEC") == (2, 2)
-    assert local_view(3, 7, RNG, 270, machine_type="ESEC") == (0, 0)
-
-
-def test_local_view_notch_0_is_plain_xflip():
-    assert local_view(1, 5, RNG, 0, machine_type="ESEC") == (2, 0)
-    assert local_view(3, 7, RNG, 0, machine_type="ESEC") == (0, 2)
-
-
-def test_local_view_notch_180():
-    assert local_view(1, 5, RNG, 180, machine_type="ESEC") == (0, 2)
-    assert local_view(3, 7, RNG, 180, machine_type="ESEC") == (2, 0)
-
-
-def test_local_view_notch_90():
-    assert local_view(1, 5, RNG, 90, machine_type="ESEC") == (0, 0)
-    assert local_view(3, 7, RNG, 90, machine_type="ESEC") == (2, 2)
-
-
-def test_local_view_unrecognized_notch_falls_back_to_xflip_like_0deg():
-    # The reference tool's v78WaferView only special-cases 90/180/270;
-    # anything else (e.g. 45) takes the same branch as notch=0.
-    assert local_view(1, 5, RNG, 45, machine_type="ESEC") == local_view(1, 5, RNG, 0, machine_type="ESEC")
-
-
-def test_local_view_db_is_identity_regardless_of_notch():
-    # DB (the default): plain 0-based normalization, no flip, no rotation,
-    # for ANY notch — unlike ESEC above. See module docstring.
-    for notch in (0, 90, 180, 270, 45):
-        assert local_view(1, 5, RNG, notch) == (0, 0)
-        assert local_view(3, 7, RNG, notch) == (2, 2)
+def test_local_view_is_plain_0_based_normalization():
+    # Plain 0-based normalization, no flip, no rotation — see module
+    # docstring. notch itself doesn't factor into local_view() at all
+    # (ESEC support, which did vary by notch, was removed 2026/09/03).
+    assert local_view(1, 5, RNG) == (0, 0)
+    assert local_view(3, 7, RNG) == (2, 2)
 
 
 def test_notch_degrees_extracts_first_integer_tolerantly():
@@ -191,22 +161,20 @@ def test_wafer_pool_range_and_notch_from_first_row():
 
 
 def test_crack_csv_rows_ordered_by_click_order_not_position():
-    # machine_type="ESEC" here for the local_x/local_y rotation math this
-    # test hand-derives — the DB section further down covers the default.
-    first_clicked = _die(1, "1:0", "3:7")  # will map to local (0,0) under notch270
-    second_clicked = _die(2, "0:0", "1:5")  # will map to local (2,2) under notch270
+    first_clicked = _die(1, "1:0", "3:7")  # local (fx-min_x, fy-min_y) = (2,2)
+    second_clicked = _die(2, "0:0", "1:5")  # local (0,0)
     doc = ("a.strate", _substrate([first_clicked, second_clicked], notch="270"))
-    session = build_session([doc], machine_type="ESEC")
+    session = build_session([doc])
     keys_by_index = {c.source_die.index: c.key for c in session.candidates}
     marked_keys = [keys_by_index[1], keys_by_index[2]]  # click order: die 1 then die 2
 
-    rows = crack_csv_rows(session, marked_keys, machine_type="ESEC")
-    assert rows[0] == crack_csv_rows(session, [], machine_type="ESEC")[0]  # header always present
+    rows = crack_csv_rows(session, marked_keys)
+    assert rows[0] == crack_csv_rows(session, [])[0]  # header always present
     assert rows[1][0] == "C1"
     assert rows[1][9] == WAFER_RING  # complete_wafer_id column
-    assert rows[1][12:14] == [0, 0]  # local_x, local_y for die 1
+    assert rows[1][12:14] == [2, 2]  # local_x, local_y for die 1
     assert rows[2][0] == "C2"
-    assert rows[2][12:14] == [2, 2]  # local_x, local_y for die 2
+    assert rows[2][12:14] == [0, 0]  # local_x, local_y for die 2
     assert rows[1][15] == "1"  # crack_background_bin always "1"
     assert rows[1][16] == "270_RIGHT"
     assert rows[1][17] == "IMPORTED_LOCAL_ONLY"
@@ -236,10 +204,10 @@ def test_wafer_scatter_dedups_by_fxfy_and_flags_marked_points():
     dup_of_a = _die(1, "0:0", "3:7", wafer_ring=WAFER_RING)
     doc1 = ("a.strate", _substrate([a, b], notch="270", substrate_id="Z1"))
     doc2 = ("b.strate", _substrate([dup_of_a], notch="270", substrate_id="Z2"))
-    session = build_session([doc1, doc2], machine_type="ESEC")
+    session = build_session([doc1, doc2])
 
     a_key = next(c.key for c in session.candidates if c.doc_index == 0 and c.source_die.index == 1)
-    rng, notch, points = wafer_scatter(session, WAFER_RING, marked_keys=[a_key], machine_type="ESEC")
+    rng, notch, points = wafer_scatter(session, WAFER_RING, marked_keys=[a_key])
 
     assert (rng.min_x, rng.max_x, rng.min_y, rng.max_y) == (1, 3, 5, 7)
     assert notch == 270
@@ -247,20 +215,7 @@ def test_wafer_scatter_dedups_by_fxfy_and_flags_marked_points():
     marked = [p for p in points if p.is_crack]
     assert len(marked) == 1
     assert marked[0].crack_no == 1
-    assert marked[0].x == 0 and marked[0].y == 0  # matches local_view(3,7,RNG,270,"ESEC")
-
-
-def test_wafer_scatter_db_default_matches_identity_local_view():
-    a = _die(1, "0:0", "3:7")
-    b = _die(2, "1:0", "1:5")
-    doc = ("a.strate", _substrate([a, b], notch="270", substrate_id="Z1"))
-    session = build_session([doc])  # default machine_type="DB"
-
-    a_key = next(c.key for c in session.candidates if c.source_die.index == 1)
-    rng, notch, points = wafer_scatter(session, WAFER_RING, marked_keys=[a_key])
-    marked = next(p for p in points if p.is_crack)
-    # identity: fx=3,fy=7 minus range min (1,5) -> (2,2)
-    assert (marked.x, marked.y) == (2, 2)
+    assert marked[0].x == 2 and marked[0].y == 2  # identity: fx=3,fy=7 minus range min (1,5)
 
 
 def test_wafer_scatter_unknown_wafer_id_raises():

@@ -66,15 +66,8 @@ def test_index_page_loads(client):
     assert b"BINGO MAP" in res.data
 
 
-def test_api_blank_esec_machine_type_starts_at_last_position(client):
-    res = client.post("/api/blank", json={**BASE_HEADER, "machine_type": "ESEC"})
-    assert res.status_code == 200
-    positions = res.get_json()["positions"]
-    assert positions[0] == "19:3"  # COLUMN-1:ROW-1 for ROW=4, COLUMN=20
-
-
-def test_api_blank_defaults_to_db_machine_type(client):
-    res = client.post("/api/blank", json=BASE_HEADER)  # no machine_type key at all
+def test_api_blank_walk_order_starts_at_first_position(client):
+    res = client.post("/api/blank", json=BASE_HEADER)
     positions = res.get_json()["positions"]
     assert positions[0] == "0:0"
 
@@ -450,7 +443,7 @@ def test_api_parse_strate_rejects_empty_text(client):
     assert res.status_code == 400
 
 
-def test_api_generate_with_template_positions_bypasses_machine_type(client):
+def test_api_generate_with_template_positions_bypasses_convention(client):
     parsed = client.post("/api/parse_strate", json={"text": _read_real_strate_text()}).get_json()
     payload = {
         "assy_lot": parsed["assy_lot"],
@@ -463,8 +456,8 @@ def test_api_generate_with_template_positions_bypasses_machine_type(client):
         "substrate_block": parsed["substrate_block"],
         "notch": parsed["notch"],
         "ref": parsed["ref"],
-        # No convention/machine_type at all — template_positions must win
-        # regardless, proving this path never touches generate_blank().
+        # No convention at all — template_positions must win regardless,
+        # proving this path never touches generate_blank().
         "wafer_ring": parsed["wafer_ring"],
         "start_time": "2026-08-14T09:00:00",
         "interval_seconds": 2,
@@ -477,7 +470,7 @@ def test_api_generate_with_template_positions_bypasses_machine_type(client):
     assert "SUBSTRATE_ID=Z999999Z" in text
     assert "TOTAL_BOND_DIE_QTY=75" in text
     # exact same position order as the original real file, not a
-    # DB/ESEC-regenerated one
+    # freshly regenerated one
     assert "0:0" in text
     assert "19:3" in text
 

@@ -80,70 +80,11 @@ def test_mispick_page_loads(client):
     assert "誤吸".encode() in res.data
 
 
-def test_analyze_esec_classifies_force_delete_review_and_ok(client, frm_root):
-    # machine_type="ESEC" — the reference-tool math, not this project's
-    # real machine type. See test_analyze_db_* below for the default.
-    dies = [
-        _die(1, "0:0", "1:1"),  # -> OK (see test_mispick_analysis.py derivation)
-        _die(2, "1:0", "2:3"),  # -> FORCE_DELETE
-        _die(3, "2:0", "1:4"),  # -> REVIEW
-    ]
-    payload = {
-        "wafer_ring": WAFER_RING,
-        "offset_axis": "X",
-        "offset_value": 1,
-        "good_bins": "1",
-        "ng_bins": "7,9",
-        "review_bins": "2",
-        "machine_type": "ESEC",
-        "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
-        "strate_files": [{"name": "test.strate", "text": _strate_text(dies)}],
-    }
-    res = client.post("/api/mispick/analyze", json=payload)
-    assert res.status_code == 200
-    data = res.get_json()
-    assert data["wafer"]["columns"] == 5
-    assert data["wafer"]["rows"] == 5
-    assert len(data["substrates"]) == 1
-    sub = data["substrates"][0]
-    assert sub["error"] is None
-    assert sub["summary"] == {"force_delete": 1, "review": 1, "anomaly": 0, "ok": 1, "other": 0}
-    assert len(sub["action_rows"]) == 2
-    assert sub["action_rows"][0]["decision"] == "REVIEW_ACTUAL_BIN_REVIEW"
-    assert sub["action_rows"][1]["decision"] == "FORCE_DELETE_ACTUAL_BIN_NG"
-    assert "FORCE_DELETE_ACTUAL_BIN_NG" in data["csv"]
-    # 2026/09/02: action_rows must expose the raw source wafer coordinate and
-    # its pre-shift bin — the results table's own display, not just the CSV
-    # export — so users can verify a decision without cross-referencing the
-    # (separately rotatable) wafer preview grid's coordinate space.
-    assert sub["action_rows"][0]["fx"] == 1  # die 3: wafer_xy "1:4"
-    assert sub["action_rows"][0]["fy"] == 4
-    assert sub["action_rows"][0]["nominal_bin"] is not None
-    assert sub["action_rows"][1]["fx"] == 2  # die 2: wafer_xy "2:3"
-    assert sub["action_rows"][1]["fy"] == 3
-
-
-def test_analyze_esec_rejects_notch_other_than_270_per_substrate(client, frm_root):
-    payload = {
-        "wafer_ring": WAFER_RING,
-        "offset_axis": "X",
-        "offset_value": 1,
-        "machine_type": "ESEC",
-        "frm": {"lot_no": "8P065800A1", "barcode_id": "T3DA62", "frm_path": frm_root},
-        "strate_files": [{"name": "bad_notch.strate", "text": _strate_text([_die(1, "0:0", "1:1")], notch="180")}],
-    }
-    res = client.post("/api/mispick/analyze", json=payload)
-    assert res.status_code == 200
-    sub = res.get_json()["substrates"][0]
-    assert sub["error"] is not None
-    assert "NOTCH" in sub["error"]
-
-
 def test_analyze_db_is_default_and_classifies_correctly(client, frm_root):
-    # DB (default, no machine_type field at all): wafer_xy is the raw
-    # wafer MAP coordinate directly (identity), no X-flip/rotation. Same
-    # hand-derivation as bingomap/tests/test_mispick_analysis.py's DB
-    # section, adapted to this endpoint's 3x3 substrate.
+    # wafer_xy is the raw wafer MAP coordinate directly (identity), no
+    # X-flip/rotation. Same hand-derivation as
+    # bingomap/tests/test_mispick_analysis.py's coordinate-math section,
+    # adapted to this endpoint's 3x3 substrate.
     dies = [
         _die(1, "0:0", "0:0"),  # -> OK
         _die(2, "1:0", "1:2"),  # -> FORCE_DELETE (nominal (1,2)=Good, +X1 -> (2,2)="7")

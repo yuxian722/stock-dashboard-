@@ -56,8 +56,8 @@ def test_real_db_wafer_xy_matches_wafercoordinate_tool_picked_list():
 
 
 def test_real_db_nominal_transform_is_identity():
-    # The core claim this file exists to prove: for machine_type="DB",
-    # STRATE wafer_xy IS the wafer MAP's own raw coordinate directly, with
+    # The core claim this file exists to prove: STRATE wafer_xy IS the
+    # wafer MAP's own raw coordinate directly, with
     # no X-flip/rotation. Build a wafer map straight from this file's own
     # wafer_xy values (all Good, since GOOD_DIE == TOTAL_BOND_DIE_QTY ==
     # 308, matching the Bingo Map Query report's Fail Qty=0 for this same
@@ -77,7 +77,6 @@ def test_real_db_nominal_transform_is_identity():
         good_bins={"1"},
         ng_bins={"7", "9"},
         review_bins={"2"},
-        machine_type="DB",
     )
     assert len(result.rows) == 308
     for row, die in zip(result.rows, strate.die_info):

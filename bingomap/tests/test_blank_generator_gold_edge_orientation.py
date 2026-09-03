@@ -14,8 +14,8 @@ Pass Qty=299/Fail Qty=9 for the same Strip ID) to have been processed
 gold-edge-down that day.
 
 The decisive check: the real DIE_INFO's sub_pos walk ORDER exactly
-matches generate_blank(machine_type="DB", convention="EPOXY")'s own
-generated order, position-for-position (byte-for-byte), once the 9 real
+matches generate_blank(convention="EPOXY")'s own generated order,
+position-for-position (byte-for-byte), once the 9 real
 gaps (unfilled/NG positions — simply absent rows, per this project's
 established "unloaded positions are omitted, not written bin=0" rule)
 are removed from the predicted sequence. This alone answers the
@@ -103,7 +103,7 @@ def test_generate_blank_db_epoxy_already_matches_real_gold_edge_down_walk_order(
         assy_lot="V32AWCW01", mapping_lot="", eqpid="BAA08", oper="2070",
         substrate_id="Z26306101253", substrate_row=11, substrate_column=28,
         substrate_block=1, notch="180", ref="",
-        convention="EPOXY", machine_type="DB",
+        convention="EPOXY",
     )
     predicted_positions = [
         p for p in (d.sub_pos for d in blank.die_info)

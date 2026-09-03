@@ -26,9 +26,8 @@
     <h2>複製既有 .strate 為範本（選用）</h2>
     <div class="notice">
       如果之前已經產生過類似的檔案，可以直接載入舊檔案當範本：下面「基本資訊」跟「已選座標」都會自動帶入，
-      不用重新輸入或重新點一次座標。基板位置順序會照舊檔案原本記錄的順序，<b>不會</b>重新用DB/ESEC規則產生——
-      確保跟原檔案完全一致，不會有機型抄錯導致順序跑掉的風險。載入後可以直接改基板流水號/時間就產生，或繼續
-      調整座標。
+      不用重新輸入或重新點一次座標。基板位置順序會照舊檔案原本記錄的順序，<b>不會</b>重新產生——
+      確保跟原檔案完全一致。載入後可以直接改基板流水號/時間就產生，或繼續調整座標。
     </div>
     <label>選擇 .strate 檔案 <input type="file" id="template-file" accept=".strate,.txt"></label>
     <label style="margin-top:0.6rem">或貼上檔案內容
@@ -68,12 +67,6 @@
         <select id="convention">
           <option value="EPOXY">EPOXY (從0:0起)</option>
           <option value="LOC">LOC (從1:1起)</option>
-        </select>
-      </label>
-      <label>機型
-        <select id="machine_type">
-          <option value="DB">DB (從第一格起，順序遞增)</option>
-          <option value="ESEC">ESEC 2100SD (從最後一格起，蛇形反向)</option>
         </select>
       </label>
       <label>來源Wafer Barcode <input id="wafer_ring" value="A27572"></label>

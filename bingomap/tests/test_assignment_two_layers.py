@@ -46,7 +46,7 @@ def _picks(rows):
 
 
 def test_assign_two_layers_matches_real_sample_structure():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     filled = assign_two_layers(
         blank,
         _picks(PRIMARY_ROWS),
@@ -69,7 +69,7 @@ def test_assign_two_layers_matches_real_sample_structure():
 
 
 def test_assign_two_layers_writes_valid_two_section_file():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     filled = assign_two_layers(
         blank, _picks(PRIMARY_ROWS), _picks(OTHER_ROWS),
         start_time=datetime(2026, 8, 12, 16, 15, 21), expected_qty=3,
@@ -85,7 +85,7 @@ def test_assign_two_layers_writes_valid_two_section_file():
 
 
 def test_assign_two_layers_checks_primary_count_independently():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     try:
         assign_two_layers(
             blank, _picks(PRIMARY_ROWS[:2]), _picks(OTHER_ROWS),
@@ -97,7 +97,7 @@ def test_assign_two_layers_checks_primary_count_independently():
 
 
 def test_assign_two_layers_checks_other_count_independently():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     try:
         assign_two_layers(
             blank, _picks(PRIMARY_ROWS), _picks(OTHER_ROWS[:1]),
@@ -109,7 +109,7 @@ def test_assign_two_layers_checks_other_count_independently():
 
 
 def test_assign_two_layers_default_layer_labels():
-    blank = generate_blank(**BASE_KWARGS, convention="EPOXY", machine_type="DB")
+    blank = generate_blank(**BASE_KWARGS, convention="EPOXY")
     filled = assign_two_layers(
         blank, _picks(PRIMARY_ROWS), _picks(OTHER_ROWS),
         start_time=datetime(2026, 8, 12, 16, 15, 21), expected_qty=3,

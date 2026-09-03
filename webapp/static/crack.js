@@ -32,7 +32,6 @@ async function analyze() {
     strate_files: strateFiles,
     marked_keys: markedKeys,
     focus_wafer_id: focusWaferId,
-    machine_type: document.getElementById("ck_machine_type").value,
   };
   const res = await fetch("/api/crack/analyze", {
     method: "POST",
@@ -267,16 +266,6 @@ document.getElementById("ck-strip-grid").addEventListener("click", (e) => {
 });
 document.getElementById("ck-btn-download-csv").addEventListener("click", downloadCsv);
 
-function updateEsecWarning() {
-  const isEsec = document.getElementById("ck_machine_type").value === "ESEC";
-  document.getElementById("ck-esec-warning").style.display = isEsec ? "" : "none";
-}
-document.getElementById("ck_machine_type").addEventListener("change", () => {
-  updateEsecWarning();
-  if (strateFiles.length) analyze(); // re-derive everything under the new machine_type
-});
-updateEsecWarning();
-
 // ---- Persistence (2026/08/19 ask: "每個分頁在切換的時候資料不要不見" —
 // only STRATE補檔/SECS格式化參數頁 had this so far; extending the same
 // localStorage convention here). .strate files are plain text (unlike the
@@ -295,7 +284,6 @@ function saveState() {
         markedKeys,
         focusWaferId,
         currentDocIndex,
-        machineType: document.getElementById("ck_machine_type").value,
       })
     );
   } catch (err) {
@@ -321,13 +309,6 @@ function restoreState() {
     return;
   }
 
-  // Machine type is restored unconditionally, even with no STRATE files
-  // loaded yet — see app.js/mispick.js's identical fix (2026/08/19:
-  // changing this select before ever loading files didn't call analyze(),
-  // so saveState() never ran, silently losing the choice on tab switch).
-  if (saved.machineType) document.getElementById("ck_machine_type").value = saved.machineType;
-  updateEsecWarning();
-
   if (!saved.strateFiles || !saved.strateFiles.length) return;
   strateFiles = saved.strateFiles;
   markedKeys = saved.markedKeys || [];
@@ -335,7 +316,5 @@ function restoreState() {
   currentDocIndex = saved.currentDocIndex || 0;
   analyze();
 }
-
-document.getElementById("ck_machine_type").addEventListener("change", saveState);
 
 restoreState();
