@@ -1587,8 +1587,13 @@ function wireGridDragEvents(containerId, hoverStatusId, tooltipId, panelIndex) {
   });
   container.addEventListener("mouseover", (e) => {
     if (!e.target.classList.contains("wafer-cell")) return;
-    const x = e.target.dataset.x, y = e.target.dataset.y;
+    // 2026/09/03修正：這裡本來顯示e.target.dataset.x/y，那是「目前這個角度/
+    // 鏡像下的畫面座標」，角度=0時剛好等於原始wafer座標，一轉角度就不是了
+    // ——跟mousedown/mouseup(上面2026/09/02那則已經修過的同一種bug)一樣的
+    // 問題，只是這裡漏掉了，導致滑鼠移到某一格，顯示的座標其實是另一格的
+    // (旋轉後)畫面位置，不是滑鼠真正指到的那顆die的wafer座標。
     const rawXY = rawXYFromDataset(e.target);
+    const { x, y } = rawXY;
     const ref = isReferencedAt(panelIndex, rawXY.x, rawXY.y);
     const refPointNote = e.target.dataset.refPoint ? "（T點）" : "";
     const label = ref && !e.target.classList.contains("picked") && !e.target.classList.contains("staged")
