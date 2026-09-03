@@ -207,14 +207,13 @@ def api_parse_strate():
 
 
 def _frm_cells_json(frm) -> list[dict]:
-    """Cells for the frontend, using the corrected `.strate` col:row x/y
-    (see frm_to_wafer_bin_map()'s docstring for the full swap evidence) —
-    NOT frm.die_map's raw (row,col)-ordered keys. Safe to do independently
-    of the "columns"/"rows" JSON fields staying unswapped (T點-preserving,
-    see api_frm()'s comment): the frontend (webapp/static/app.js's
-    waferCellsFromApiCells()) derives the rendered grid's bounds from the
-    cells' own min/max x/y, not from "columns"/"rows" — those two fields
-    are only ever read for the T點 formula."""
+    """Cells for the frontend, in the `.strate` col:row x/y convention (see
+    frm_to_wafer_bin_map()'s docstring — 2026/09/03 reverted an axis swap
+    here that had only ever been validated for ESEC/NOTCH=270 data and was
+    wrong for this project's real DB machine type). The frontend
+    (webapp/static/app.js's waferCellsFromApiCells()) derives the rendered
+    grid's bounds from the cells' own min/max x/y, not from the "columns"/
+    "rows" JSON fields — those two are only ever read for the T點 formula."""
     wafer_map = frm_to_wafer_bin_map(frm)
     return [{"x": x, "y": y, "bin": bin_kind} for (x, y), bin_kind in wafer_map.cells.items()]
 
@@ -265,13 +264,12 @@ def api_frm():
 
     return jsonify(
         {
-            # 2026/08/27：columns/rows刻意保持用frm.col/frm.row(不對調)——
-            # T點的換算公式(webapp/static/app.js的convertVisualRefPoint())
-            # 是拿這兩個值算出來、且已經用真實資料驗證過(T點X=columns-Ref.Y)，
-            # 貿然對調會讓那個已驗證過的公式跑掉。cells則必須對調，是真正
-            # 影響bin正確性的部分，見_frm_cells_json()的完整說明。這兩個
-            # 欄位「column/row軸向」目前不完全一致是已知、刻意的取捨，不是
-            # 疏漏——之後有空要處理T點公式的話再一起訂正。
+            # columns/rows用frm.col/frm.row——T點的換算公式(webapp/static/
+            # app.js的convertVisualRefPoint())是拿這兩個值算出來、且已經用
+            # 真實資料驗證過(T點X=columns-Ref.Y)。2026/09/03撤銷了cells的
+            # x/y對調(見_frm_cells_json()/frm_to_wafer_bin_map()的完整說明)
+            # 之後，這兩個欄位現在跟cells用的是同一套(col,row)軸向，不再是
+            # 刻意不一致的取捨。
             "columns": frm.col,
             "rows": frm.row,
             "lot_no": frm.lot_no,

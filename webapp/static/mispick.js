@@ -190,18 +190,13 @@ function convertVisualRefPoint() {
     document.getElementById("mp-preview-status").textContent = "請先填目視檢查顯示的Ref. Point X跟Y";
     return;
   }
-  // 2026/08/31更正：這條公式(columns-Ref.Y / rows+Ref.X)是2026/08/19用
-  // 真實資料驗證過的，但那次驗證是在frm_to_wafer_bin_map()還沒對調x/y
-  // 之前做的(見bingomap/CLAUDE.md的die_map key順序那則)——後來wafer圖
-  // 實際渲染用的cells已經對調過，但這條公式的兩個輸出("columns"算出來的
-  // 那個、"rows"算出來的那個)分別要填進哪個欄位(T點X/T點Y)沒有跟著對調，
-  // 導致算出來的T點Y可能超出wafer圖實際的列數範圍，T點標記永遠不會出現
-  // ——使用者回報「給了T點座標都沒有出現T點位置」才抓到。用真實FRM資料
-  // 驗證：cells的x範圍大小等於rows、y範圍大小等於columns(兩者已對調)，
-  // 所以這裡兩個算式的輸出也要對調著填，公式本身(哪個算式對應哪個
-  // Ref.軸)完全不變，只是改填到哪個欄位。
-  document.getElementById("mp-t-point-x").value = lastWaferData.rows + refX;
-  document.getElementById("mp-t-point-y").value = lastWaferData.columns - refY;
+  // 2026/09/03撤銷了2026/08/31那次的欄位對調：bingomap/frm_reader.py的
+  // frm_to_wafer_bin_map()把x/y swap本身撤銷了(該函式docstring有完整
+  // 說明——那個swap只驗證過ESEC案例，套用到這個專案實際的DB機台是錯的)，
+  // wafer圖cells座標系已經改回直接對應columns/rows，這條公式跟著改回
+  // 2026/08/19最初驗證過的填法。
+  document.getElementById("mp-t-point-x").value = lastWaferData.columns - refY;
+  document.getElementById("mp-t-point-y").value = lastWaferData.rows + refX;
   saveState(); // setting .value in JS doesn't fire "input", so this won't auto-save otherwise
   renderWaferGrid(lastWaferData);
 }

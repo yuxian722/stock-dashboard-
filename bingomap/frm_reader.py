@@ -211,22 +211,33 @@ def frm_to_wafer_bin_map(frm: FrmMap) -> WaferBinMap:
     kinds are stringified to match DiePick/WaferBinMap's existing "1"/"7"
     string convention.
 
-    2026/08/27大更正：`frm.die_map`的key`(x,y)`跟`frm.col`/`frm.row`兩個
-    欄位命名都是誤導性的——直接拿使用者提供的49顆真實FC2643 die(col:row
-    已知、bin=1已知，見`test_extract_strate_files_wafer_xy_matches_real_frm_die_map`)
-    交叉比對確認：`die_map`真正的key其實是`(row,col)`不是`(col,row)`，而且
-    這次額外用完全獨立的第三個來源(同一台machine對同一片wafer的SECS log，
-    `wafer_map_from_element()`已經在同一天稍早修正、驗證過)反過來核對——
-    854顆die裡有844顆(98.8%)座標空間直接對得上，756顆(89.6%)bin值也一致
-    (跟WaferStart的BinList/StrateMap的DIE_INFO本來就有的、記錄時間差造成
-    的重新分類率同一個量級，不是新的不一致)。之前一直沒發現這個問題，是
-    因為之前的驗證都停留在「wafer圖整體形狀看起來像不像橢圓」這種視覺比對
-    (見bingomap/CLAUDE.md)，沒有像STRATE補檔那樣逐顆die去對真正的.strate
-    col:row標籤——形狀不對稱的wafer轉置後外觀還是可能像橢圓，光看形狀騙得
-    過去。這裡把x,y對調、columns/rows也對調，讓算出來的座標才能直接對上
-    `.strate`的col:row語意(誤吸偏移分析的`bin_at(nominal_x, nominal_y)`
-    用的正是這個語意)。"""
-    wafer_map = WaferBinMap(columns=frm.row, rows=frm.col)
-    for (a, b), bin_kind in frm.die_map.items():
-        wafer_map.set_bin(b, a, str(bin_kind))
+    2026/09/03再次更正，這次是撤銷2026/08/27那次的x/y對調：那次的證據
+    (49顆FC2643 die，互換後49/49對到bin=1)本身沒錯，但下錯了結論的適用
+    範圍——FC2643是EQPID=BAB14、NOTCH=270的ESEC類型wafer，`mispick_analysis.py`
+    模組文件早就講明「DB(這個專案實際的機台)跟ESEC是兩套完全獨立的座標
+    模型」，可是2026/08/27的修正卻直接把只驗證過ESEC案例的對調，寫死進了
+    DB、ESEC共用的這個函式，等於用一個機種的個案結論覆蓋了另一個機種本來
+    正確的行為。
+
+    這次是使用者拿真實DB基板(EQPID=BAA08，wafer T3DC94，NOTCH=180，見
+    `tests/fixtures/2130_V32AWCW_Z26306101253_20260814064943.strate`)回報
+    第1顆die(`wafer_xy="23:48"`)完全沒出現在wafer預覽圖上、畫面上其餘的
+    die全部擠在圖的一側——直接拿這299顆真實die座標去對同一Layout(AW191)
+    的真實FRM(`8P065800A1_T3_DA62.frm`)原始`die_map`(不透過這個函式、
+    完全繞開)重新交叉驗證：不對調的話299/299都落在wafer的合法(x,y)範圍
+    內；套用2026/08/27對調後的版本只剩155/299——包括第1顆(Y=48)在內的
+    144顆，Y座標超出對調後誤植的45上限(該軸實際上到55)，直接從圖上消失。
+
+    也就是說：`frm.die_map`的key`(x,y)`原始命名——x對應`frm.col`(0..col)、
+    y對應`frm.row`(0..row)——這次用DB真實資料驗證是正確的，不需要對調；
+    2026/08/27對調後恰好能通過FC2643(ESEC/NOTCH=270)的驗證，是因為那片
+    wafer的NOTCH跟DB案例不同、物理裝載方向不同，需要的是ESEC自己那條
+    (`mispick_analysis.py`的`_wafer_xy_to_raw_map(machine_type="ESEC")`)
+    座標轉換，不該靠這個共用函式裡硬幫所有機型對調座標軸來湊——這正好是
+    這個專案第三次遇到「兩片真實wafer需要相反處理、沒有找到能自動判斷的
+    通用欄位」(前兩次見bingomap/CLAUDE.md「wafer圖X/Y軸方向」)，解法一樣
+    是不要把其中一個案例的結論當成放諸四海皆準的規則，寫死進共用邏輯。"""
+    wafer_map = WaferBinMap(columns=frm.col, rows=frm.row)
+    for (x, y), bin_kind in frm.die_map.items():
+        wafer_map.set_bin(x, y, str(bin_kind))
     return wafer_map

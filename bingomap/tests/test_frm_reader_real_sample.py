@@ -53,51 +53,55 @@ def test_file_is_fully_consumed_except_two_trailing_marker_bytes():
 
 
 def test_frm_to_wafer_bin_map_round_trips_real_data():
-    # 2026/08/27大更正：frm_to_wafer_bin_map()把columns/rows對調(見該函式
-    # docstring)——columns現在是frm.row(56)、rows是frm.col(46)。bin數量
-    # (good/bad count)是聚合統計，不受x/y對調影響，維持不變。
+    # 2026/09/03撤銷了2026/08/27的columns/rows對調(見frm_to_wafer_bin_map()
+    # docstring的完整說明)——columns改回frm.col(46)、rows改回frm.row(56)。
+    # bin數量(good/bad count)是聚合統計，不受x/y對調影響，維持不變。
     frm = _load()
     wafer_map = frm_to_wafer_bin_map(frm)
-    assert wafer_map.columns == 56
-    assert wafer_map.rows == 46
+    assert wafer_map.columns == 46
+    assert wafer_map.rows == 56
     good_count = sum(1 for v in wafer_map.cells.values() if v == "1")
     bad_count = sum(1 for v in wafer_map.cells.values() if v == "7")
     assert good_count == 1635
     assert bad_count == 379
 
 
-def test_frm_to_wafer_bin_map_bin_at_matches_real_strate_col_row():
-    """2026/08/27 regression test: locks in the x/y swap fix documented on
-    frm_to_wafer_bin_map(). Uses a completely different real wafer (FC2643,
-    EU014 layout) than the rest of this file, with 49 of its dies
-    independently cross-referenced against a real machine-produced `.strate`
-    (see test_secs_log.py's byte-for-byte SECS log comparison for the same
-    substrate/wafer, and this file's own docstring for the fuller evidence
-    chain: 854/854 die positions cross-checked against a SECS log's
-    independently-verified wafer map, 98.8% coordinate-space overlap after
-    the swap vs. 44% before it). Every one of these 49 real dies is recorded
-    as Good ('1') in the `.strate` — bin_at() must agree, using ONLY the raw
-    `.strate` col:row wafer_xy with no manual swapping in the test itself
-    (unlike test_extract_strate_files_wafer_xy_matches_real_frm_die_map,
-    which predates this fix and still swaps by hand for the frm.die_map path
-    it exercises directly)."""
+def test_frm_to_wafer_bin_map_bin_at_matches_real_db_strate_xy():
+    """2026/09/03 regression test replacing the 2026/08/27 one of the same
+    shape: that earlier version used a completely different wafer (FC2643,
+    EU014 layout, EQPID=BAB14, NOTCH=270 — an ESEC-orientation sample, see
+    REQUIRED_NOTCH_ESEC in mispick_analysis.py) to lock in an x/y swap that
+    turned out to only be valid for that ESEC-orientation case, not for this
+    project's actual DB machine type (see frm_to_wafer_bin_map()'s current
+    docstring for the full story of why that swap got reverted).
+
+    This version instead uses a real DB substrate (EQPID=BAA08, wafer
+    T3DC94, NOTCH=180) the user reported wafer_xy="23:48" — die #1 — was
+    completely missing from the wafer preview under the (now-reverted)
+    swapped code. T3DC94 itself has no committed `.frm` file, so this uses
+    a same-lot/same-Layout(AW191) real wafer (T3DA62, this file's own
+    FIXTURE) as a stand-in — same physical die-grid shape, so every real
+    picked position must land on SOME valid die, even though the specific
+    bin colors differ per physical wafer. Without the swap all 299/299 real
+    die positions (including "23:48") land in range; with the (reverted)
+    swap only 155/299 did."""
     from bingomap.strate import StrateFile
 
-    fc2643_frm = parse_frm(
-        (Path(__file__).parent / "fixtures" / "WPQ5310156SS_FC2643.frm").read_bytes()
-    )
-    wafer_map = frm_to_wafer_bin_map(fc2643_frm)
+    frm = _load()
+    wafer_map = frm_to_wafer_bin_map(frm)
 
     strate = StrateFile.parse(
-        (Path(__file__).parent / "fixtures" / "2070_V30EUC6_Z25709007096_20260801024007.strate").read_text(
-            encoding="utf-8"
-        )
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "2130_V32AWCW_Z26306101253_20260814064943.strate"
+        ).read_text(encoding="utf-8")
     )
-    fc2643_dies = [
-        d for d in strate.die_info + strate.other_layer_die_info if d.wafer_ring == "FC2643"
-    ]
-    assert len(fc2643_dies) == 49
+    assert len(strate.die_info) == 299
+    assert strate.die_info[0].wafer_xy == "23:48"
 
-    for d in fc2643_dies:
-        col, row = (int(v) for v in d.wafer_xy.split(":"))
-        assert wafer_map.bin_at(col, row) == "1", f"wafer_xy={d.wafer_xy!r} did not resolve to bin=1"
+    for d in strate.die_info:
+        x, y = (int(v) for v in d.wafer_xy.split(":"))
+        assert wafer_map.bin_at(x, y) is not None, (
+            f"wafer_xy={d.wafer_xy!r} landed outside the AW191 wafer's real die positions"
+        )
