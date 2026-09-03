@@ -206,15 +206,24 @@ def api_parse_strate():
     )
 
 
-def _frm_cells_json(frm) -> list[dict]:
+def _frm_cells_json(frm, swap_xy: bool = False) -> list[dict]:
     """Cells for the frontend, in the `.strate` col:row x/y convention (see
     frm_to_wafer_bin_map()'s docstring — 2026/09/03 reverted an axis swap
     here that had only ever been validated for ESEC/NOTCH=270 data and was
     wrong for this project's real DB machine type). The frontend
     (webapp/static/app.js's waferCellsFromApiCells()) derives the rendered
     grid's bounds from the cells' own min/max x/y, not from the "columns"/
-    "rows" JSON fields — those two are only ever read for the T點 formula."""
-    wafer_map = frm_to_wafer_bin_map(frm)
+    "rows" JSON fields — those two are only ever read for the T點 formula.
+
+    swap_xy: 2026/09/03新增——撤銷上面那個對調之後，同一天馬上有真實案例
+    (FC2643/EQPID=BAB14/NOTCH=270)回報座標又跑到wafer外面：拿這片wafer
+    真實的49顆die交叉比對，跟DB(T3DC94/NOTCH=180)剛好相反，需要對調才會
+    全部落在合法範圍。這正是這個專案已經出現過好幾次的模式(見
+    bingomap/CLAUDE.md「wafer圖X/Y軸方向」)——兩片真實wafer需要相反的
+    處理，沒找到能自動判斷的欄位(FRM本身不帶NOTCH，無法在frm_to_wafer_bin_map()
+    內部依NOTCH自動決定)，所以比照T點/角度翻轉的先例，做成使用者手動勾選
+    的選項，不是自動判斷。"""
+    wafer_map = frm_to_wafer_bin_map(frm, swap_xy=swap_xy)
     return [{"x": x, "y": y, "bin": bin_kind} for (x, y), bin_kind in wafer_map.cells.items()]
 
 
@@ -227,6 +236,7 @@ def api_frm():
     lot_no = (data.get("lot_no") or "").strip()
     barcode_id = (data.get("barcode_id") or "").strip()
     frm_root = (data.get("frm_path") or DEFAULT_FRM_PATH).strip()
+    swap_xy = bool(data.get("swap_xy"))
     if not lot_no or not barcode_id:
         return jsonify({"error": "lot_no 和 barcode_id 都必填"}), 400
 
@@ -270,14 +280,17 @@ def api_frm():
             # x/y對調(見_frm_cells_json()/frm_to_wafer_bin_map()的完整說明)
             # 之後，這兩個欄位現在跟cells用的是同一套(col,row)軸向，不再是
             # 刻意不一致的取捨。
-            "columns": frm.col,
-            "rows": frm.row,
+            # swap_xy時columns/rows也跟著對調，讓T點公式(拿這兩個值算)
+            # 用的軸向跟cells保持一致——但T點公式本身只在不對調(DB)的情況
+            # 下用真實資料驗證過，對調後是否仍然成立還沒有真實案例驗證。
+            "columns": frm.row if swap_xy else frm.col,
+            "rows": frm.col if swap_xy else frm.row,
             "lot_no": frm.lot_no,
             "wafer_id": frm.wafer_id,
             "wafer_type": frm.wafer_type,
             "reference_point_x": frm.reference_point_x,
             "reference_point_y": frm.reference_point_y,
-            "cells": _frm_cells_json(frm),
+            "cells": _frm_cells_json(frm, swap_xy=swap_xy),
         }
     )
 
@@ -453,7 +466,11 @@ def api_mispick_analyze():
             frm = parse_frm(f.read())
     except FrmFormatError as exc:
         return jsonify({"error": f"原始wafer MAP格式解析失敗：{exc}"}), 422
-    wafer_map = frm_to_wafer_bin_map(frm)
+    # 2026/09/03：ESEC(NOTCH=270限定)需要的wafer_map座標軸跟DB(這個專案
+    # 實際的機台，identity轉換)相反——見_frm_cells_json()的完整說明，這裡
+    # 的swap_xy比照那邊的邏輯，但不用另外加勾選框：machine_type本來就是
+    # 使用者自己選的(DB/ESEC)，選ESEC時直接連動打開，不算自動判斷。
+    wafer_map = frm_to_wafer_bin_map(frm, swap_xy=(machine_type == "ESEC"))
 
     strate_files = data.get("strate_files") or []
     if not strate_files:

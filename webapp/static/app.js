@@ -278,6 +278,7 @@ function waferIds(i) {
     waferInput: `wafer-input${s}`,
     btnLoadWafer: `btn-load-wafer${s}`,
     btnClearWafer: `btn-clear-wafer${s}`,
+    swapXyCheckbox: `wafer-swap-xy${s}`,
     binLegend: `wafer-bin-legend${s}`,
     tPointX: `t-point-x${s}`,
     tPointY: `t-point-y${s}`,
@@ -331,6 +332,12 @@ function buildExtraWaferPanelHtml() {
         <label>Barcode ID <input id="${ids.frmBarcodeId}" value=""></label>
       </div>
       <label style="margin-bottom:0.6rem">FRM根路徑 <input id="${ids.frmPath}" value="F:\\SMAP\\FRM\\"></label>
+      <div class="notice" style="margin-top:0.6rem">
+        wafer座標軸對調（選填）——大部分wafer(DB機台)不用勾；如果載入FRM後，範本/pick的座標大量落在
+        wafer圖外面或形狀明顯不對，改勾這個再重新讀取FRM試試看(這是跟另一種機台方向相反的已知案例，
+        沒有能自動判斷的欄位，只能手動試)。
+      </div>
+      <label style="margin-bottom:0.6rem"><input type="checkbox" id="${ids.swapXyCheckbox}"> wafer座標軸對調(X↔Y互換)</label>
       <button id="${ids.btnLoadFrm}">自動讀取FRM檔案</button>
       <p id="${ids.frmStatus}" class="lyr-frm-status"></p>
       <div class="notice" style="margin-top:1rem">或手動貼上第二片wafer bin資料（每行 <code>x,y,bin</code>）</div>
@@ -919,10 +926,12 @@ async function loadFrmIntoPanel(panelIndex) {
   const status = document.getElementById(ids.frmStatus);
   status.className = "";
   status.textContent = "讀取中...";
+  const swapXyEl = document.getElementById(ids.swapXyCheckbox);
   const payload = {
     lot_no: document.getElementById(ids.frmLotNo).value,
     barcode_id: document.getElementById(ids.frmBarcodeId).value,
     frm_path: document.getElementById(ids.frmPath).value,
+    swap_xy: !!(swapXyEl && swapXyEl.checked),
   };
   const res = await fetch("/api/frm", {
     method: "POST",

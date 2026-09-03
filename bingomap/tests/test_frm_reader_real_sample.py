@@ -105,3 +105,48 @@ def test_frm_to_wafer_bin_map_bin_at_matches_real_db_strate_xy():
         assert wafer_map.bin_at(x, y) is not None, (
             f"wafer_xy={d.wafer_xy!r} landed outside the AW191 wafer's real die positions"
         )
+
+
+def test_frm_to_wafer_bin_map_swap_xy_restores_real_esec_strate_xy():
+    """2026/09/03, same day as the revert above: reverting the swap fixed
+    DB but broke the exact ESEC/NOTCH=270 case (FC2643, EU014 layout) the
+    2026/08/27 swap was originally added for — the user re-reported
+    "座標又跑到wafer外面" using this exact real file. Cross-checking FC2643's
+    49 real die positions (from the same wafer_ring inside this file) against
+    the real FC2643.frm directly: only 41/49 land in range without a swap,
+    all 49/49 do with one — confirming this specific wafer genuinely needs
+    the opposite of what T3DC94/DB needed (same "two real wafers need
+    opposite handling, no auto-detectable field" pattern documented in
+    bingomap/CLAUDE.md's "wafer圖X/Y軸方向" entries). frm_to_wafer_bin_map()
+    now takes an explicit, opt-in swap_xy parameter instead of hardcoding
+    either direction — this locks in that the option still does what it's
+    for, without reintroducing it as the default."""
+    from bingomap.strate import StrateFile
+
+    fc2643_frm = parse_frm(
+        (Path(__file__).parent / "fixtures" / "WPQ5310156SS_FC2643.frm").read_bytes()
+    )
+    strate = StrateFile.parse(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "2070_V30EUC6_Z25709007096_20260801024007.strate"
+        ).read_text(encoding="utf-8")
+    )
+    fc2643_dies = [
+        d for d in strate.die_info + strate.other_layer_die_info if d.wafer_ring == "FC2643"
+    ]
+    assert len(fc2643_dies) == 49
+
+    wafer_map_normal = frm_to_wafer_bin_map(fc2643_frm)
+    wafer_map_swapped = frm_to_wafer_bin_map(fc2643_frm, swap_xy=True)
+
+    def in_range_count(wafer_map):
+        return sum(
+            1
+            for d in fc2643_dies
+            if wafer_map.bin_at(*(int(v) for v in d.wafer_xy.split(":"))) is not None
+        )
+
+    assert in_range_count(wafer_map_normal) == 41
+    assert in_range_count(wafer_map_swapped) == 49

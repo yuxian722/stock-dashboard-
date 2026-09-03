@@ -245,6 +245,54 @@ def test_api_frm_returns_reference_point_from_real_file(client, tmp_path):
     assert (t_point_x, 0) == (18, 0)
 
 
+def test_api_frm_swap_xy_restores_real_esec_wafer_in_range(client, tmp_path):
+    # 2026/09/03: reverting frm_to_wafer_bin_map()'s x/y swap fixed the real
+    # DB case but broke this real ESEC/NOTCH=270 wafer (FC2643) — the user
+    # re-reported picks landing outside the wafer using this exact file
+    # (2070_V30EUC6_Z25709007096_...strate). Confirms the new swap_xy
+    # request field flows through /api/frm end-to-end: without it, most of
+    # FC2643's real die positions parsed from that STRATE land outside the
+    # returned cells; with it, all of them do.
+    from bingomap.strate import StrateFile
+
+    fc2643_fixture = (
+        Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "WPQ5310156SS_FC2643.frm"
+    )
+    strate_fixture = (
+        Path(__file__).parent.parent.parent
+        / "bingomap"
+        / "tests"
+        / "fixtures"
+        / "2070_V30EUC6_Z25709007096_20260801024007.strate"
+    )
+    strate = StrateFile.parse(strate_fixture.read_text(encoding="utf-8"))
+    fc2643_dies = [
+        d for d in strate.die_info + strate.other_layer_die_info if d.wafer_ring == "FC2643"
+    ]
+    assert len(fc2643_dies) == 49
+
+    root = _fake_frm_root(tmp_path, "WPQ5310156SS", "FC2643", fixture=fc2643_fixture)
+
+    def in_range_count(swap_xy):
+        res = client.post(
+            "/api/frm",
+            json={
+                "lot_no": "WPQ5310156SS",
+                "barcode_id": "FC2643",
+                "frm_path": root,
+                "swap_xy": swap_xy,
+            },
+        )
+        assert res.status_code == 200
+        cells = {(c["x"], c["y"]) for c in res.get_json()["cells"]}
+        return sum(
+            1 for d in fc2643_dies if tuple(int(v) for v in d.wafer_xy.split(":")) in cells
+        )
+
+    assert in_range_count(False) == 41
+    assert in_range_count(True) == 49
+
+
 def test_api_frm_missing_file_returns_404_with_helpful_message(client, tmp_path):
     res = client.post(
         "/api/frm",

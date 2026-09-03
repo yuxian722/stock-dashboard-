@@ -205,11 +205,19 @@ def parse_frm(data: bytes) -> FrmMap:
     raise FrmFormatError(f"unrecognised FRM format byte {format_byte!r} (expected 0 or 2)")
 
 
-def frm_to_wafer_bin_map(frm: FrmMap) -> WaferBinMap:
+def frm_to_wafer_bin_map(frm: FrmMap, *, swap_xy: bool = False) -> WaferBinMap:
     """Adapt a parsed FRM file to the source-agnostic WaferBinMap that
     wafer_map.py's scan_rectangle()/build_picks_from_scan() consume. bin
     kinds are stringified to match DiePick/WaferBinMap's existing "1"/"7"
     string convention.
+
+    swap_xy (2026/09/03新增，預設False): 撤銷2026/08/27那次強制對調之後
+    (見下面完整說明)，同一天馬上出現真實反例(FC2643/NOTCH=270)——這片
+    wafer需要的正是「對調」，跟DB(NOTCH=180)剛好相反。既然沒有從FRM本身
+    就能自動判斷的欄位(FRM不帶NOTCH)，這裡改成一個**選擇性**參數，預設
+    值(False，不對調)對應這個專案實際的DB機台，呼叫端(webapp/app.py)
+    知道自己在處理哪種情況時才主動要求對調——不是把某一個案例的結論寫死
+    當成這個函式永遠的行為，這正是下面這段說明本身在講的教訓。
 
     2026/09/03再次更正，這次是撤銷2026/08/27那次的x/y對調：那次的證據
     (49顆FC2643 die，互換後49/49對到bin=1)本身沒錯，但下錯了結論的適用
@@ -237,6 +245,11 @@ def frm_to_wafer_bin_map(frm: FrmMap) -> WaferBinMap:
     這個專案第三次遇到「兩片真實wafer需要相反處理、沒有找到能自動判斷的
     通用欄位」(前兩次見bingomap/CLAUDE.md「wafer圖X/Y軸方向」)，解法一樣
     是不要把其中一個案例的結論當成放諸四海皆準的規則，寫死進共用邏輯。"""
+    if swap_xy:
+        wafer_map = WaferBinMap(columns=frm.row, rows=frm.col)
+        for (x, y), bin_kind in frm.die_map.items():
+            wafer_map.set_bin(y, x, str(bin_kind))
+        return wafer_map
     wafer_map = WaferBinMap(columns=frm.col, rows=frm.row)
     for (x, y), bin_kind in frm.die_map.items():
         wafer_map.set_bin(x, y, str(bin_kind))

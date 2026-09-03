@@ -115,6 +115,12 @@
       <label>Barcode ID <input id="frm_barcode_id" value="T3DA62"></label>
     </div>
     <label style="margin-bottom:0.6rem">FRM根路徑 <input id="frm_path" value="F:\SMAP\FRM\"></label>
+    <div class="notice" style="margin-top:0.6rem">
+      wafer座標軸對調（選填）——大部分wafer(DB機台)不用勾；如果載入FRM後，範本/pick的座標大量落在
+      wafer圖外面或形狀明顯不對，改勾這個再重新讀取FRM試試看(這是跟另一種機台方向相反的已知案例，
+      沒有能自動判斷的欄位，只能手動試)。
+    </div>
+    <label style="margin-bottom:0.6rem"><input type="checkbox" id="wafer-swap-xy"> wafer座標軸對調(X↔Y互換)</label>
     <button id="btn-load-frm">自動讀取FRM檔案</button>
     <p id="frm-status" class="lyr-frm-status"></p>
 
