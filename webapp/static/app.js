@@ -359,10 +359,10 @@ function buildExtraWaferPanelHtml() {
       </div>
       <button type="button" class="secondary" id="${ids.btnConvertVisualRef}">換算填入T點</button>
       <div class="notice" style="margin-top:0.6rem">
-        wafer角度／鏡像（選填）——座標0,0固定在畫面右上角，不會因為角度或鏡像改變；如果畫面跟
-        WaferCoordinate.exe對不上，先試角度，四個角度都不吻合的話再加勾鏡像(角度只能旋轉、湊不出鏡像
-        效果，是不同的對稱操作)。調整會重新計算每一顆die的座標(連待寫入/已寫入的座標也是)，不是單純
-        換排列順序。
+        wafer角度／鏡像（選填）——真正旋轉整片wafer圖，跟WaferCoordinate.exe對不上時，先試角度，四個
+        角度都不吻合的話再加勾鏡像(角度只能旋轉、湊不出鏡像效果，是不同的對稱操作)。<b>格子上、刻度上、
+        滑鼠移過去顯示的座標，永遠是這顆die真正的wafer座標，不會因為角度改變。</b>調整會重新計算每一顆
+        die的座標(連待寫入/已寫入的座標也是)，不是單純換排列順序。
       </div>
       <div class="grid2">
         <label>wafer角度
@@ -1161,6 +1161,24 @@ function renderWaferPanel(panelIndex) {
   const yOrder = [];
   for (let y = minY; y <= maxY; y++) yOrder.push(y);
 
+  // 2026/09/03修正：這兩排刻度數字之前直接顯示畫面座標(x/y，也就是這個
+  // panel目前角度/鏡像下的顯示座標)，角度=0°時剛好等於原始wafer座標，
+  // 一轉角度就不是了——使用者拿刻度上的數字去對真實wafer_xy(23:48)，
+  // 跟滑鼠移過去顯示的Wafer座標(已經修正成顯示原始座標)完全對不起來，
+  // 使用者親自用手指在畫面上指認同一格，滑鼠移過去卻顯示「7:23」不是
+  // 「23:48」，才抓到這個問題。角度90°/270°時整個轉90度，同一欄(column)
+  // 對應的其實是同一個原始Y、同一列(row)對應的是同一個原始X(角度0°/180°
+  // 則相反)，所以刻度改成每欄/每列各拿一格換算回原始座標、只顯示不變的
+  // 那個軸，這樣刻度數字才會跟滑鼠移過去顯示的、跟.strate裡wafer_xy用的
+  // 是同一套座標。
+  const panelAngle = waferAngleByPanel[panelIndex];
+  const panelMirror = waferMirrorByPanel[panelIndex];
+  const panelRawBounds = waferRawBoundsByPanel[panelIndex];
+  const rawAxisForColumns = (panelAngle === 90 || panelAngle === 270) ? "y" : "x";
+  const rawAxisForRows = rawAxisForColumns === "x" ? "y" : "x";
+  const sampleY = yOrder[0];
+  const sampleX = xOrder[0];
+
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
   const corner = document.createElement("div");
@@ -1169,7 +1187,8 @@ function renderWaferPanel(panelIndex) {
   for (const x of xOrder) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
-    label.textContent = x;
+    const rawForColumn = unrotateWaferPoint(x, sampleY, panelRawBounds, panelAngle, panelMirror);
+    label.textContent = rawForColumn ? rawForColumn[rawAxisForColumns] : x;
     headerRow.appendChild(label);
   }
   container.appendChild(headerRow);
@@ -1179,7 +1198,8 @@ function renderWaferPanel(panelIndex) {
     row.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
-    rowLabel.textContent = y;
+    const rawForRow = unrotateWaferPoint(sampleX, y, panelRawBounds, panelAngle, panelMirror);
+    rowLabel.textContent = rawForRow ? rawForRow[rawAxisForRows] : y;
     row.appendChild(rowLabel);
     for (const x of xOrder) {
       const bin = cells.get(`${x},${y}`);

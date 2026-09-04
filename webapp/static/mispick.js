@@ -92,6 +92,27 @@ function rotateWaferPoint(x, y, rawBounds, angleDeg, mirror) {
   return { x: nu, y: nv };
 }
 
+// The inverse of rotateWaferPoint(): given a DISPLAY coordinate (whatever's
+// currently shown on screen at this panel's current angle/mirror), returns
+// the RAW wafer coordinate it actually corresponds to. 2026/09/03新增——
+// 跟webapp/static/app.js同一天修的同一種bug：這個頁面的wafer圖刻度數字/
+// hover文字之前直接顯示畫面座標，角度=0°時剛好等於原始wafer_xy，一轉
+// 角度就對不起來了(見renderOneWaferGrid()的完整說明)，需要跟app.js同一套
+// 反向換算公式才能修。
+function unrotateWaferPoint(nu, nv, rawBounds, angleDeg, mirror) {
+  if (!rawBounds) return null;
+  const { minX, maxX, minY, maxY } = rawBounds;
+  const spanX = maxX - minX, spanY = maxY - minY;
+  const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
+  const nu0 = mirror ? rotatedSpanX - nu : nu;
+  let u, v;
+  if (angleDeg === 90) { v = nu0; u = spanX - nv; }
+  else if (angleDeg === 180) { u = spanX - nu0; v = spanY - nv; }
+  else if (angleDeg === 270) { v = spanY - nu0; u = nv; }
+  else { u = nu0; v = nv; } // 0
+  return { x: u + minX, y: v + minY };
+}
+
 function rotateWaferArray(wafer, angleDeg, mirror) {
   if (!wafer || !wafer.cells.length) return wafer;
   const rawBounds = waferRawBounds(wafer.cells);
@@ -231,11 +252,24 @@ function currentOffsetDelta() {
 // 哪個原始wafer座標(fx,fy)在兩張圖上永遠一樣，差別只在這一格「顯示的
 // bin顏色」(cellMap查表用的key)有沒有套用shift，所以標記直接疊在同一個
 // screen(x,y)即可，兩張圖都疊得上。
-function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shift, markers) {
+function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shift, markers, rawBounds) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
   const dx = shift ? shift.dx : 0;
   const dy = shift ? shift.dy : 0;
+
+  // 2026/09/03修正：刻度數字跟hover文字之前直接顯示xOrder/yOrder的畫面
+  // 座標(這個panel目前角度/鏡像下的顯示座標)，角度=0°時剛好等於原始
+  // wafer_xy，一轉角度就不是了——使用者拿刻度上的數字去對真實wafer_xy
+  // (23:48)，親自用手指在畫面上指認同一格，滑鼠移過去卻顯示「7:23」不是
+  // 「23:48」，才抓到這個問題(跟webapp/static/app.js同一天修的同一種bug)。
+  // 角度90°/270°時整個轉90度，同一欄對應的其實是同一個原始Y、同一列
+  // 對應的是同一個原始X(角度0°/180°則相反)，所以刻度改成每欄/每列各拿
+  // 一格換算回原始座標、只顯示不變的那個軸。
+  const rawAxisForColumns = (mpAngle === 90 || mpAngle === 270) ? "y" : "x";
+  const rawAxisForRows = rawAxisForColumns === "x" ? "y" : "x";
+  const sampleY = yOrder[0];
+  const sampleX = xOrder[0];
 
   const headerRow = document.createElement("div");
   headerRow.className = "wafer-row";
@@ -245,7 +279,8 @@ function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shif
   for (const x of xOrder) {
     const label = document.createElement("div");
     label.className = "grid-axis-cell";
-    label.textContent = x;
+    const rawForColumn = rawBounds ? unrotateWaferPoint(x, sampleY, rawBounds, mpAngle, mpMirror) : null;
+    label.textContent = rawForColumn ? rawForColumn[rawAxisForColumns] : x;
     headerRow.appendChild(label);
   }
   container.appendChild(headerRow);
@@ -255,24 +290,27 @@ function renderOneWaferGrid(containerId, xOrder, yOrder, cellMap, refPoint, shif
     row.className = "wafer-row";
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-axis-cell";
-    rowLabel.textContent = y;
+    const rawForRow = rawBounds ? unrotateWaferPoint(sampleX, y, rawBounds, mpAngle, mpMirror) : null;
+    rowLabel.textContent = rawForRow ? rawForRow[rawAxisForRows] : y;
     row.appendChild(rowLabel);
     for (const x of xOrder) {
       const bin = cellMap.get(`${x - dx},${y - dy}`);
       const cell = document.createElement("div");
       cell.className = "wafer-cell";
       applyBinColor(cell, bin);
-      cell.title = `${x}:${y}`;
+      const rawXY = rawBounds ? unrotateWaferPoint(x, y, rawBounds, mpAngle, mpMirror) : null;
+      const rawLabel = rawXY ? `${rawXY.x}:${rawXY.y}` : `${x}:${y}`;
+      cell.title = `Wafer座標：${rawLabel}`;
       const marker = markers && markers.get(`${x},${y}`);
       if (marker) {
         cell.classList.add(marker.decision === "FORCE_DELETE_ACTUAL_BIN_NG" ? "mp-force-marker" : "mp-review-marker");
         cell.textContent = String(marker.action_no);
-        cell.title = `${x}:${y} — ${marker.label}`;
+        cell.title = `Wafer座標：${rawLabel} — ${marker.label}`;
       }
       if (refPoint && refPoint.x === x && refPoint.y === y) {
         cell.classList.add("ref-point");
         cell.textContent = "T";
-        cell.title = `${x}:${y} — T點` + (marker ? `／${marker.label}` : "");
+        cell.title = `Wafer座標：${rawLabel} — T點` + (marker ? `／${marker.label}` : "");
       }
       row.appendChild(cell);
     }
@@ -362,8 +400,8 @@ function renderWaferGrid(wafer) {
     });
   }
 
-  renderOneWaferGrid("mp-wafer-grid", xOrder, yOrder, cellMap, refPoint, { dx: 0, dy: 0 }, markers);
-  renderOneWaferGrid("mp-wafer-grid-shifted", xOrder, yOrder, cellMap, shiftedRefPoint, shift, markers);
+  renderOneWaferGrid("mp-wafer-grid", xOrder, yOrder, cellMap, refPoint, { dx: 0, dy: 0 }, markers, rawBounds);
+  renderOneWaferGrid("mp-wafer-grid-shifted", xOrder, yOrder, cellMap, shiftedRefPoint, shift, markers, rawBounds);
 }
 
 function renderSubstrateGrid(containerId, sub) {

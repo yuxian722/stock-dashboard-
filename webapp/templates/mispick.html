@@ -59,11 +59,11 @@
     </div>
     <button type="button" class="secondary" id="mp-btn-convert-visual-ref">換算填入T點</button>
     <div class="notice" style="margin-top:0.6rem">
-      wafer角度／鏡像（選填）——<b>座標0,0永遠固定在畫面右上角</b>，不會因為角度或鏡像改變；如果畫面跟
-      WaferCoordinate.exe對不上，先試角度看哪個能讓bin7/bin1分布吻合，四個角度都不吻合的話再加勾鏡像
-      (角度只能旋轉、湊不出鏡像效果)。這裡只影響下面的wafer圖預覽/複製座標文字，不影響誤吸偏移分析
-      結果——分析是後端用固定的DB座標公式計算的，跟這裡的設定無關。每次重新讀取wafer都會自動重設回
-      預設值。
+      wafer角度／鏡像（選填）——真正旋轉整片wafer圖，跟WaferCoordinate.exe對不上時，先試角度看哪個能讓
+      bin7/bin1分布吻合，四個角度都不吻合的話再加勾鏡像(角度只能旋轉、湊不出鏡像效果)。<b>格子上、刻度
+      上、滑鼠移過去顯示的座標，永遠是這顆die真正的wafer座標，不會因為角度改變。</b>這裡只影響下面的
+      wafer圖預覽/複製座標文字，不影響誤吸偏移分析結果——分析是後端用固定的DB座標公式計算的，跟這裡的
+      設定無關。每次重新讀取wafer都會自動重設回預設值。
     </div>
     <div class="grid2">
       <label>wafer角度
