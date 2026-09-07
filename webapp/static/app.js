@@ -123,24 +123,19 @@ let waferRawBoundsByPanel = [null, null];
 // a raw wafer coordinate into "wherever it currently displays," so several
 // call sites quietly compared raw and rotated coordinates as if they were
 // the same space.
-// 2026/09/07：這裡原本是「真的」90/180/270度矩形旋轉(spanX-u/spanY-v這種
-// 反向公式)，結果角度≠0時raw(minX,minY)——也就是使用者認定的0,0——必然被
-// 轉到別的角落(90度轉到右下、180度轉到左下、270度轉到左上，只有0度在右
-// 上角)，這是矩形旋轉本身的幾何/群論性質，不是這條公式寫錯：對同大小矩形
-// 做非恆等的旋轉/鏡射，數學上不可能同時保證任何一個角落被釘住(Klein
-// four-group的180度旋轉/水平翻轉/垂直翻轉都會把(0,0)換到另一個角落，
-// 只有恆等變換能讓角落不動；90/270度那種寬高互換的變換裡，也只有轉置
-// (nu=v,nv=u)這一種能讓(0,0)不動，spanX-u/spanY-v那種帶反向的都不行)。
-// 使用者這次明確要求「角度0/90/180/270隨便選，0,0都要保證在右上角」——
-// 在90/180/270度真的還要跟0度長得不一樣(90/270要寬高互換)的前提下，
-// 唯一同時滿足「0,0永遠釘住」的公式，就是0°/180°都用恆等變換(nu=u,nv=v)、
-// 90°/270°都用轉置(nu=v,nv=u)——這代表0°跟180°、90°跟270°的畫面會長得
-// 一樣(這是上面那個群論限制的必然結果，不是偷懶少寫兩種)，但换來的是
-// 選單上任何一個角度，0,0都保證釘在右上角，滑鼠移過去、刻度上、寫進
-// .strate的座標永遠是同一顆die的真正物理座標(這條規則完全沒變)。「鏡像」
-// 勾選框沒有這個保證——它是一次額外的水平翻轉，數學上就是那些會把(0,0)
-// 換走的操作之一，勾了鏡像之後0,0不保證還在右上角，只在真的需要鏡像
-// (跟角度不同類的對稱操作)時才勾。
+// 2026/09/07：短暫改成「轉置」(nu=v,nv=u)讓0,0在90°/270°也能釘在右上角，
+// 送出當天就被使用者用真實.strate資料當場抓到問題：轉置在數學上等於對
+// 座標做了一次「不是使用者要的」鏡射——使用者回報「為什麼90度的時候應該
+// 是(x=4,y=5)，變成倒反(x=5,y=4)」，並指出「我的鏡像是圖鏡像，不是整個
+// 圖跟座標都鏡像」，點出轉置公式偷偷把X/Y互換這件事，混進了角度選單，
+// 跟使用者自己控制的「鏡像」勾選框職責重疊、互相打架。已改回真正的90/
+// 180/270度矩形旋轉(spanX-u/spanY-v這種帶反向的公式，不是轉置)——這才是
+// 跟真機bin7/bin1分布圖案吻合、不會把X/Y偷偷互換的正確公式，跟這個專案
+// 從2026/08/26就反覆驗證過的行為一致。代價是回到角度≠0時0,0不保證在
+// 右上角(90度會轉到右下、180度轉到左下、270度轉到左上，只有0度在右上
+// 角)——這是矩形旋轉本身的幾何性質，「0,0永遠釘住」跟「圖案真的旋轉、
+// 不偷偷互換X/Y」這兩件事沒有公式能同時滿足，優先保留後者，因為後者已經
+// 拿真機資料反覆驗證過，前者這次被證明會產生錯誤座標。
 function rotateWaferPoint(x, y, rawBounds, angleDeg, mirror) {
   if (!rawBounds) return null;
   const { minX, maxX, minY, maxY } = rawBounds;
@@ -148,8 +143,10 @@ function rotateWaferPoint(x, y, rawBounds, angleDeg, mirror) {
   const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const u = x - minX, v = y - minY;
   let nu, nv;
-  if (angleDeg === 90 || angleDeg === 270) { nu = v; nv = u; }
-  else { nu = u; nv = v; } // 0 or 180
+  if (angleDeg === 90) { nu = v; nv = spanX - u; }
+  else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+  else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+  else { nu = u; nv = v; } // 0
   if (mirror) nu = rotatedSpanX - nu;
   return { x: nu, y: nv };
 }
@@ -175,8 +172,10 @@ function unrotateWaferPoint(nu, nv, rawBounds, angleDeg, mirror) {
   const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const nu0 = mirror ? rotatedSpanX - nu : nu;
   let u, v;
-  if (angleDeg === 90 || angleDeg === 270) { v = nu0; u = nv; }
-  else { u = nu0; v = nv; } // 0 or 180 — see rotateWaferPoint()'s comment
+  if (angleDeg === 90) { v = nu0; u = spanX - nv; }
+  else if (angleDeg === 180) { u = spanX - nu0; v = spanY - nv; }
+  else if (angleDeg === 270) { v = spanY - nu0; u = nv; }
+  else { u = nu0; v = nv; } // 0
   return { x: u + minX, y: v + minY };
 }
 

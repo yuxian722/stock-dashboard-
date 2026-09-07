@@ -77,10 +77,11 @@ function waferRawBounds(cells) {
 // rotated display coords) without duplicating the rotation math a second
 // time and risking the two drifting apart, the same class of bug that
 // caused the T點公式 mismatch earlier in this project (see CLAUDE.md).
-// 2026/09/07：跟app.js同一天同一次更正——見那邊rotateWaferPoint()的完整
-// 註解(矩形旋轉的群論限制：只有恆等/轉置這兩種變換能讓(0,0)不動，所以
-// 0°/180°、90°/270°會長得一樣，換來的是選單上任何角度0,0都保證釘在
-// 右上角)。這裡跟app.js必須維持同一條公式。
+// 2026/09/07：跟app.js同一天，先改成轉置公式讓0,0在90/270度也釘在右上角，
+// 送出當天就被使用者用真實.strate資料抓到問題——轉置在數學上等於偷偷把
+// X/Y座標互換，混進了角度選單，跟使用者自己控制的「鏡像」勾選框職責重疊
+// (見app.js的rotateWaferPoint()完整說明)。已改回真正的旋轉公式，跟app.js
+// 保持同一條。
 function rotateWaferPoint(x, y, rawBounds, angleDeg, mirror) {
   if (!rawBounds) return null;
   const { minX, maxX, minY, maxY } = rawBounds;
@@ -88,8 +89,10 @@ function rotateWaferPoint(x, y, rawBounds, angleDeg, mirror) {
   const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const u = x - minX, v = y - minY;
   let nu, nv;
-  if (angleDeg === 90 || angleDeg === 270) { nu = v; nv = u; }
-  else { nu = u; nv = v; } // 0 or 180
+  if (angleDeg === 90) { nu = v; nv = spanX - u; }
+  else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+  else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+  else { nu = u; nv = v; }
   if (mirror) nu = rotatedSpanX - nu;
   return { x: nu, y: nv };
 }
@@ -108,8 +111,10 @@ function unrotateWaferPoint(nu, nv, rawBounds, angleDeg, mirror) {
   const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
   const nu0 = mirror ? rotatedSpanX - nu : nu;
   let u, v;
-  if (angleDeg === 90 || angleDeg === 270) { v = nu0; u = nv; }
-  else { u = nu0; v = nv; } // 0 or 180 — see app.js's rotateWaferPoint() comment
+  if (angleDeg === 90) { v = nu0; u = spanX - nv; }
+  else if (angleDeg === 180) { u = spanX - nu0; v = spanY - nv; }
+  else if (angleDeg === 270) { v = spanY - nu0; u = nv; }
+  else { u = nu0; v = nv; } // 0
   return { x: u + minX, y: v + minY };
 }
 

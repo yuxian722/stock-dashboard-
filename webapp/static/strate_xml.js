@@ -129,15 +129,17 @@ function rotateWaferMapAndSubstrates(wm, matchedSubstrates, angleDeg, mirror) {
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const spanX = maxX - minX, spanY = maxY - minY;
   const rotatedSpanX = angleDeg === 90 || angleDeg === 270 ? spanY : spanX;
-  // 2026/09/07：跟app.js/mispick.js同一天同一次更正，見app.js的
-  // rotateWaferPoint()完整註解——只有恆等/轉置這兩種變換能讓(0,0)不動，
-  // 所以0°/180°、90°/270°會長得一樣，換來選單上任何角度0,0都保證釘在
-  // 右上角。
+  // 2026/09/07：跟app.js/mispick.js同一天先改成轉置公式、當天又改回來
+  // (見app.js的rotateWaferPoint()完整說明)——轉置在數學上等於偷偷把X/Y
+  // 座標互換，使用者用真實資料當場抓到「90度時座標倒反」，跟「鏡像」
+  // 勾選框的職責重疊。改回真正的旋轉公式，跟app.js/mispick.js保持一致。
   const rotatePoint = (x, y) => {
     const u = x - minX, v = y - minY;
     let nu, nv;
-    if (angleDeg === 90 || angleDeg === 270) { nu = v; nv = u; }
-    else { nu = u; nv = v; } // 0 or 180
+    if (angleDeg === 90) { nu = v; nv = spanX - u; }
+    else if (angleDeg === 180) { nu = spanX - u; nv = spanY - v; }
+    else if (angleDeg === 270) { nu = spanY - v; nv = u; }
+    else { nu = u; nv = v; } // 0
     if (mirror) nu = rotatedSpanX - nu;
     return [nu, nv];
   };
