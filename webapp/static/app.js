@@ -1135,7 +1135,14 @@ function commitStagedPicksRoundRobin() {
   return count;
 }
 
-const GRID_AXIS_SIZE = 20; // must match .grid-axis-cell's width/height in style.css
+// .grid-axis-cell's width/height in style.css follows --wafer-cell-size (see
+// wafer圖放大縮小 below) instead of a fixed 20px, so this reads the current
+// value at call-time rather than being a fixed constant.
+function currentGridAxisSize() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--wafer-cell-size").trim();
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : 20;
+}
 
 function renderWaferPanel(panelIndex) {
   const ids = waferIds(panelIndex);
@@ -1262,10 +1269,11 @@ function renderWaferOverlayInto(overlayId, containerId, bounds) {
   }
   // Offset by one axis-label row/column so the overlay only covers the
   // actual cell area, not the coordinate labels.
-  const w = grid.offsetWidth - GRID_AXIS_SIZE;
-  const h = grid.offsetHeight - GRID_AXIS_SIZE;
-  svg.style.left = GRID_AXIS_SIZE + "px";
-  svg.style.top = GRID_AXIS_SIZE + "px";
+  const axisSize = currentGridAxisSize();
+  const w = grid.offsetWidth - axisSize;
+  const h = grid.offsetHeight - axisSize;
+  svg.style.left = axisSize + "px";
+  svg.style.top = axisSize + "px";
   svg.setAttribute("width", w);
   svg.setAttribute("height", h);
   // Approximate reference guide only — inscribed in the loaded grid's own
@@ -1871,6 +1879,59 @@ async function generateStrate() {
   status.textContent = `已產生並下載：${filename}`;
   setStepFlow(4, { done: [1, 2, 3, 4] });
 }
+
+// ---- wafer圖放大縮小(2026/09/07使用者要求)---------------------------------
+// 純顯示層級的格子大小調整，透過:root的--wafer-cell-size CSS變數同時套用到
+// wafer圖(.wafer-cell)跟下面基板圖(.substrate-cell)，兩張圖繼續維持同一套
+// 格子大小(見style.css .lyr-wafer-grid那則comment，方便肉眼對照)。用
+// localStorage記住縮放程度，是純畫面偏好，跟SHARED_WAFER_ANGLE_KEY那種
+// 跟著資料走的設定不一樣，不用綁LotNo/BarcodeID。
+const WAFER_ZOOM_KEY = "bingomap_wafer_zoom_px";
+const WAFER_CELL_SIZE_DEFAULT = 20;
+const WAFER_CELL_SIZE_MIN = 10;
+const WAFER_CELL_SIZE_MAX = 40;
+const WAFER_CELL_SIZE_STEP = 2;
+
+function currentWaferCellSizePx() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--wafer-cell-size").trim();
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : WAFER_CELL_SIZE_DEFAULT;
+}
+
+function applyWaferCellSize(px) {
+  const clamped = Math.max(WAFER_CELL_SIZE_MIN, Math.min(WAFER_CELL_SIZE_MAX, px));
+  document.documentElement.style.setProperty("--wafer-cell-size", `${clamped}px`);
+  const label = document.getElementById("wafer-zoom-label");
+  if (label) label.textContent = `${Math.round((clamped / WAFER_CELL_SIZE_DEFAULT) * 100)}%`;
+  try {
+    localStorage.setItem(WAFER_ZOOM_KEY, String(clamped));
+  } catch (err) {
+    // localStorage unavailable/quota exceeded — just don't persist
+  }
+  // 格子大小改變會連帶影響renderWaferOverlayInto()算藍色橢圓/十字線位置用的
+  // currentGridAxisSize()，純CSS reflow沒辦法讓那個SVG跟著重算，所以要整個
+  // 重繪wafer圖(基板圖是純CSS縮放，不需要重繪)。
+  renderWaferGrid();
+}
+
+function initWaferZoomControls() {
+  let stored = WAFER_CELL_SIZE_DEFAULT;
+  try {
+    const raw = localStorage.getItem(WAFER_ZOOM_KEY);
+    const n = raw !== null ? parseInt(raw, 10) : NaN;
+    if (Number.isFinite(n)) stored = n;
+  } catch (err) {
+    // localStorage unavailable — fall back to default
+  }
+  applyWaferCellSize(stored);
+  const zoomOutBtn = document.getElementById("btn-wafer-zoom-out");
+  const zoomInBtn = document.getElementById("btn-wafer-zoom-in");
+  const zoomResetBtn = document.getElementById("btn-wafer-zoom-reset");
+  if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => applyWaferCellSize(currentWaferCellSizePx() - WAFER_CELL_SIZE_STEP));
+  if (zoomInBtn) zoomInBtn.addEventListener("click", () => applyWaferCellSize(currentWaferCellSizePx() + WAFER_CELL_SIZE_STEP));
+  if (zoomResetBtn) zoomResetBtn.addEventListener("click", () => applyWaferCellSize(WAFER_CELL_SIZE_DEFAULT));
+}
+initWaferZoomControls();
 
 // ---- Initial wiring ---------------------------------------------------
 document.getElementById("btn-blank").addEventListener("click", loadBlank);

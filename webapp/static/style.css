@@ -7,6 +7,10 @@
   --green:#0f8f5f; --green-bg:#ecfdf5;
   --yellow:#b7791f; --yellow-bg:#fffbeb;
   --red:#b42318; --red-bg:#fff1f2;
+  /* wafer/substrate格子的放大縮小(2026/09/07)——單一全域變數，讓wafer圖跟
+     基板圖(bingomap)縮放時繼續維持同一個格子大小，不破壞上面.lyr-wafer-grid
+     那則comment提到「兩張圖刻意用同一套格子大小方便肉眼對照」這件事。 */
+  --wafer-cell-size:20px;
 }
 *{box-sizing:border-box}
 body{
@@ -119,9 +123,10 @@ button.secondary.active-layer:hover{background:#0c7550}
 .grid-tooltip.visible{display:block}
 .wafer-row{display:flex}
 .wafer-cell{
-  width:20px;height:20px;box-sizing:border-box;border:1px solid #eef1f6;background:#fff;cursor:pointer;
+  width:var(--wafer-cell-size,20px);height:var(--wafer-cell-size,20px);box-sizing:border-box;
+  border:1px solid #eef1f6;background:#fff;cursor:pointer;
   transition:filter .1s ease;display:flex;align-items:center;justify-content:center;
-  font-size:9px;font-weight:800;color:#0b1220;user-select:none;
+  font-size:calc(var(--wafer-cell-size,20px) * 0.45);font-weight:800;color:#0b1220;user-select:none;
 }
 .wafer-cell:hover{filter:brightness(.93)}
 /* Bin color: set per-cell via --bin-color (JS, one shared palette per page
@@ -179,7 +184,10 @@ button.secondary.active-layer:hover{background:#0c7550}
 
 .grid-wrap-inner{position:relative;display:inline-block;margin:0.3rem 0 0.8rem;max-width:100%;overflow:auto}
 .lyr-substrate-grid{display:inline-block;user-select:none;border:1px solid var(--line);border-radius:8px;background:#fff}
-.substrate-cell{width:20px;height:20px;box-sizing:border-box;border:1px solid #eef1f6;background:#f3f5f8;cursor:pointer}
+.substrate-cell{
+  width:var(--wafer-cell-size,20px);height:var(--wafer-cell-size,20px);box-sizing:border-box;
+  border:1px solid #eef1f6;background:#f3f5f8;cursor:pointer;
+}
 .substrate-cell:hover{filter:brightness(.93)}
 .substrate-cell.filled{background:var(--blue);border-color:#0f4f9e}
 .substrate-cell.next{outline:2px solid #f5900f;outline-offset:-2px}
@@ -210,11 +218,24 @@ button.secondary.active-layer:hover{background:#0c7550}
 }
 
 .grid-axis-cell,.substrate-axis-cell{
-  width:20px;height:20px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
-  font-size:9px;font-weight:700;color:var(--muted);background:#e9eef6;flex:none;
+  width:var(--wafer-cell-size,20px);height:var(--wafer-cell-size,20px);box-sizing:border-box;
+  display:flex;align-items:center;justify-content:center;
+  font-size:calc(var(--wafer-cell-size,20px) * 0.45);font-weight:700;color:var(--muted);
+  background:#e9eef6;flex:none;
 }
 .grid-axis-corner,.substrate-axis-corner{background:#111f35}
 .grid-hover-status{font-size:0.8rem;font-weight:700;color:var(--blue);min-height:1.2em;margin:0.4rem 0 0.2rem}
+
+/* wafer圖放大縮小(2026/09/07)——單一控制列，透過:root的--wafer-cell-size
+   同時縮放wafer圖跟下面的基板圖(bingomap)，維持兩者對照時的一致大小。
+   按鈕特意做小一點、放同一行，不套用一般button那種大按鈕樣式。 */
+.zoom-controls{display:flex;align-items:center;gap:6px;margin:0.5rem 0 0.2rem;font-size:0.8rem;color:var(--muted)}
+.zoom-controls button{
+  margin-top:0;padding:0.25rem 0.65rem;font-size:0.85rem;font-weight:800;
+  border-radius:8px;background:#475569;box-shadow:none;
+}
+.zoom-controls button:hover{background:#334155}
+.zoom-controls span#wafer-zoom-label{min-width:3.2em;text-align:center;font-weight:700;color:var(--ink)}
 
 button.secondary.skip-mode-on{background:var(--yellow);color:#3a2a06;box-shadow:0 6px 14px rgba(183,121,31,.25)}
 button.secondary.skip-mode-on:hover{background:#a06a1c}
