@@ -205,7 +205,7 @@ def parse_frm(data: bytes) -> FrmMap:
     raise FrmFormatError(f"unrecognised FRM format byte {format_byte!r} (expected 0 or 2)")
 
 
-def frm_to_wafer_bin_map(frm: FrmMap, *, swap_xy: bool = False) -> WaferBinMap:
+def frm_to_wafer_bin_map(frm: FrmMap, *, swap_xy: bool = False, mirror_x: bool = False) -> WaferBinMap:
     """Adapt a parsed FRM file to the source-agnostic WaferBinMap that
     wafer_map.py's scan_rectangle()/build_picks_from_scan() consume. bin
     kinds are stringified to match DiePick/WaferBinMap's existing "1"/"7"
@@ -244,13 +244,31 @@ def frm_to_wafer_bin_map(frm: FrmMap, *, swap_xy: bool = False) -> WaferBinMap:
     座標轉換，不該靠這個共用函式裡硬幫所有機型對調座標軸來湊——這正好是
     這個專案第三次遇到「兩片真實wafer需要相反處理、沒有找到能自動判斷的
     通用欄位」(前兩次見bingomap/CLAUDE.md「wafer圖X/Y軸方向」)，解法一樣
-    是不要把其中一個案例的結論當成放諸四海皆準的規則，寫死進共用邏輯。"""
+    是不要把其中一個案例的結論當成放諸四海皆準的規則，寫死進共用邏輯。
+
+    mirror_x (2026/09/08新增，預設False)：跟swap_xy是同一種「有些真實
+    wafer就是需要，沒有欄位能自動判斷」的問題，但這次是另一個獨立的軸向
+    症狀——59C5621S(WaferID=B6844E)這片wafer，swap_xy(對不對調)本身已經
+    測出不需要對調，但X軸(欄)整個是鏡射的：把.strate的DIE_INFO/
+    DIE_INFO_OTHER_LAYER的56顆真實記錄座標，同時拿SECS log(獨立於.frm
+    之外的另一個真實來源，用`secs_log.py`從同一次真實操作的log直接解析
+    出WaferStart事件的BinList)跟這份.frm檔案交叉比對，兩個完全獨立來源
+    整片1422格逐格比對，`frm_bin_at(columns-1-x, y) == secs_bin_at(x, y)`
+    在全部1422格上**百分之百吻合**(不是「大部分吻合、少數是資料時間差」
+    這種程度，是完全吻合)，反而不鏡射直接比對只有59.6%吻合——這代表
+    這片wafer的FRM檔案，X軸座標真的是鏡射過的，不是量測時間差造成的
+    雜訊。用同樣方法測過T3DC94(268 vs 271/299，鏡射前後幾乎沒差，這片
+    wafer本身不需要鏡射)、FC2643(49/49已經是100%，鏡射後掉到46/49，
+    確認這片也不需要鏡射)，證實mirror_x不是frm_reader.py全域的解析
+    bug，是跟swap_xy一樣、只有特定物理wafer才需要的個案設定，選擇性
+    參數、預設不鏡射，呼叫端自己決定。"""
     if swap_xy:
-        wafer_map = WaferBinMap(columns=frm.row, rows=frm.col)
-        for (x, y), bin_kind in frm.die_map.items():
-            wafer_map.set_bin(y, x, str(bin_kind))
-        return wafer_map
-    wafer_map = WaferBinMap(columns=frm.col, rows=frm.row)
-    for (x, y), bin_kind in frm.die_map.items():
-        wafer_map.set_bin(x, y, str(bin_kind))
+        columns, rows = frm.row, frm.col
+        raw_items = ((y, x, bin_kind) for (x, y), bin_kind in frm.die_map.items())
+    else:
+        columns, rows = frm.col, frm.row
+        raw_items = ((x, y, bin_kind) for (x, y), bin_kind in frm.die_map.items())
+    wafer_map = WaferBinMap(columns=columns, rows=rows)
+    for x, y, bin_kind in raw_items:
+        wafer_map.set_bin(columns - 1 - x if mirror_x else x, y, str(bin_kind))
     return wafer_map

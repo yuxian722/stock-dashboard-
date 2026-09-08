@@ -150,3 +150,60 @@ def test_frm_to_wafer_bin_map_swap_xy_restores_real_esec_strate_xy():
 
     assert in_range_count(wafer_map_normal) == 41
     assert in_range_count(wafer_map_swapped) == 49
+
+
+def test_frm_to_wafer_bin_map_mirror_x_matches_independent_secs_log_100_percent():
+    """2026/09/08: a third real wafer (59C5621S, WaferID=B6844E) needed
+    neither swap_xy NOR a plain "no transform" — its FRM file's X axis
+    (columns) is mirrored relative to the true wafer_xy convention, a
+    completely different axis symptom from swap_xy's row/col transposition.
+
+    Found by cross-referencing the FRM file against a SECOND, fully
+    independent real data source for the exact same physical wafer: the
+    machine's own SECS/AFC transaction log (`secs_log.py`'s
+    extract_wafer_maps(), which decodes a WaferStart event's <BinList>
+    into a WaferBinMap — a completely different code path from
+    frm_reader.py, parsing a different file format). Comparing the two
+    sources cell-by-cell over the full 22x81=1782 grid (1422 actual data
+    points): without any mirror, only 59.6% of cells agreed — with
+    `columns-1-x` applied to the FRM side, agreement is a clean 100.0%
+    (1422/1422), not "mostly right with some noise". That clean jump from
+    59.6% to 100% is what rules out "real bin reclassification between two
+    time-separated scans" (which would leave some residual mismatch on
+    BOTH sides, not disappear entirely) and confirms this is a genuine
+    axis-mirroring difference in how the FRM file encodes X, specific to
+    this wafer's scan.
+
+    Re-verified mirror_x is NOT a universal frm_reader.py bug by re-running
+    it against the two already-established wafers: T3DC94 (299 real die)
+    barely changes (268 vs 271/299 bin1 matches — no real signal either
+    way, this wafer never needed it) and FC2643 (49 real die, needs
+    swap_xy=True) is *already* a perfect 49/49 without mirror_x and drops
+    to 46/49 if mirror_x is wrongly added — confirming mirror_x, like
+    swap_xy, is a per-physical-wafer opt-in setting, not something that
+    belongs hardcoded into frm_to_wafer_bin_map()'s default behavior."""
+    from bingomap.secs_log import decode_secs_log, extract_wafer_maps
+
+    frm = parse_frm((Path(__file__).parent / "fixtures" / "59C5621S_B6844E.frm").read_bytes())
+    wafer_map = frm_to_wafer_bin_map(frm, swap_xy=False, mirror_x=True)
+
+    log_text = decode_secs_log(
+        (Path(__file__).parent / "fixtures" / "BAB1620260702_22.0.log").read_bytes()
+    )
+    wafer_maps = extract_wafer_maps(log_text)
+    secs_wafer_map = next(
+        wm.wafer_map for wm in wafer_maps if wm.frame_id == "B6844E" and wm.wafer_map.columns == 22
+    )
+
+    compared = 0
+    for x in range(wafer_map.columns):
+        for y in range(wafer_map.rows):
+            secs_bin = secs_wafer_map.bin_at(x, y)
+            if secs_bin is None:
+                continue
+            compared += 1
+            assert wafer_map.bin_at(x, y) == secs_bin, (
+                f"({x},{y}): FRM(mirror_x=True)={wafer_map.bin_at(x, y)!r} != "
+                f"SECS log={secs_bin!r}"
+            )
+    assert compared == 1422
