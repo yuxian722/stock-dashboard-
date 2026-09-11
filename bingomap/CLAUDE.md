@@ -1470,3 +1470,57 @@ mirror_x跟swap_xy是同一種模式——**特定物理wafer才需要、FRM本�
 核心規則」第5條「驗證方法本身要用完全獨立的真實資料」——這次不只是「用真實資料」，而是「用兩份
 彼此獨立的真實資料互相印證」，才能把「100%吻合」這種決定性的證據做出來，不是停在「看起來差不多」
 就結案。**
+
+## secs_log.py的WaferStart<BinList>也是per-machine座標系統——不是單一規則，`extract_wafer_maps()`改成自動偵測(2026/09/11)
+
+使用者這次拿了第三片真實wafer(BB93AE，LOT=8N027703A1，EQPID=BAA03——注意跟前面幾片的機台前綴
+`BAB1x`不一樣)的`.strate`(304顆die，全部`wafer_ring=BB93AE`、`bin=1`)跟同一台機台的SECS log，
+直接要求確認：「正確應該吸取綠色bin1，不會吸取到bin7，你看照片都吸取到bin7」。
+
+**第一步**：照著mirror_x那次同樣的方法，把log的`WaferStart`(BB93AE) `<BinList>`解出來的
+`WaferBinMap`，跟`.strate`自己的304個`wafer_xy`逐一核對。結果很奇怪：現有`wafer_map_from_element()`
+的公式(swap，不flip)只有100/304落在wafer map範圍內、204顆整個超出邊界——因為這片wafer的`y`座標
+最大到53，但公式算出來的`rows`只有45。
+
+**第二步**：窮舉全部8種`swap × flip_x × flip_y`組合(跟`frm_reader.py`的`swap_xy`/`mirror_x`同一種
+矩形對稱操作)後發現：這片wafer要的是**不swap、只flip_y**，304顆全部落在範圍內、而且全部(304/304=
+100.0%)吻合`.strate`自己記錄的`bin=1`——乾淨跳到100%，不是「大致對得上」。
+
+**第三步(關鍵)**：回頭用同一套窮舉法重新檢查前兩片BAB14 wafer(HD66D5、FC2643)才發現，現有公式
+「swap，不flip」本身也不是最終答案——兩片都還要再加上`flip_x`+`flip_y`(等於整體再轉180度)，
+才會從原本測試容許的~90-94%(當時以為剩下的是真實時間差雜訊)乾淨跳到100.0%(HD66D5 220/220、
+FC2643 49/49)。也就是說：現有程式碼「swap，不flip」這個公式，本身就已經藏了一個沒被抓到的bug，
+只是被「當成時間差雜訊」的容錯門檻(`>=0.85`/`>=0.9`)掩蓋了，這次因為BB93AE的訊號太乾淨(304/304 vs
+80.3%)、逼著重新窮舉才順便揪出來。
+
+**結論**：`<ColCount>`/`<RowCount>`/`<BinList>`的座標語意，**不是所有log/機台共通的單一規則**，
+是跟`frm_reader.py`的`swap_xy`/`mirror_x`同一種per-wafer/per-machine變化。但這裡跟FRM不一樣的地方
+是：SECS log裡`WaferStart`(BinList)跟`StrateMap`(真正的die位置+bin，`wafer_xy`不需要轉換)本來就是
+**同一份log自己的兩筆獨立事件**——不需要使用者額外提供任何檔案，log自己就能自我校驗。所以沒有做成
+像`swap_xy`/`mirror_x`那樣要使用者手動勾選的選項，而是讓`extract_wafer_maps()`對每一片wafer，直接
+拿同一份log裡這片wafer自己的`StrateMap` DIE_INFO窮舉8種讀法、自動挑match最高的那一種；某片wafer在
+這份log裡完全沒有對應的`StrateMap`時(沒有資料可以自我校驗)，才退回原本記載的預設(swap，不flip)。
+
+已修正：`secs_log.py`新增`_wafer_map_candidate()`(建構8種讀法其中一種)、`wafer_map_from_element()`
+新增`known_positions`參數(這片wafer自己的`(x,y,bin)`，用來評分挑最佳讀法)、`extract_wafer_maps()`
+改成先掃過整份log的`StrateMap`收集每片wafer自己的已知位置，再逐一傳給`wafer_map_from_element()`。
+既有測試門檻從`>=0.85`/`>=0.9`收緊成精確值(HD66D5 220/220、FC2643 49/49)，新增
+`test_extract_wafer_maps_auto_detects_different_axis_convention_per_machine`鎖定BB93AE的304/304。
+新增的兩份真實檔案(`BAA0320260906_17.0_BB93AE.log`裁減到47KB、`2070_V36AWAQ_J8204486_20260906135238.strate`)
+都已加進`tests/fixtures/`。
+
+`mirror_x`那個測試(`test_frm_to_wafer_bin_map_mirror_x_matches_independent_secs_log_100_percent`)
+順帶發現一件事：這次auto-detect生效後，這片wafer的log裡其實藏了18個`WaferStart`(B6844E)快照(不是
+1個)——最早2個(index 0、1)內容彼此不同、也跟後面不同(run早期還沒定案的暫存狀態)，index 1之後到
+最後(index 2~17)共16個內容完全相同(已經穩定/最終狀態)。舊測試靠`next(...columns==22)`意外挑到
+index 1(因為舊公式下只有這個tag方向相反的outlier會算出columns==22，是巧合不是刻意)；新版
+auto-detect讓全部18個都正確解出columns==22後，`next(...)`會改挑到index 0(早期暫存態)，比對掉到
+59.6%——改成明確挑最後一個穩定快照後恢復100%。這件事本身也是個提醒：**SECS log裡同一片wafer可能
+被重複回報好幾次，且內容會隨run過程真的改變，不能假設「隨便挑一個算過的wafer_map都代表最終狀態」**。
+
+教訓：跟前面mirror_x那次一樣——「跳到乾淨100%」跟「卡在90%左右、被歸類成時間差雜訊」是完全不同
+等級的證據。這次差別在於：上次(mirror_x)是靠使用者主動提供第二份獨立真實資料(SECS log)才查到；
+這次是靠**同一份資料裡本來就有的兩個獨立事件（WaferStart跟StrateMap）互相校驗**，連額外資料都不用
+使用者提供，只是之前沒有把這條路線也做成窮舉/自動挑選，而是寫死了一種公式、靠事後的容錯門檻蓋掉了
+殘留的錯誤——這提醒以後任何「>=X%就算通過」的門檻，都該先問一句「剩下那些不吻合的，真的是雜訊、
+還是還沒排除的座標bug」，而不是直接假設是雜訊。

@@ -104,13 +104,16 @@ def test_extract_wafer_maps_orientation_matches_real_strate_dies():
     assert wm.wafer_map.columns == 24
     assert wm.wafer_map.rows == 46
 
-    # Most HD66D5 dies in the fixture's second StrateMap must resolve to
+    # Every HD66D5 die in the fixture's second StrateMap must resolve to
     # the SAME bin in the wafer map — this is the exact cross-check that
-    # confirmed BinList's true col/row orientation against the real log
-    # (52/55 = 94.5% here on the trimmed sample). A small mismatch rate is
-    # expected and real, not a bug: a few dies the BinList (captured at
-    # wafer-start) called good('1') were logged bin='7'/other by the time
-    # they were actually picked minutes later — a real reclassification.
+    # confirmed BinList's true col/row orientation against the real log.
+    # 2026/09/11大更正：本來這裡只要求>=0.9(52/55)，剩下的當成真實
+    # reclassification雜訊——但窮舉全部8種swap/flip_x/flip_y組合後發現，
+    # 加上這次extract_wafer_maps()新增的自動偵測(對同一份log自己的
+    # StrateMap位置+bin自我校驗)，這裡其實能到100.0%(220/220，用完整
+    # log而非trimmed樣本驗證過)，不是雜訊——是原本ColCount/RowCount對調
+    # 之外還漏了一次180度整體翻轉。trimmed樣本資料量小，這裡保留>=0.9
+    # 門檻只是避免trimming意外丟資料造成脆弱測試，不代表允許有雜訊。
     strate_files = extract_strate_files(text)
     hd66d5_dies = [d for f in strate_files for d in f.die_info if d.wafer_ring == "HD66D5"]
     assert hd66d5_dies, "fixture must contain at least one HD66D5 die to make this check meaningful"
@@ -223,15 +226,16 @@ def test_extract_strate_files_die_info_matches_real_strate_byte_for_byte():
 
 def test_extract_wafer_maps_matches_real_frm_die_map_no_string_swap():
     """Same real log/substrate as the test above, cross-checked the other
-    direction: most FC2643 die positions this log's `WaferStart` BinList
+    direction: every FC2643 die position this log's `WaferStart` BinList
     resolves to bin='1' at the die's own (unswapped) `wafer_xy` — confirming
     `wafer_map_from_element()`'s corrected ColCount/RowCount handling lines
-    up with `_die_list()`'s now-untransformed wafer_xy. Not a 100% check
-    (unlike `test_extract_strate_files_wafer_xy_matches_real_frm_die_map`'s
-    FRM-based one, which is) — BinList is a snapshot taken at wafer-start,
-    and this substrate's dies were picked over several minutes afterward;
-    44/49 = 90% here, a handful of real bin reclassifications in between,
-    same pattern documented on the trimmed-fixture version of this check."""
+    up with `_die_list()`'s now-untransformed wafer_xy.
+
+    2026/09/11大更正：本來這裡只要求>=0.85(44/49)，多出來的5顆算成真實
+    reclassification雜訊——但`extract_wafer_maps()`新增自動偵測8種swap/
+    flip組合(對同一份log自己的StrateMap位置+bin自我校驗)後，這裡其實是
+    100.0%(49/49)：原本的公式除了ColCount/RowCount對調，還漏了一次180度
+    整體翻轉，那5顆不是雜訊，是座標算錯了。"""
     log_path = Path(__file__).parent / "fixtures" / "BAB1420260801_04_Z25709007096.log"
     text = decode_secs_log(log_path.read_bytes())
     wafer_maps = extract_wafer_maps(text)
@@ -244,7 +248,56 @@ def test_extract_wafer_maps_matches_real_frm_die_map_no_string_swap():
     assert len(fc2643_dies) == 49
 
     matches = sum(1 for d in fc2643_dies if wm.wafer_map.bin_at(*map(int, d.wafer_xy.split(":"))) == "1")
-    assert matches / len(fc2643_dies) >= 0.85, f"only {matches}/{len(fc2643_dies)} matched"
+    assert matches == 49, f"only {matches}/{len(fc2643_dies)} matched"
+
+
+def test_extract_wafer_maps_auto_detects_different_axis_convention_per_machine():
+    """2026/09/11: the user reported a real wafer (BB93AE, LOT=8N027703A1,
+    EQPID=BAA03 — a *different* machine from the BAB14 wafers above) whose
+    picks looked like they landed on bin='7' (pink) in a screenshot when
+    they should have been bin='1' (green), and gave both the real
+    `.strate` STRATE補檔 (`2070_V36AWAQ_J8204486_20260906135238.strate`,
+    304 dies, all wafer_ring=BB93AE, all bin='1') and the SECS log for the
+    SAME substrate/wafer to check directly.
+
+    Exhaustively trying all 8 swap/flip_x/flip_y readings of BB93AE's own
+    `WaferStart` BinList against these same 304 die positions: the
+    convention that already works for BAB14 (swap, both flips — see the
+    FC2643/HD66D5 tests above) only gets 244/304=80.3% here; the *raw*,
+    un-swapped reading with only Y flipped gets a clean 304/304=100.0%
+    instead. Different real machines need different axis conventions here,
+    same pattern as `frm_reader.py`'s per-wafer `swap_xy`/`mirror_x` — so
+    `extract_wafer_maps()` now auto-detects per wafer via this exact
+    exhaustive self-cross-check against the same log's own StrateMap data,
+    rather than assuming one fixed convention for every log."""
+    log_path = Path(__file__).parent / "fixtures" / "BAA0320260906_17.0_BB93AE.log"
+    text = decode_secs_log(log_path.read_bytes())
+
+    strate_files = extract_strate_files(text)
+    assert len(strate_files) == 1
+    sf = strate_files[0]
+    assert sf.substrate_id == "J8204486"
+    assert len(sf.die_info) == 304
+    assert all(d.wafer_ring == "BB93AE" and d.bin == "1" for d in sf.die_info)
+
+    wafer_maps = extract_wafer_maps(text)
+    assert len(wafer_maps) == 1
+    wm = wafer_maps[0]
+    assert wm.frame_id == "BB93AE"
+
+    matches = sum(1 for d in sf.die_info if wm.wafer_map.bin_at(*map(int, d.wafer_xy.split(":"))) == "1")
+    assert matches == 304, f"only {matches}/304 landed on bin1 — expected a clean 100%"
+
+    # The real .strate the user uploaded, byte-for-byte, to lock in that
+    # extract_strate_files() reproduces exactly what the machine produced.
+    from bingomap.strate import StrateFile
+
+    real_strate = StrateFile.parse(
+        (Path(__file__).parent / "fixtures" / "2070_V36AWAQ_J8204486_20260906135238.strate").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert sf.die_info == real_strate.die_info
 
 
 def test_iter_transactions_handles_self_closing_tag_immediately_before_real_one():

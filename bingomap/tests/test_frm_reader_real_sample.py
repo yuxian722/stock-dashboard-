@@ -181,7 +181,21 @@ def test_frm_to_wafer_bin_map_mirror_x_matches_independent_secs_log_100_percent(
     swap_xy=True) is *already* a perfect 49/49 without mirror_x and drops
     to 46/49 if mirror_x is wrongly added — confirming mirror_x, like
     swap_xy, is a per-physical-wafer opt-in setting, not something that
-    belongs hardcoded into frm_to_wafer_bin_map()'s default behavior."""
+    belongs hardcoded into frm_to_wafer_bin_map()'s default behavior.
+
+    2026/09/11大更正：`extract_wafer_maps()`後來改成對每個WaferStart自動
+    偵測swap/flip(見secs_log.py)，這個log裡B6844E其實有18個WaferStart
+    快照(不是1個)——同一片wafer在整段run裡被重複回報，前2個(index 0、1)
+    內容彼此不同、也跟後面16個不同(明顯是run早期、還沒定案的暫存狀態)，
+    但index 1之後、一路到最後一個(index 2~17)全部16個內容完全相同(已經
+    穩定/最終的bin map)。舊版程式碼因為固定用同一套swap公式，「剛好」只
+    有index 1這個tag方向相反的outlier會算出columns==22，所以舊測試
+    `next(...columns==22)`意外挑到的正是index 1——不是刻意選的，是巧合。
+    新版auto-detect讓全部18個快照都正確解出columns==22，所以`next(...)`
+    現在改成挑到index 0(最早、還沒定案的暫存快照)，比對只剩59.6%——不是
+    退步，是原本就該被丟掉的過渡態。這裡改成明確挑最後一個(index 17，
+    16個穩定快照之一，任一個都可以，選最後一個最保守)，避免依賴tag方向
+    這種巧合。"""
     from bingomap.secs_log import decode_secs_log, extract_wafer_maps
 
     frm = parse_frm((Path(__file__).parent / "fixtures" / "59C5621S_B6844E.frm").read_bytes())
@@ -191,9 +205,8 @@ def test_frm_to_wafer_bin_map_mirror_x_matches_independent_secs_log_100_percent(
         (Path(__file__).parent / "fixtures" / "BAB1620260702_22.0.log").read_bytes()
     )
     wafer_maps = extract_wafer_maps(log_text)
-    secs_wafer_map = next(
-        wm.wafer_map for wm in wafer_maps if wm.frame_id == "B6844E" and wm.wafer_map.columns == 22
-    )
+    b6844e_maps = [wm.wafer_map for wm in wafer_maps if wm.frame_id == "B6844E" and wm.wafer_map.columns == 22]
+    secs_wafer_map = b6844e_maps[-1]
 
     compared = 0
     for x in range(wafer_map.columns):
