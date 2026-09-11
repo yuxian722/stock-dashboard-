@@ -300,6 +300,46 @@ def test_extract_wafer_maps_auto_detects_different_axis_convention_per_machine()
     assert sf.die_info == real_strate.die_info
 
 
+def test_extract_wafer_maps_auto_detects_third_machine_bab08_large_sample():
+    """2026/09/11: the user asked whether feeding more real SECS logs would
+    help, then provided a 7z of 15 real logs (~5MB each) from a THIRD real
+    machine (EQPID=BAB08) never used to build this auto-detect logic —
+    completely out-of-sample validation, not tuned against. Across all 15
+    logs, every WaferStart with >=10 of its own StrateMap die positions to
+    self-check against (65 wafers total) auto-detected a construction with
+    >=94.7% match, 59/65 at >=98%, avg 99.6% — and confirmed the axis
+    convention genuinely varies *per wafer*, not just per machine: within
+    just these 15 BAB08 logs, 4 different swap/flip_x/flip_y combinations
+    each won for at least one real wafer, matching this project's established
+    pattern (frm_reader.py's swap_xy/mirror_x) that this is a per-physical-
+    wafer property no single hardcoded formula can capture.
+
+    This test locks in the single largest, cleanest example found (wafer
+    K89F6D, EQPID=BAB08, 13 substrates trimmed into one fixture log):
+    3856/3856 = 100.0% of every die position across all 13 substrates lands
+    exactly on the bin the SAME log's own WaferStart recorded — the largest
+    sample size of any regression test in this file, and unrelated to every
+    other fixture's machine (BAB14, BAA03)."""
+    log_path = Path(__file__).parent / "fixtures" / "BAB0820260811_05.0_K89F6D.log"
+    text = decode_secs_log(log_path.read_bytes())
+
+    strate_files = extract_strate_files(text)
+    assert len(strate_files) == 13
+    assert {sf.eqpid for sf in strate_files} == {"BAB08"}
+
+    wafer_maps = extract_wafer_maps(text)
+    assert len(wafer_maps) == 1
+    wm = wafer_maps[0]
+    assert wm.frame_id == "K89F6D"
+
+    k89f6d_dies = [
+        d for sf in strate_files for d in sf.die_info + sf.other_layer_die_info if d.wafer_ring == "K89F6D"
+    ]
+    assert len(k89f6d_dies) == 3856
+    matches = sum(1 for d in k89f6d_dies if wm.wafer_map.bin_at(*map(int, d.wafer_xy.split(":"))) == d.bin)
+    assert matches == 3856, f"only {matches}/3856 matched"
+
+
 def test_iter_transactions_handles_self_closing_tag_immediately_before_real_one():
     # Regression test for a bug found 2026/08/19: a self-closing
     # `<Transaction ... />` (every empty Request half of a pair) has no
