@@ -203,7 +203,9 @@ def api_parse_strate():
     )
 
 
-def _frm_cells_json(frm, swap_xy: bool = False, mirror_x: bool = False) -> list[dict]:
+def _frm_cells_json(
+    frm, swap_xy: bool = False, mirror_x: bool = False, mirror_y: bool = False
+) -> list[dict]:
     """Cells for the frontend, in the `.strate` col:row x/y convention (see
     frm_to_wafer_bin_map()'s docstring — 2026/09/03 reverted an axis swap
     here that had only ever been validated for ESEC/NOTCH=270 data and was
@@ -225,8 +227,12 @@ def _frm_cells_json(frm, swap_xy: bool = False, mirror_x: bool = False) -> list[
     swap_xy是同一種「特定物理wafer需要、沒有欄位能自動判斷」的個案設定，
     但這次是不同的軸向症狀(X軸鏡射，不是欄列互換)。59C5621S(WaferID=
     B6844E)這片wafer用獨立的SECS log交叉比對確認需要，T3DC94/FC2643都
-    確認不需要。"""
-    wafer_map = frm_to_wafer_bin_map(frm, swap_xy=swap_xy, mirror_x=mirror_x)
+    確認不需要。
+
+    mirror_y: 2026/09/15新增，見frm_to_wafer_bin_map()的完整說明——跟
+    mirror_x同一種個案設定，但是Y軸鏡射。8L808002A1/BB93AE這片wafer用
+    獨立的SECS log交叉比對確認需要(100.0%吻合)。"""
+    wafer_map = frm_to_wafer_bin_map(frm, swap_xy=swap_xy, mirror_x=mirror_x, mirror_y=mirror_y)
     return [{"x": x, "y": y, "bin": bin_kind} for (x, y), bin_kind in wafer_map.cells.items()]
 
 
@@ -241,6 +247,7 @@ def api_frm():
     frm_root = (data.get("frm_path") or DEFAULT_FRM_PATH).strip()
     swap_xy = bool(data.get("swap_xy"))
     mirror_x = bool(data.get("mirror_x"))
+    mirror_y = bool(data.get("mirror_y"))
     if not lot_no or not barcode_id:
         return jsonify({"error": "lot_no 和 barcode_id 都必填"}), 400
 
@@ -294,7 +301,7 @@ def api_frm():
             "wafer_type": frm.wafer_type,
             "reference_point_x": frm.reference_point_x,
             "reference_point_y": frm.reference_point_y,
-            "cells": _frm_cells_json(frm, swap_xy=swap_xy, mirror_x=mirror_x),
+            "cells": _frm_cells_json(frm, swap_xy=swap_xy, mirror_x=mirror_x, mirror_y=mirror_y),
         }
     )
 

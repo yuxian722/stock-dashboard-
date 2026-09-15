@@ -111,13 +111,15 @@
     <div class="notice" style="margin-top:0.6rem">
       wafer座標軸對調（選填）——大部分wafer(DB機台)不用勾；如果載入FRM後，範本/pick的座標大量落在
       wafer圖外面或形狀明顯不對，改勾這個再重新讀取FRM試試看(這是跟另一種機台方向相反的已知案例，
-      沒有能自動判斷的欄位，只能手動試)。<b>wafer X軸鏡射</b>是另一種獨立的症狀——對調試過還是不對，
-      但範本座標的bin色大部分對得上、只有少數(尤其靠wafer邊緣)對不上時，改試這個(2026/09/08用真實
-      wafer案例(59C5621S)驗證過：這片wafer就是X軸鏡射，不是欄列對調)。兩個勾選框可以獨立勾，也可以
-      同時勾，沒有固定的先後順序，都要重新讀取FRM才會套用。
+      沒有能自動判斷的欄位，只能手動試)。<b>wafer X軸鏡射</b>／<b>wafer Y軸鏡射</b>是另兩種各自獨立的
+      症狀——對調試過還是不對，但範本座標的bin色大部分對得上、只有少數(尤其靠wafer邊緣)對不上時，
+      改試這兩個(2026/09/08用真實wafer案例(59C5621S)驗證過X軸鏡射；2026/09/15用真實wafer案例
+      (8L808002A1/BB93AE)驗證過Y軸鏡射)。三個勾選框都可以獨立勾，也可以任意組合同時勾，沒有固定的
+      先後順序，都要重新讀取FRM才會套用。
     </div>
     <label style="margin-bottom:0.6rem"><input type="checkbox" id="wafer-swap-xy"> wafer座標軸對調(X↔Y互換)</label>
     <label style="margin-bottom:0.6rem"><input type="checkbox" id="wafer-mirror-x"> wafer X軸鏡射</label>
+    <label style="margin-bottom:0.6rem"><input type="checkbox" id="wafer-mirror-y"> wafer Y軸鏡射</label>
     <button id="btn-load-frm">自動讀取FRM檔案</button>
     <p id="frm-status" class="lyr-frm-status"></p>
 

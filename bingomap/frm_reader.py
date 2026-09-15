@@ -205,7 +205,9 @@ def parse_frm(data: bytes) -> FrmMap:
     raise FrmFormatError(f"unrecognised FRM format byte {format_byte!r} (expected 0 or 2)")
 
 
-def frm_to_wafer_bin_map(frm: FrmMap, *, swap_xy: bool = False, mirror_x: bool = False) -> WaferBinMap:
+def frm_to_wafer_bin_map(
+    frm: FrmMap, *, swap_xy: bool = False, mirror_x: bool = False, mirror_y: bool = False
+) -> WaferBinMap:
     """Adapt a parsed FRM file to the source-agnostic WaferBinMap that
     wafer_map.py's scan_rectangle()/build_picks_from_scan() consume. bin
     kinds are stringified to match DiePick/WaferBinMap's existing "1"/"7"
@@ -261,7 +263,21 @@ def frm_to_wafer_bin_map(frm: FrmMap, *, swap_xy: bool = False, mirror_x: bool =
     wafer本身不需要鏡射)、FC2643(49/49已經是100%，鏡射後掉到46/49，
     確認這片也不需要鏡射)，證實mirror_x不是frm_reader.py全域的解析
     bug，是跟swap_xy一樣、只有特定物理wafer才需要的個案設定，選擇性
-    參數、預設不鏡射，呼叫端自己決定。"""
+    參數、預設不鏡射，呼叫端自己決定。
+
+    mirror_y (2026/09/15新增，預設False)：跟mirror_x是同一種「有些真實
+    wafer就是需要，沒有欄位能自動判斷」的問題，這次是Y軸(列)整個鏡射，
+    不是X軸——8L808002A1/BB93AE這片wafer(45欄x55列、1931顆die)，先用
+    現有的swap_xy/mirror_x四種組合窮舉，最高只有70.7%吻合，明顯不是
+    「大部分吻合、少數時間差雜訊」的量級(這個專案已知的真實雜訊案例都
+    在90%以上)，代表現有兩個參數都不是這片wafer需要的變換。改成窮舉
+    完整的8種二面體對稱(swap x flip_x x flip_y)後才發現：不對調、不
+    mirror_x，只需要對Y軸做`rows-1-y`，直接跳到100.0%(1931/1931)——
+    跟mirror_x當初的發現方式一樣，靠同一次操作的SECS log(`WaferStart`
+    的`<BinList>`，經`secs_log.py`用這片wafer自己的`StrateMap`已知位置
+    auto-detect校準過，內部自我一致性97.5%)逐格交叉比對確認，不是猜的。
+    mirror_y在數學上是跟mirror_x獨立的另一個軸，預設值(False)不影響任何
+    既有案例的行為。"""
     if swap_xy:
         columns, rows = frm.row, frm.col
         raw_items = ((y, x, bin_kind) for (x, y), bin_kind in frm.die_map.items())
@@ -270,5 +286,7 @@ def frm_to_wafer_bin_map(frm: FrmMap, *, swap_xy: bool = False, mirror_x: bool =
         raw_items = ((x, y, bin_kind) for (x, y), bin_kind in frm.die_map.items())
     wafer_map = WaferBinMap(columns=columns, rows=rows)
     for x, y, bin_kind in raw_items:
-        wafer_map.set_bin(columns - 1 - x if mirror_x else x, y, str(bin_kind))
+        final_x = columns - 1 - x if mirror_x else x
+        final_y = rows - 1 - y if mirror_y else y
+        wafer_map.set_bin(final_x, final_y, str(bin_kind))
     return wafer_map

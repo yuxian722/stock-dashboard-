@@ -220,3 +220,88 @@ def test_frm_to_wafer_bin_map_mirror_x_matches_independent_secs_log_100_percent(
                 f"SECS log={secs_bin!r}"
             )
     assert compared == 1422
+
+
+def test_frm_to_wafer_bin_map_mirror_y_matches_independent_secs_log_100_percent():
+    """2026/09/15: a fourth real wafer (8L808002A1, Barcode=BB93AE, 45
+    columns x 55 rows, 1931 real die) needed neither swap_xy, nor mirror_x,
+    nor plain "no transform" — exhausting the 4 combinations of those two
+    existing parameters against this wafer's own SECS log tops out at 70.7%
+    (swap_xy=False, mirror_x=False), nowhere near the >=90% this project's
+    real "wafer-scan-vs-pick-time" noise cases land at (see T3DC94 90.6%,
+    FC2643/HD66D5 pre-fix 89.8%/94.5%) — a clear signal this wafer needs an
+    axis transform outside what swap_xy/mirror_x can express.
+
+    Exhaustively trying the full 8-way dihedral family (swap x flip_x x
+    flip_y) against the same wafer's own SECS log (`secs_log.py`'s
+    extract_wafer_maps(), auto-detected against this wafer's own StrateMap
+    known positions elsewhere in the same log — 97.5% self-consistent,
+    confirming the log itself is a trustworthy independent source) finds
+    exactly one clean winner: swap=False, flip_x=False, flip_y=True ->
+    1931/1931 = 100.0%. flip_y on the FRM's own die_map corresponds to
+    mirror_y here (`rows-1-y`) — a genuinely different axis symptom from
+    mirror_x's `columns-1-x`, confirmed independent of it (mirror_x's
+    default False is untouched, this wafer simply never needed it).
+
+    Re-verification against the three previously-established wafers
+    (T3DC94, FC2643, 59C5621S) was not repeated for mirror_y specifically —
+    mirror_y is a new, independent boolean defaulting to False, so it
+    cannot change any existing call site's behavior unless explicitly
+    opted into; the existing tests above already lock in that swap_xy/
+    mirror_x continue to behave exactly as before."""
+    from bingomap.secs_log import decode_secs_log, extract_wafer_maps
+
+    frm = parse_frm((Path(__file__).parent / "fixtures" / "8L808002A1_BB93AE.frm").read_bytes())
+    wafer_map = frm_to_wafer_bin_map(frm, swap_xy=False, mirror_x=False, mirror_y=True)
+
+    log_text = decode_secs_log(
+        (Path(__file__).parent / "fixtures" / "BAA0320260906_17.0_BB93AE_8L808002A1.log").read_bytes()
+    )
+    wafer_maps = extract_wafer_maps(log_text)
+    bb93ae_maps = [wm.wafer_map for wm in wafer_maps if wm.frame_id == "BB93AE"]
+    secs_wafer_map = bb93ae_maps[-1]
+
+    compared = 0
+    for x in range(wafer_map.columns):
+        for y in range(wafer_map.rows):
+            secs_bin = secs_wafer_map.bin_at(x, y)
+            if secs_bin is None:
+                continue
+            compared += 1
+            assert wafer_map.bin_at(x, y) == secs_bin, (
+                f"({x},{y}): FRM(mirror_y=True)={wafer_map.bin_at(x, y)!r} != "
+                f"SECS log={secs_bin!r}"
+            )
+    assert compared == 1931
+
+
+def test_frm_to_wafer_bin_map_mirror_y_default_false_matches_only_70_percent():
+    """Companion to the test above: locks in that WITHOUT mirror_y, this
+    same wafer only reaches 70.7% (1365/1931) against the same independent
+    SECS log — documents the "before" state so a future regression that
+    silently defaults mirror_y to True (or otherwise changes the no-flags
+    behavior) would be caught here, not just missed by the 100% test above
+    passing for the wrong reason."""
+    from bingomap.secs_log import decode_secs_log, extract_wafer_maps
+
+    frm = parse_frm((Path(__file__).parent / "fixtures" / "8L808002A1_BB93AE.frm").read_bytes())
+    wafer_map = frm_to_wafer_bin_map(frm)  # all defaults: swap_xy/mirror_x/mirror_y all False
+
+    log_text = decode_secs_log(
+        (Path(__file__).parent / "fixtures" / "BAA0320260906_17.0_BB93AE_8L808002A1.log").read_bytes()
+    )
+    wafer_maps = extract_wafer_maps(log_text)
+    bb93ae_maps = [wm.wafer_map for wm in wafer_maps if wm.frame_id == "BB93AE"]
+    secs_wafer_map = bb93ae_maps[-1]
+
+    compared = agree = 0
+    for x in range(wafer_map.columns):
+        for y in range(wafer_map.rows):
+            secs_bin = secs_wafer_map.bin_at(x, y)
+            if secs_bin is None:
+                continue
+            compared += 1
+            if wafer_map.bin_at(x, y) == secs_bin:
+                agree += 1
+    assert compared == 1931
+    assert agree == 1365

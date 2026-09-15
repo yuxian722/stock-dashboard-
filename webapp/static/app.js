@@ -293,6 +293,7 @@ function waferIds(i) {
     btnClearWafer: `btn-clear-wafer${s}`,
     swapXyCheckbox: `wafer-swap-xy${s}`,
     mirrorXCheckbox: `wafer-mirror-x${s}`,
+    mirrorYCheckbox: `wafer-mirror-y${s}`,
     binLegend: `wafer-bin-legend${s}`,
     tPointX: `t-point-x${s}`,
     tPointY: `t-point-y${s}`,
@@ -349,10 +350,12 @@ function buildExtraWaferPanelHtml() {
       <div class="notice" style="margin-top:0.6rem">
         wafer座標軸對調（選填）——大部分wafer(DB機台)不用勾；如果載入FRM後，範本/pick的座標大量落在
         wafer圖外面或形狀明顯不對，改勾這個再重新讀取FRM試試看(這是跟另一種機台方向相反的已知案例，
-        沒有能自動判斷的欄位，只能手動試)。
+        沒有能自動判斷的欄位，只能手動試)。wafer X軸鏡射／wafer Y軸鏡射是另兩種各自獨立的症狀，
+        可以任意組合勾選，都要重新讀取FRM才會套用。
       </div>
       <label style="margin-bottom:0.6rem"><input type="checkbox" id="${ids.swapXyCheckbox}"> wafer座標軸對調(X↔Y互換)</label>
       <label style="margin-bottom:0.6rem"><input type="checkbox" id="${ids.mirrorXCheckbox}"> wafer X軸鏡射</label>
+      <label style="margin-bottom:0.6rem"><input type="checkbox" id="${ids.mirrorYCheckbox}"> wafer Y軸鏡射</label>
       <button id="${ids.btnLoadFrm}">自動讀取FRM檔案</button>
       <p id="${ids.frmStatus}" class="lyr-frm-status"></p>
       <div class="notice" style="margin-top:1rem">或手動貼上第二片wafer bin資料（每行 <code>x,y,bin</code>）</div>
@@ -942,12 +945,14 @@ async function loadFrmIntoPanel(panelIndex) {
   status.textContent = "讀取中...";
   const swapXyEl = document.getElementById(ids.swapXyCheckbox);
   const mirrorXEl = document.getElementById(ids.mirrorXCheckbox);
+  const mirrorYEl = document.getElementById(ids.mirrorYCheckbox);
   const payload = {
     lot_no: document.getElementById(ids.frmLotNo).value,
     barcode_id: document.getElementById(ids.frmBarcodeId).value,
     frm_path: document.getElementById(ids.frmPath).value,
     swap_xy: !!(swapXyEl && swapXyEl.checked),
     mirror_x: !!(mirrorXEl && mirrorXEl.checked),
+    mirror_y: !!(mirrorYEl && mirrorYEl.checked),
   };
   const res = await fetch("/api/frm", {
     method: "POST",

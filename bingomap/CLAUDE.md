@@ -1544,3 +1544,51 @@ wafer符合)，auto-detect找到的最佳讀法全部>=94.7%吻合，其中59/65
 新增回歸測試`test_extract_wafer_maps_auto_detects_third_machine_bab08_large_sample`，鎖定這批
 資料裡樣本數最大、最乾淨的一片(K89F6D，13片基板、3856顆die，100.0%吻合)，log裁減到576KB存進
 `tests/fixtures/BAB0820260811_05.0_K89F6D.log`。
+
+## frm_reader.py新增mirror_y：第四片真實wafer(8L808002A1/BB93AE)不需要swap_xy也不需要mirror_x，需要的是Y軸鏡射——第一次遇到現有兩個參數的4種組合全部不夠用(2026/09/15)
+
+使用者這次先懷疑的方向是①頁角度選單(「轉180度，0:0要不要釘在右上角」)——直接用`app.js`的
+`rotateWaferPoint()`代入180°算過，確認0,0在180°會轉到左下角，不是右上角，而且這正是這個專案
+2026/09/07已經踩過、寫進本文件更早那則(「上面那次『轉置』修正…」)的同一種陷阱：把0,0強行釘住
+需要的是轉置公式，數學上等於偷偷混入一次鏡射，跟已經驗證過的「角度只旋轉、鏡像才鏡射」規則衝突。
+排除角度公式之後，才回到這個專案處理「已寫入疊到bin7」一貫有效的方法：找同一次操作的FRM+SECS log
+交叉比對。
+
+過程本身值得記錄——使用者一開始給的log(舊的7z、後來一份「BAA0320260906_17.0」)都不是這片wafer
+真正需要的那份，是靠一路排除才找到對的：
+1. 第一份(7z裡15份log)解壓、UTF-16LE解碼、逐份搜尋lot no/barcode，完全沒有比對到，確認是完全
+   不相干的另一批(2026/09/11 BAB08驗證用的那批)。
+2. 第二份(`BAA0320260906_17.0_BB93AE.log`，已經存在repo`tests/fixtures/`裡的舊fixture)拿來跟這次
+   新拿到的FRM(header寫`LotNo=8L808002A1`)交叉比對，只有70.7%——查這份舊fixture的`.strate`檔頭，
+   `MAPPING_LOT=8N027703A1`，跟FRM的`8L808002A1`不同，一開始判斷是同一個wafer barcode被不同批次
+   重複使用、兩次完全不相干的實體掃描。
+3. 使用者接著提供同一天完整的原始log(`BAA0320260906_17.0.log`，5.2MB未裁剪)，解碼後全文搜尋才
+   發現：**這份log裡「8L808002A1」跟「V36AWAQ/8N027703A1」是交錯出現的**(不是先後分段)，而且直接
+   查`WaferInfo`/`JobInfoFromAFC`交易，找到`FrameID=BB93AE`搭配`Mapping_Lot=8L808002A1`的真實記錄——
+   代表**第2步的判斷是錯的**：不是兩個不相干的wafer，是同一個barcode(BB93AE)在同一個班次裡先後
+   服務過兩個不同的assembly lot(這片wafer的物理身分沒變，只是被兩個不同下游批次抽用)。用
+   `extract_wafer_maps()`重新解這份完整log，10個`BB93AE`的`WaferStart`快照全部回報
+   `wafer_id="8L8080-01"`，跟FRM檔頭的`wafer_id='8L8080'`+`wafer_id_seq='01'`完全對得上，確認
+   這才是真正對應的log。
+
+教訓：**「兩份資料的LotNo欄位不同」不能直接當成「這是兩個不相干的物理wafer」的證據就停止追查**——
+這次同一個wafer barcode在同一份log裡合法地服務過兩個不同assembly lot，光看lot no字串不同就下
+結論，會誤殺一份其實是對的資料。真正該核對的是`wafer_id`(FRM header)跟`WaferStart`事件自己
+回報的`WaferID`這種代表「物理wafer身分」的欄位，不是assembly/mapping lot這種「下游用途」欄位。
+
+確認log對了之後，先用這份log自己的`StrateMap`(1461筆已知位置)驗證`WaferStart`的自我一致性——
+97.5%，跟這個專案認定的真實雜訊量級一致，log本身可信。拿FRM的既有兩個參數(`swap_xy`/`mirror_x`)
+四種組合窮舉，最高只有70.7%(swap_xy=False, mirror_x=False)——**第一次遇到現有兩個參數的所有
+組合都不夠、需要真正窮舉完整8種二面體對稱(`swap x flip_x x flip_y`)才找到答案**：
+`swap=False, flip_x=False, flip_y=True` -> 1931/1931 = **100.0%**，乾淨跳到滿分。這代表這片wafer
+需要的是Y軸鏡射，跟`mirror_x`(X軸鏡射)是完全獨立的另一個症狀。
+
+已修正：`frm_reader.py`的`frm_to_wafer_bin_map()`新增`mirror_y`選擇性參數(預設`False`，跟
+`swap_xy`/`mirror_x`同一種「特定物理wafer才需要、沒有欄位能自動判斷」模式，套用在swap/mirror_x
+決定完最終欄列之後，對Y軸做`rows-1-y`)。`webapp/app.py`的`/api/frm`、`_frm_cells_json()`新增
+`mirror_y`欄位；①頁(及跨wafer的第二片面板)新增「wafer Y軸鏡射」勾選框，跟另外兩個並列、可任意
+組合勾選。新增回歸測試`test_frm_to_wafer_bin_map_mirror_y_matches_independent_secs_log_100_percent`
+(鎖定1931/1931)跟`test_frm_to_wafer_bin_map_mirror_y_default_false_matches_only_70_percent`
+(鎖定不加mirror_y時只有70.7%，避免以後不小心把mirror_y預設值改成True卻沒被抓到)，兩份真實檔案
+(`8L808002A1_BB93AE.frm`、`BAA0320260906_17.0_BB93AE_8L808002A1.log`，後者從完整5.2MB原始log裁減
+到只保留這片wafer的`StrateMap`/`WaferStart`交易，268KB)都已存進`tests/fixtures/`。
