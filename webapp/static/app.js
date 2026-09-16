@@ -747,6 +747,21 @@ function applyEffectiveQty(n) {
   return { kept: substratePositions.length - skippedPositions.size, skipped: skippedPositions.size };
 }
 
+// 2026/09/16新增：使用者要求一個獨立的「重置」動作，不用重新載入範本就能
+// 把套用「實際要上片數量」或手動標記/拖曳留下的「不上片」黃色標記全部清掉，
+// 回到「範本裡的每個位置都可上片」的狀態——跟loadTemplate()載入新範本時
+// 順便清空skippedPositions是同一個底層狀態，這裡只是額外開一個不用換範本
+// 就能觸發的入口。注意：BINGO MAP上的灰色斜線格(.not-a-position)不是這裡
+// 能清除的「標記」——那是目前載入範本本身的實際形狀(哪些座標根本不存在)
+// 算出來的，不是存在skippedPositions這種使用者可以設定/取消的狀態，換句話說
+// 「重置」只能讓黃色不上片消失，灰色斜線格只要範本形狀本身有那些洞就一定
+// 會顯示，要清除只能重新載入一個沒有那些洞的範本。
+function resetSkipMarks() {
+  const hadAny = skippedPositions.size > 0;
+  skippedPositions.clear();
+  return hadAny;
+}
+
 // ---- BINGO MAP (substrate grid) rendering ---------------------------------
 function renderSubstrateGridInto(containerId, layerPicks, focusedPos) {
   const container = document.getElementById(containerId);
@@ -2033,6 +2048,15 @@ document.getElementById("btn-apply-effective-qty").addEventListener("click", () 
     result.skipped > 0
       ? `已套用：前 ${result.kept} 格維持可上片，後面 ${result.skipped} 格已標記「不上片」。`
       : `已套用：設定的數量 ≥ 理論總數 ${substratePositions.length}，全部維持可上片，沒有格子被標記。`;
+  renderAll();
+});
+document.getElementById("btn-reset-skip-marks").addEventListener("click", () => {
+  const status = document.getElementById("effective-qty-status");
+  const cleared = resetSkipMarks();
+  document.getElementById("effective_qty_input").value = "";
+  status.textContent = cleared
+    ? "已重置：全部「不上片」標記已清除，範本裡的每個位置都恢復可上片。"
+    : "目前沒有任何「不上片」標記，不需要重置。";
   renderAll();
 });
 setSkipMode(false);
