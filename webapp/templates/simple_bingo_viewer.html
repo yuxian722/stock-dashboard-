@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SECS LOG BINGO MAP 檢視器</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <h1>SECS LOG BINGO MAP 檢視器</h1>
+  <p>上傳機台的SECS/AFC log → 每一枚基板各自秀出BINGO MAP格子圖，可以直接拿實物核對 → 核對過的按「下載」拿.strate檔案</p>
+</div>
+
+<div class="notice">
+  這是簡化版獨立小工具，只做「看圖＋下載」這件事。解析用的是這個專案裡既有、已經用真實log驗證過的
+  parser，跟④STRATE補檔頁同一套，不是另外重寫的邏輯——每一枚基板的格子圖，直接秀出log裡
+  <code>StrateMap</code>事件記錄的實際基板位置(不用重新點座標)。
+</div>
+
+<section class="panel" id="upload-panel">
+  <h2><span class="step-badge">1</span>上傳SECS Log</h2>
+  <label>選擇log檔案 <input type="file" id="log-file" accept=".log,.txt"></label>
+  <button id="btn-extract">解析Log</button>
+  <p id="status"></p>
+</section>
+
+<section class="panel" id="orientation-panel" style="display:none">
+  <h2><span class="step-badge">2</span>BINGO MAP顯示方向</h2>
+  <div class="notice">
+    拿實物比對畫面方向時用——<b>這個選項只影響下面格子圖怎麼畫，不會改變「下載」拿到的.strate檔案內容
+    一個字</b>（檔案裡的座標永遠是機台原始記錄的座標）。哪個方向跟手上的實物對得上就切哪個，可以隨時
+    切換重畫，不用重新上傳log。
+  </div>
+  <label style="margin-right:1.2rem"><input type="radio" name="orientation" value="forward" checked> 正向</label>
+  <label><input type="radio" name="orientation" value="reverse"> 反向（列上下顛倒，欄不變）</label>
+</section>
+
+<section class="panel" id="substrates-panel" style="display:none;grid-column:1/-1">
+  <h2><span class="step-badge">3</span>基板BINGO MAP（共 <span id="substrate-count">0</span> 枚）</h2>
+  <div class="legend">
+    <span><i style="background:var(--blue)"></i>有die（這個位置已上片）</span>
+    <span><i style="background:#fff;border:1px solid var(--line)"></i>無die</span>
+  </div>
+  <div id="substrates-list"></div>
+</section>
+
+</div>
+<script src="{{ url_for('static', filename='simple_bingo_viewer.js') }}"></script>
+</body>
+</html>

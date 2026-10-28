@@ -1592,3 +1592,35 @@ wafer符合)，auto-detect找到的最佳讀法全部>=94.7%吻合，其中59/65
 (鎖定不加mirror_y時只有70.7%，避免以後不小心把mirror_y預設值改成True卻沒被抓到)，兩份真實檔案
 (`8L808002A1_BB93AE.frm`、`BAA0320260906_17.0_BB93AE_8L808002A1.log`，後者從完整5.2MB原始log裁減
 到只保留這片wafer的`StrateMap`/`WaferStart`交易，268KB)都已存進`tests/fixtures/`。
+
+## 新增簡化版獨立小工具(webapp/simple_bingo_viewer.py)：逐枚基板秀BINGO MAP格子圖讓使用者拿實物核對，「正向/反向」是顯示層切換，不是又一次猜座標公式(2026/10/28)
+
+使用者這次要的是④STRATE補檔頁的簡化版本：「執行檔點進去就開啟」、上傳SECS log後**每一枚基板各自
+顯示BINGO MAP格子圖**(不是只有一張文字表格)，可以直接拿實物肉眼核對，核對過的才下載；另外要能選
+「正向」或「反向」BINGO MAP。
+
+提出需求的同時，使用者又描述了一次「這次版本基板反向作業金邊朝上、導線架正向作業」——這跟本文件
+前面「金邊朝下」那則(2026/08/27)描述的症狀高度相似。**沒有照描述去改`sub_pos`座標或`StrateFile`
+產生邏輯**，直接把那則的結論搬過來用：`.strate`的`sub_pos`是機台自己固定的內部座標系統，跟當天
+金邊朝哪邊無關；使用者會「感覺」方向不一樣，是因為人眼拿實物比對、或下游報表工具(Bingo Map
+Query)自己做了一次只反轉「列」的顯示轉換，不是檔案本身要跟著變。
+
+所以「正向/反向」在這支新工具裡實作成**純前端的顯示層切換**(`simple_bingo_viewer.js`的
+`displayRow()`)：反向只是把格子圖畫面上的列次序顛倒(欄不動，呼應Bingo Map Query當初驗證過的
+「只反列、欄不動」)，傳給後端解析、下載回來的`.strate`文字完全不受影響——後端`/api/simple_bingo/
+extract`只負責讀出`StrateMap`事件的`sub_pos`/`bin`，不做任何方向轉換。這樣不管使用者這次的實際
+金邊方向是哪一種，切換「正向/反向」比對實物都不會誤改到檔案內容，也不需要我去猜這次的方向跟
+2026/08/27那次是不是同一種情況。
+
+這支工具刻意做成完全獨立的Flask app(`webapp/simple_bingo_viewer.py`，獨立埠號5050，獨立啟動器
+`launch_simple_bingo_viewer.bat/py`)，不是在`webapp/app.py`裡加路由——「簡單一點」是使用者明確的
+要求，獨立檔案讓這個小工具好維護、不會跟原本6頁的主工具互相干擾，但共用`webapp/templates`/
+`webapp/static`資料夾(直接複用style.css既有的`.substrate-cell`/`.lyr-substrate-grid`樣式，跟
+①補資料頁的BINGO MAP長得一樣)，解析邏輯也直接呼叫`bingomap.secs_log.extract_strate_files()`，
+不是重寫一份parser。啟動器額外做了`launch_bingomap.py`沒做的事：啟動後自動用`webbrowser.open()`
+開瀏覽器，不用使用者自己開瀏覽器貼網址，呼應「執行檔點進去就開啟」的要求。
+
+新增回歸測試`webapp/tests/test_simple_bingo_viewer.py`，直接重用
+`test_blank_generator_gold_edge_orientation.py`裡已經驗證過的`REAL_GAP_POSITIONS`常數(不是自己
+另外猜一組期望值)，鎖定這支新endpoint解析同一份真實金邊朝下log，算出來的9個空缺位置跟那份測試
+的結論完全一致。
