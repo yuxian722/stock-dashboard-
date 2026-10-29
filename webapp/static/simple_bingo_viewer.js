@@ -108,6 +108,8 @@ async function extractOneFile(file) {
 async function extractLog() {
   const fileInput = document.getElementById("log-file");
   const status = document.getElementById("status");
+  const loading = document.getElementById("loading-indicator");
+  const btn = document.getElementById("btn-extract");
   const files = [...fileInput.files];
   if (!files.length) {
     status.className = "error";
@@ -115,7 +117,11 @@ async function extractLog() {
     return;
   }
   status.className = "";
-  status.textContent = `解析中...（共 ${files.length} 個檔案）`;
+  status.textContent = "";
+  // 2026/10/29新增：解析中讓🐸一直跳，確認畫面是活的（不是按了沒反應），
+  // 同時鎖住按鈕，避免使用者以為沒反應又多按一次造成同一批檔案重複解析。
+  loading.classList.add("active");
+  btn.disabled = true;
 
   let data;
   try {
@@ -130,6 +136,9 @@ async function extractLog() {
     status.textContent = err.message;
     document.getElementById("result-area").style.display = "none";
     return;
+  } finally {
+    loading.classList.remove("active");
+    btn.disabled = false;
   }
 
   lastSubstrates = data.substrates;

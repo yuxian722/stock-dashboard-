@@ -32,6 +32,29 @@
   .sbv-userbar{display:flex;justify-content:flex-end;align-items:center;gap:0.6rem;font-size:0.85rem;color:var(--muted);margin-bottom:0.4rem}
   .sbv-userbar b{color:var(--ink)}
   .sbv-userbar button{padding:3px 10px;font-size:0.78rem}
+  /* 2026/10/29新增：解析中的載入動畫——使用者反應「按了沒反應，不確定
+     檔案對不對」，實際上多半是「正在跑，只是畫面上沒有任何提示」，所以
+     加一隻🐸不斷跳向終點旗，確認畫面活著、不是當掉；旗子只是終點視覺，
+     青蛙會無限循環跳(不知道真實進度百分之幾)，解析完成或失敗就整條藏起來。 */
+  .sbv-loading{display:none;align-items:center;gap:0.7rem;margin-top:0.6rem;padding:0.6rem 0.8rem;background:#eef6ff;border:1px solid var(--line);border-radius:10px}
+  .sbv-loading.active{display:flex}
+  .sbv-loading-track{position:relative;flex:none;width:160px;height:30px;background:linear-gradient(to right,#dff3e0,#fff7d6);border-radius:15px;overflow:hidden}
+  .sbv-loading-track .frog{position:absolute;top:3px;left:0;font-size:20px;animation:sbv-hop 1.2s ease-in-out infinite}
+  .sbv-loading-track .finish{position:absolute;right:6px;top:5px;font-size:16px}
+  .sbv-loading-text{font-size:0.82rem;color:var(--muted)}
+  @keyframes sbv-hop{
+    0%{left:2px;transform:translateY(0) rotate(0deg)}
+    10%{transform:translateY(-9px) rotate(-10deg)}
+    20%{left:30px;transform:translateY(0) rotate(0deg)}
+    30%{transform:translateY(-9px) rotate(10deg)}
+    40%{left:58px;transform:translateY(0) rotate(0deg)}
+    50%{transform:translateY(-9px) rotate(-10deg)}
+    60%{left:86px;transform:translateY(0) rotate(0deg)}
+    70%{transform:translateY(-9px) rotate(10deg)}
+    80%{left:112px;transform:translateY(0) rotate(0deg)}
+    90%{transform:translateY(-9px) rotate(-10deg)}
+    100%{left:2px;transform:translateY(0) rotate(0deg)}
+  }
 </style>
 </head>
 <body>
@@ -65,6 +88,10 @@
     可以直接選壓縮過的<code>.log.zip</code>(自動解壓縮，zip裡包zip也可以)；也可以用Ctrl/Shift一次選多個檔案(例如好幾天份)，結果會合併成同一批。
   </p>
   <button id="btn-extract">解析Log</button>
+  <div class="sbv-loading" id="loading-indicator">
+    <div class="sbv-loading-track"><span class="frog">🐸</span><span class="finish">🏁</span></div>
+    <span class="sbv-loading-text">解析中，請稍候...（檔案比較大或選很多個檔案時會跑久一點，畫面沒有卡住）</span>
+  </div>
   <p id="status"></p>
 </section>
 
