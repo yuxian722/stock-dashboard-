@@ -20,10 +20,38 @@
   .sbv-pane{flex:1;min-width:280px}
   .sbv-pane h3{margin:0 0 0.4rem;font-size:1rem}
   .sbv-empty{padding:2.5rem 1rem;text-align:center;color:var(--muted)}
+  /* 2026/10/29新增：登入畫面——蓋在整個頁面上方，輸入工號前擋住底下的
+     操作，不是真的帳號密碼驗證，只是確保每次使用都留下工號可追溯。 */
+  #login-overlay{position:fixed;inset:0;background:rgba(15,32,51,.6);display:flex;align-items:center;justify-content:center;z-index:999}
+  #login-card{background:#fff;border-radius:16px;padding:2rem 2.2rem;width:min(90vw,380px);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  #login-card h2{margin:0 0 0.4rem}
+  #login-card p{margin:0 0 1rem;color:var(--muted);font-size:0.85rem}
+  #login-card input{width:100%;font-size:1.1rem;padding:0.6rem 0.7rem;margin-bottom:0.8rem}
+  #login-card button{width:100%}
+  #login-error{color:var(--red,#b42318);font-size:0.82rem;min-height:1.2em;margin-top:0.3rem}
+  .sbv-userbar{display:flex;justify-content:flex-end;align-items:center;gap:0.6rem;font-size:0.85rem;color:var(--muted);margin-bottom:0.4rem}
+  .sbv-userbar b{color:var(--ink)}
+  .sbv-userbar button{padding:3px 10px;font-size:0.78rem}
 </style>
 </head>
 <body>
+
+<div id="login-overlay">
+  <div id="login-card">
+    <h2>登入</h2>
+    <p>請輸入工號——每次使用都需要填寫，下載檔案時會一併記錄是哪個工號確認的。</p>
+    <input id="login-input" placeholder="工號" autocomplete="off" maxlength="20">
+    <button id="btn-login">進入</button>
+    <p id="login-error"></p>
+  </div>
+</div>
+
 <div class="wrap">
+
+<div class="sbv-userbar">
+  操作工號：<b id="current-employee-id">—</b>
+  <button type="button" class="secondary" id="btn-switch-user">更換工號</button>
+</div>
 
 <div class="hero">
   <h1>SECS LOG BINGO MAP 檢視器</h1>

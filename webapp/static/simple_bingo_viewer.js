@@ -12,6 +12,50 @@ let lastSubstrates = [];
 let lastWaferMaps = [];
 let selectedIndex = -1;
 let orientation = "forward"; // "forward" | "reverse"
+let currentEmployeeId = "";
+
+// 2026/10/29新增：登入(工號)——不是帳密驗證，純粹是「每次使用都留下
+// 工號可追溯」，所以每次開頁面都會跳登入畫面，但用localStorage記住上次
+// 填過的工號當預設值(同一個人不用每次重打，真的換人用才要手動改)。
+const EMPLOYEE_ID_STORAGE_KEY = "sbv_last_employee_id";
+
+function showLoginOverlay() {
+  document.getElementById("login-overlay").style.display = "flex";
+  const input = document.getElementById("login-input");
+  try {
+    input.value = localStorage.getItem(EMPLOYEE_ID_STORAGE_KEY) || "";
+  } catch (err) {
+    // localStorage不可用(例如無痕視窗擋存取)——預設值留空，不影響登入本身
+  }
+  input.focus();
+  input.select();
+}
+
+function doLogin() {
+  const input = document.getElementById("login-input");
+  const id = input.value.trim();
+  const errorEl = document.getElementById("login-error");
+  if (!id) {
+    errorEl.textContent = "請輸入工號";
+    return;
+  }
+  currentEmployeeId = id;
+  try {
+    localStorage.setItem(EMPLOYEE_ID_STORAGE_KEY, id);
+  } catch (err) {
+    // 存不進去就算了，不影響這次使用，只是下次預設值不會自動帶出來
+  }
+  errorEl.textContent = "";
+  document.getElementById("current-employee-id").textContent = id;
+  document.getElementById("login-overlay").style.display = "none";
+}
+
+document.getElementById("btn-login").addEventListener("click", doLogin);
+document.getElementById("login-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") doLogin();
+});
+document.getElementById("btn-switch-user").addEventListener("click", showLoginOverlay);
+showLoginOverlay();
 
 // Bin color palette — same convention as app.js/strate_xml.js的BIN_COLORS
 // (這個專案一貫的做法：每個檔案各自維護一份，不是共用模組)，色碼來自
@@ -231,7 +275,35 @@ function renderBingoMapPane(substrate) {
   }
 }
 
+// 2026/10/29新增：每次下載記一筆(工號/時間/流水號/方向)到後端的CSV——
+// 這支工具唯一「真的對這份資料下決定」的動作就是下載，所以記錄點選在
+// 這裡，不是每次切正向/反向或點清單都記(那只是在看)。故意不等這個
+// fetch完成才觸發下載(await會讓使用者多等一次網路來回)，記錄失敗也
+// 不應該讓人連檔案都拿不到，只在畫面上補一行警告。
+async function logDownload(substrate) {
+  try {
+    const res = await fetch("/api/simple_bingo/log_download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employee_id: currentEmployeeId,
+        substrate_id: substrate.substrate_id,
+        filename: substrate.filename,
+        wafer_ring: substrate.wafer_ring,
+        eqpid: substrate.eqpid,
+        orientation,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "記錄失敗");
+  } catch (err) {
+    const status = document.getElementById("status");
+    status.className = "error";
+    status.textContent = `⚠ 下載紀錄沒有寫入成功（${err.message}），檔案本身已正常下載。`;
+  }
+}
+
 function downloadSubstrate(substrate) {
+  logDownload(substrate);
   const blob = new Blob([substrate.text], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

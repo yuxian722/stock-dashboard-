@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from bingomap.tests.test_blank_generator_gold_edge_orientation import (  # noqa: E402
     REAL_GAP_POSITIONS,
 )
+import webapp.simple_bingo_viewer as sbv  # noqa: E402
 from webapp.simple_bingo_viewer import app  # noqa: E402
 
 FIXTURE = Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "BAA0820260814_07_Z26306101253.log"
@@ -127,3 +128,49 @@ def test_extract_accepts_a_folder_zip_containing_nested_log_zips():
     substrates = res.get_json()["substrates"]
     assert len(substrates) == 2  # one from each nested .log.zip
     assert {s["substrate_id"] for s in substrates} == {"Z26306101253"}
+
+
+def test_log_download_requires_employee_id():
+    client = app.test_client()
+    res = client.post("/api/simple_bingo/log_download", json={"substrate_id": "Z26306101253"})
+    assert res.status_code == 400
+    assert "工號" in res.get_json()["error"]
+
+
+def test_log_download_appends_a_csv_row(tmp_path, monkeypatch):
+    """2026/10/29新增：下載時記一筆到本機CSV(工號/時間/流水號/檔名/
+    方向)——不是資料庫，用monkeypatch把寫入路徑導到tmp_path，確認不會
+    動到repo裡真正的下載紀錄檔，也確認header只會在檔案第一次建立時寫
+    一次(第二次呼叫不會重複插入header列)。"""
+    log_path = tmp_path / "downloads.csv"
+    monkeypatch.setattr(sbv, "DOWNLOAD_LOG_PATH", str(log_path))
+
+    client = app.test_client()
+    res = client.post(
+        "/api/simple_bingo/log_download",
+        json={
+            "employee_id": "A12345",
+            "substrate_id": "Z26306101253",
+            "filename": "Z26306101253_20260814064920.strate",
+            "wafer_ring": "T3DC94",
+            "eqpid": "BAA08",
+            "orientation": "reverse",
+        },
+    )
+    assert res.status_code == 200
+    assert res.get_json() == {"ok": True}
+
+    # 再下載一次，確認header不會被插入第二次
+    client.post(
+        "/api/simple_bingo/log_download",
+        json={"employee_id": "A12345", "substrate_id": "X", "filename": "x.strate"},
+    )
+
+    text = log_path.read_text(encoding="utf-8-sig")
+    lines = [line for line in text.splitlines() if line]
+    assert lines[0] == "時間,工號,流水號,檔名,Wafer Ring,EQPID,方向"
+    assert lines.count("時間,工號,流水號,檔名,Wafer Ring,EQPID,方向") == 1
+    assert len(lines) == 3  # header + 2 download rows
+    assert "A12345" in lines[1]
+    assert "Z26306101253" in lines[1]
+    assert "反向" in lines[1]

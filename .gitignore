@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 現場真實下載紀錄(工號/時間/流水號)——webapp/simple_bingo_viewer.py自己
+# 累積的本機CSV，不是程式碼，不該進版控。
+webapp/simple_bingo_viewer_downloads.csv

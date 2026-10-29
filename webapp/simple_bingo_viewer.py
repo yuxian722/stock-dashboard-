@@ -59,14 +59,36 @@ decode；如果zip裡還包了zip(使用者提到v87支援「選整個LOG資料�
 zip，裡面包.log.zip」這種巢狀情況)，遞迴再解一層。解出來的每份log各自
 呼叫`extract_strate_files()`/`extract_wafer_maps()`，結果合併成同一批
 (一次選一整個資料夾的zip，等於一次看完好幾天的基板+wafer資料)。
+
+2026/10/29再追加(工號登入+下載紀錄)：使用者要求「登入時需輸入工號，若
+有修改在記錄起來」。這支工具目前唯一會真的「產生後果」的動作是下載
+——沒有像v87那樣可以在畫面上點格子真的改資料，所以「修改」在這裡的
+意思就是「確認、下載了這一枚的.strate檔案」，不是每次切正向/反向、
+每次點選清單都要記錄(那只是在看，還沒有任何人對這份資料下決定)。
+
+設計成這樣：
+- 工號**不是帳號密碼驗證**，這是內部現場工具，沒有後端使用者資料庫，
+  目的是「可追溯是誰確認/下載的」，不是「擋人進不去」——打開頁面先
+  跳一個「輸入工號」畫面，有填就能進，不檢查工號格式或是否存在。
+- 每按一次「下載」，前端先呼叫這支後端的`/api/simple_bingo/log_download`
+  記一筆(工號、時間、流水號、檔名、目前的正向/反向狀態)，**不等後端
+  回應結果擋住下載**——記錄失敗(例如硬碟寫不進去)不應該讓使用者連檔案
+  都拿不到，只在畫面上顯示一行警告，不是阻斷性的錯誤。
+- 記錄寫成本機一個CSV檔(`simple_bingo_viewer_downloads.csv`，跟這支
+  Python檔案同一個資料夾)，每次下載append一行，不需要資料庫——現場
+  電腦直接用Excel/記事本打開就能看，跟這個專案一貫「簡單、不用額外
+  安裝東西」的原則一致。這個檔案本身會累積真實現場資料，已經加進
+  `.gitignore`，不會被誤commit上去。
 """
 from __future__ import annotations
 
 import base64
 import binascii
+import csv
 import io
 import os
 import zipfile
+from datetime import datetime
 
 from flask import Flask, jsonify, render_template, request
 
@@ -222,9 +244,59 @@ def _substrate_summary(sf: StrateFile, index: int) -> dict:
     }
 
 
+DOWNLOAD_LOG_PATH = os.path.join(WEBAPP_DIR, "simple_bingo_viewer_downloads.csv")
+DOWNLOAD_LOG_HEADER = ["時間", "工號", "流水號", "檔名", "Wafer Ring", "EQPID", "方向"]
+
+
+def _append_download_log(row: dict) -> None:
+    """Append one line to the local download-audit CSV — see this
+    module's 2026/10/29 docstring section for why a flat CSV (not a
+    database) and why this never blocks the actual download. utf-8-sig
+    (BOM) so Excel on Windows (this tool's only real audience) opens the
+    file with correct 中文 encoding instead of guessing wrong and showing
+    mojibake — a plain utf-8 CSV is the classic "opens as garbled text in
+    Excel" trap on Windows."""
+    is_new = not os.path.exists(DOWNLOAD_LOG_PATH)
+    with open(DOWNLOAD_LOG_PATH, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        if is_new:
+            writer.writerow(DOWNLOAD_LOG_HEADER)
+        writer.writerow(
+            [
+                row["time"],
+                row["employee_id"],
+                row["substrate_id"],
+                row["filename"],
+                row["wafer_ring"],
+                row["eqpid"],
+                row["orientation"],
+            ]
+        )
+
+
 @app.get("/")
 def index():
     return render_template("simple_bingo_viewer.html")
+
+
+@app.post("/api/simple_bingo/log_download")
+def api_log_download():
+    data = request.get_json(force=True)
+    employee_id = (data.get("employee_id") or "").strip()
+    if not employee_id:
+        return jsonify({"error": "缺少工號"}), 400
+    _append_download_log(
+        {
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "employee_id": employee_id,
+            "substrate_id": data.get("substrate_id", ""),
+            "filename": data.get("filename", ""),
+            "wafer_ring": data.get("wafer_ring", ""),
+            "eqpid": data.get("eqpid", ""),
+            "orientation": "反向" if data.get("orientation") == "reverse" else "正向",
+        }
+    )
+    return jsonify({"ok": True})
 
 
 @app.post("/api/simple_bingo/extract")
