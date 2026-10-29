@@ -1897,3 +1897,44 @@ log內容一字不差；剩下17枚是這份log一開頭、在Oct 3 22:53那次j
 ③dispatch之後緊接著的下一枚StrateMap，依照原始log順序保留，存進
 `tests/fixtures/BAA0520261004_02.0_jobinfo.log`)鎖定：dispatch之前的那枚維持留白、dispatch之後的
 那枚三個欄位都正確對上真實值。
+
+## simple_bingo_viewer新增「手動補空白位置」(方案B補上)：框選wafer→依column-major順序自動填入(2026/10/29)
+
+使用者直接要求「可以有一個bingomap圖檔可以讓我編輯...搭配可以點選左邊wafer讓我框選座標...這個我們
+之前討論過」——這就是最早決定simple_bingo_viewer只做「方案A：資料已經完整，只看圖核對下載」時，
+explicitly deferred的「方案B：手動從wafer圖點座標填入」，這次補上。先去看app.js(④頁)已經做過、
+驗證過的同一種補資料情境，確認既有心智模型：在wafer圖框選/點選良品(bin=1)die進暫存清單
+(`stagedPicks`/`picksByLayer`)、點BINGO MAP任意一格觸發commit，暫存的picks依照基板bounding box
+的column-major順序(外層loop欄、內層loop列，都由小到大，跟`blank_generator.py`同一種慣例)自動依序
+對應填入目前空白的位置——不是使用者精確指定「這顆填哪一格」。用`AskUserQuestion`跟使用者確認過
+要沿用這個「照順序自動依序填入」的既有模式(而不是重新設計「精確指定每一格」的新互動)，選項已選定。
+
+**跟app.js的關鍵差異**：app.js的補資料情境是從FRM讀出的完整空白骨架(每個合法位置都在，只是沒填)去
+配對；這支工具的基板資料直接來自SECS log解析，log裡只記錄「真的有die」的位置，完全沒有「這個位置
+合法但目前空白」的清單可以當骨架。解法：拿這枚基板自己bounding box內「目前沒被填」的格子當可填
+目標，不驗證這些格子是否真的落在基板的物理形狀內——跟整支工具一貫「拿實物比對、相信操作員肉眼
+判斷」的設計哲學一致，但也代表理論上可以手動填到形狀外的角落，是刻意接受的已知限制。
+
+**後端重新產生檔案、不在JS重寫序列化邏輯**：新增`POST /api/simple_bingo/apply_picks`，收到「目前
+這枚基板的`.strate`文字」+「這次框選的wafer座標/bin清單」，用`StrateFile.parse()`讀回(`to_text()`
+的反函式，本來就round-trip驗證過)、`_blank_targets_in_order()`算出column-major排序的空白目標、
+組出新的`DieInfo`列(index接續現有最大值、timestamp用「現在」的真實時間而非回填log原始時間戳記——
+這是這次操作當下真的發生的動作，比假裝是log當時記錄的更誠實；f9沿用這枚基板既有DIE_INFO裡最常見
+的那個layer值)，`to_text()`吐回新檔案文字。前端完全不碰.strate格式細節，只傳/收JSON。
+
+**前端互動**：wafer圖的良品、還沒被這枚基板自己用掉的格子標`.pickable`(游標變手指)，點一下切換
+進/出待填入清單(`.staged`，藍色虛線框，跟既有橘色實線`.focus`「這一枚用到的格子」明確區分)，拖曳
+則框選矩形範圍內所有pickable格子一次加入。畫面下方新增常駐控制列顯示「已選N顆待填入空白位置」+
+「清除選取」+「套用到空白位置」兩顆按鈕。套用成功後直接用後端回傳的新`substrate`物件取代
+`lastSubstrates[selectedIndex]`並重新渲染——wafer圖、BINGO MAP、清單上的DIE數量都會立刻反映新增
+的幾顆，不用重新整理頁面或重新上傳log。切換到別枚基板時待填入清單會清空(wafer座標是跟著目前這枚
+基板的來源wafer走的，留著舊清單只會讓人誤以為能套用到新基板)。
+
+新增3個後端測試：`test_apply_picks_fills_blanks_in_column_major_order`(用gold-edge-down fixture
+已知的9個真實缺口`REAL_GAP_POSITIONS`，鎖定填入的前2顆剛好落在column-major排序後最前面的(6,1)/
+(6,2)，不是隨便哪裡，而且新的DIE_INFO列round-trip回`StrateFile.parse()`驗證wafer_xy/wafer_ring/
+bin都正確)、`test_apply_picks_rejects_more_picks_than_blank_positions`、
+`test_apply_picks_requires_strate_text_and_picks`。另外用Playwright對真實multi-substrate fixture
+(`BAA0320260906_17.0_BB93AE_8L808002A1.log`的J8204604，8個真實缺口、有對應wafer map)跑過完整流程：
+單點切換暫存、拖曳框選3顆、套用後BINGO MAP空白格數正確少3格、畫面上的DIE數量從36變39、待填入清單
+正確清空，截圖確認新填入的格子在wafer圖上也正確顯示橘色「已用」外框。

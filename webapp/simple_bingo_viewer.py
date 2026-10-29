@@ -79,6 +79,41 @@ zip，裡面包.log.zip」這種巢狀情況)，遞迴再解一層。解出來�
   電腦直接用Excel/記事本打開就能看，跟這個專案一貫「簡單、不用額外
   安裝東西」的原則一致。這個檔案本身會累積真實現場資料，已經加進
   `.gitignore`，不會被誤commit上去。
+
+2026/10/29再追加(手動補空白位置)：使用者反映BINGO MAP上常常有空白位置
+(例如漏pick、或這份log本來就沒記錄到)，要求「可以有一個bingomap圖檔可以
+讓我編輯...點選左邊wafer讓我框選座標」——這是這個專案在app.js(④頁)已經
+做過、驗證過的「補資料」情境(這支簡化版最早決定只做「方案A：資料已經
+完整，只看圖核對下載」，方案B「手動從wafer圖點座標填入」當時explicitly
+deferred，這次使用者要求補上B)。
+
+跟使用者確認過的設計決策：
+- **填入順序**：在wafer圖上框選/點選好幾顆要填入的die後，不用使用者再
+  一格一格指定「這顆填哪個空白位置」，而是依照這枚基板自己bounding box
+  的column-major順序(跟`bingomap/blank_generator.py`同一種慣例：外層
+  loop欄、內層loop列，都由小到大)自動依序對應填入目前還空白的位置——
+  跟app.js舊版「框選wafer→點BINGO MAP隨便一格→按順序自動分配」同一種
+  使用者已經熟悉、已經驗證過的心智模型，不是重新設計一套。
+- **只能選良品(bin=1)**：跟app.js的`toggleStagePick()`同一條規則——不能
+  手動把一顆壞die放進良品位置。
+- **沒有獨立的「空白骨架」資料來源**：app.js的補資料情境是從FRM讀出來的
+  完整空白骨架(每個合法位置都在，只是沒填)去配對；這支工具的基板資料
+  直接來自SECS log解析(`StrateFile`)，log裡本來就只記錄「真的有die」的
+  位置、完全沒有「這個位置合法但目前空白」的清單。這裡退而求其次：拿
+  這枚基板自己bounding box內「目前沒被填」的格子當作可填目标，不去驗證
+  這些格子是不是真的落在這枚基板的物理形狀內(例如被去角的corner)——
+  這跟整支工具一貫的「拿實物比對、相信操作員肉眼判斷」設計哲學一致
+  (不引入一套我們沒有可靠資料來源能正確做的形狀驗證)，但也代表**理論上
+  使用者可以手動填到形狀外的角落**，是刻意接受的已知限制，不是沒注意到。
+- **後端重新產生檔案**：前端只送「目前這枚基板的`.strate`文字內容」+
+  「這次框選的wafer座標/bin清單」，後端用`StrateFile.parse()`讀回
+  (本來就是`to_text()`的反函式，彼此是round-trip過的)、算出空白目標、
+  組出新的`DieInfo`列(index接續現有最大值、timestamp用「現在」的真實
+  時間而不是回填log當時的時間戳記——這些是這次操作當下真的發生的動作，
+  用真實時間比較誠實；f9沿用這枚基板既有DIE_INFO裡最常見的那個layer值，
+  不是整支工具唯一出現過的某個常數)，`to_text()`吐回新的檔案文字——
+  不在前端JavaScript另外重寫一份序列化邏輯，避免前後端格式兩邊維護、
+  容易走樣。
 """
 from __future__ import annotations
 
@@ -88,7 +123,9 @@ import csv
 import io
 import os
 import zipfile
-from datetime import datetime
+from collections import Counter
+from dataclasses import replace
+from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, render_template, request
 
@@ -102,7 +139,7 @@ app = Flask(
 )
 
 from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_wafer_maps  # noqa: E402
-from bingomap.strate import StrateFile  # noqa: E402
+from bingomap.strate import DieInfo, StrateFile, StrateFormatError  # noqa: E402
 
 
 def _is_zip(raw: bytes) -> bool:
@@ -297,6 +334,85 @@ def api_log_download():
         }
     )
     return jsonify({"ok": True})
+
+
+def _blank_targets_in_order(sf: StrateFile) -> list[str]:
+    """Column-major scan (outer loop = column, inner loop = row, both
+    ascending — same convention bingomap/blank_generator.py uses) of this
+    substrate's own bounding box, listing every "col:row" position inside
+    it with no die yet. See this module's 2026/10/29 docstring note on
+    手動補空白位置 for why this (not a real blank-wafer skeleton) is the
+    best "which positions are fillable" source available here."""
+    filled = {d.sub_pos for d in sf.die_info}
+    cols: list[int] = []
+    rows: list[int] = []
+    for d in sf.die_info:
+        col_str, _, row_str = d.sub_pos.partition(":")
+        try:
+            cols.append(int(col_str))
+            rows.append(int(row_str))
+        except ValueError:
+            continue
+    if not cols:
+        return []
+    targets = []
+    for col in range(min(cols), max(cols) + 1):
+        for row in range(min(rows), max(rows) + 1):
+            pos = f"{col}:{row}"
+            if pos not in filled:
+                targets.append(pos)
+    return targets
+
+
+@app.post("/api/simple_bingo/apply_picks")
+def api_apply_picks():
+    data = request.get_json(force=True)
+    strate_text = data.get("strate_text", "")
+    wafer_ring = data.get("wafer_ring", "")
+    picks = data.get("picks", [])
+    index = data.get("index", 0)
+    if not strate_text:
+        return jsonify({"error": "缺少目前這枚基板的資料"}), 400
+    if not picks:
+        return jsonify({"error": "沒有收到任何選取的die"}), 400
+    try:
+        sf = StrateFile.parse(strate_text)
+    except StrateFormatError as exc:
+        return jsonify({"error": f"目前基板資料格式錯誤：{exc}"}), 400
+
+    targets = _blank_targets_in_order(sf)
+    if len(picks) > len(targets):
+        return jsonify(
+            {"error": f"選了{len(picks)}顆，但這枚基板目前只剩{len(targets)}個空白位置可以填"}
+        ), 400
+
+    f9_counts = Counter(d.f9 for d in sf.die_info)
+    layer = f9_counts.most_common(1)[0][0] if f9_counts else "1"
+    next_index = max((d.index for d in sf.die_info), default=0) + 1
+    now = datetime.now()
+
+    new_dies = [
+        DieInfo(
+            index=next_index + i,
+            wafer_ring=wafer_ring,
+            wafer_xy=f"{pick.get('x')}:{pick.get('y')}",
+            sub_pos=pos,
+            bin=str(pick.get("bin", "1")),
+            f6="0",
+            f7="0",
+            timestamp=(now + timedelta(seconds=i)).strftime("%Y%m%d%H%M%S"),
+            f9=layer,
+        )
+        for i, (pick, pos) in enumerate(zip(picks, targets))
+    ]
+
+    updated = replace(
+        sf,
+        die_info=sf.die_info + new_dies,
+        total_bond_die_qty=sf.total_bond_die_qty + len(new_dies),
+        good_die=sf.good_die + len(new_dies),
+    )
+    return jsonify({"substrate": _substrate_summary(updated, index), "filled_count": len(new_dies)})
 
 
 @app.post("/api/simple_bingo/extract")

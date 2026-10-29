@@ -174,3 +174,79 @@ def test_log_download_appends_a_csv_row(tmp_path, monkeypatch):
     assert "A12345" in lines[1]
     assert "Z26306101253" in lines[1]
     assert "反向" in lines[1]
+
+def test_apply_picks_fills_blanks_in_column_major_order():
+    """2026/10/29新增：手動補空白位置——使用者在wafer圖上框選/點選幾顆
+    良品die後，不用自己指定填哪一格，依照這枚基板bounding box的
+    column-major順序(跟bingomap/blank_generator.py同一種慣例)自動依序
+    對應填入目前還空白的位置。這份真實gold-edge-down fixture的9個已知
+    真實缺口(REAL_GAP_POSITIONS，跟①頁的blank_generator測試共用同一份
+    已驗證資料)，column-major排序後最前面兩個是(6,1)/(6,2)，鎖定填入
+    的前兩顆剛好落在這兩個位置，不是隨便哪裡。"""
+    client = app.test_client()
+    log_base64 = base64.b64encode(FIXTURE.read_bytes()).decode("ascii")
+    extracted = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64}).get_json()
+    s = extracted["substrates"][0]
+    assert s["num_dies"] == 299
+
+    res = client.post(
+        "/api/simple_bingo/apply_picks",
+        json={
+            "strate_text": s["text"],
+            "wafer_ring": s["wafer_ring"],
+            "index": 0,
+            "picks": [{"x": 50, "y": 60, "bin": "1"}, {"x": 51, "y": 61, "bin": "1"}],
+        },
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["filled_count"] == 2
+
+    updated = data["substrate"]
+    assert updated["num_dies"] == 301
+    assert updated["total_bond_die_qty"] == 301
+    assert updated["good_die"] == 301
+
+    by_pos = {(p["col"], p["row"]): p for p in updated["positions"]}
+    assert (6, 1) in by_pos and (6, 2) in by_pos
+    # the other 7 known real gaps are still genuinely blank — only the
+    # first two column-major targets got filled.
+    assert (7, 1) not in by_pos
+
+    # round-trips cleanly back through the real parser — not just "looks
+    # like" valid text.
+    reparsed = sbv.StrateFile.parse(updated["text"])
+    assert len(reparsed.die_info) == 301
+    new_rows = [d for d in reparsed.die_info if d.sub_pos in ("6:1", "6:2")]
+    assert {d.wafer_xy for d in new_rows} == {"50:60", "51:61"}
+    assert all(d.wafer_ring == s["wafer_ring"] for d in new_rows)
+    assert all(d.bin == "1" for d in new_rows)
+
+
+def test_apply_picks_rejects_more_picks_than_blank_positions():
+    client = app.test_client()
+    log_base64 = base64.b64encode(FIXTURE.read_bytes()).decode("ascii")
+    extracted = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64}).get_json()
+    s = extracted["substrates"][0]
+
+    res = client.post(
+        "/api/simple_bingo/apply_picks",
+        json={
+            "strate_text": s["text"],
+            "wafer_ring": s["wafer_ring"],
+            "picks": [{"x": i, "y": i, "bin": "1"} for i in range(20)],  # only 9 real gaps
+        },
+    )
+    assert res.status_code == 400
+    assert "9" in res.get_json()["error"]
+
+
+def test_apply_picks_requires_strate_text_and_picks():
+    client = app.test_client()
+    res = client.post("/api/simple_bingo/apply_picks", json={"picks": [{"x": 1, "y": 1}]})
+    assert res.status_code == 400
+    assert "基板" in res.get_json()["error"]
+
+    res = client.post("/api/simple_bingo/apply_picks", json={"strate_text": "ASSY_LOT=\r\n"})
+    assert res.status_code == 400
+    assert "die" in res.get_json()["error"]

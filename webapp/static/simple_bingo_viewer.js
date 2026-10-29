@@ -282,12 +282,137 @@ function renderWaferPane(substrate) {
         // 基板」，兩個資訊都要留著，不能只顯示其中一個。
         cell.classList.add("focus");
       }
+      // 2026/10/29新增：手動補空白位置——只有「良品(bin=1)、還沒被這枚
+      // 基板自己用掉」的格子才能點選/框選，跟app.js的toggleStagePick()
+      // 同一條規則(不能手動塞一顆壞die進良品位置)。dataset存真正的col/row
+      // (不受正向/反向顯示排序影響，跟.focus判斷用同一份座標)，drag-select
+      // 事件處理器直接讀這個，不用另外反推畫面排序。
+      if (bin === "1" && !highlight.has(key)) {
+        cell.classList.add("pickable");
+        cell.dataset.col = col;
+        cell.dataset.row = row;
+        cell.dataset.bin = bin;
+        if (stagedPicks.some((p) => p.x === col && p.y === row)) {
+          cell.classList.add("staged");
+        }
+      }
       cell.title = bin !== undefined ? `${col}:${row} — bin=${bin}` : `${col}:${row} — 無資料`;
       rowEl.appendChild(cell);
     }
     container.appendChild(rowEl);
   }
 }
+
+// ---- 2026/10/29新增：手動補空白位置 ------------------------------------
+// 在wafer圖上點選/框選良品die(stagedPicks，跟app.js的picksByLayer同一種
+// 「先暫存、再一次送出」心智模型)，按「套用到空白位置」後依照這枚基板
+// bounding box的column-major順序自動依序對應填入目前還空白的位置——跟
+// 使用者確認過：不用自己一格一格指定要填哪裡，照順序自動分配即可。
+let stagedPicks = []; // {x, y, bin}[]
+let waferDragStart = null;
+
+function togglePick(col, row, bin) {
+  const idx = stagedPicks.findIndex((p) => p.x === col && p.y === row);
+  if (idx >= 0) {
+    stagedPicks.splice(idx, 1);
+    return;
+  }
+  stagedPicks.push({ x: col, y: row, bin });
+}
+
+function stagePickIfNew(col, row, bin) {
+  if (stagedPicks.some((p) => p.x === col && p.y === row)) return;
+  stagedPicks.push({ x: col, y: row, bin });
+}
+
+function scanPickRectangle(start, end) {
+  const colLo = Math.min(start.col, end.col), colHi = Math.max(start.col, end.col);
+  const rowLo = Math.min(start.row, end.row), rowHi = Math.max(start.row, end.row);
+  document.querySelectorAll("#wafer-grid .wafer-cell.pickable").forEach((cell) => {
+    const col = Number(cell.dataset.col), row = Number(cell.dataset.row);
+    if (col >= colLo && col <= colHi && row >= rowLo && row <= rowHi) {
+      stagePickIfNew(col, row, cell.dataset.bin);
+    }
+  });
+}
+
+function updatePickControls() {
+  const controls = document.getElementById("pick-controls");
+  const status = document.getElementById("pick-status");
+  const applyBtn = document.getElementById("btn-apply-picks");
+  if (selectedIndex < 0 || !lastSubstrates.length) {
+    controls.style.display = "none";
+    return;
+  }
+  controls.style.display = "flex";
+  status.textContent = `已選 ${stagedPicks.length} 顆待填入空白位置`;
+  applyBtn.disabled = stagedPicks.length === 0;
+}
+
+const waferGridEl = document.getElementById("wafer-grid");
+waferGridEl.addEventListener("mousedown", (e) => {
+  const cell = e.target.closest(".wafer-cell.pickable");
+  if (!cell) return;
+  waferDragStart = { col: Number(cell.dataset.col), row: Number(cell.dataset.row) };
+});
+waferGridEl.addEventListener("mouseup", (e) => {
+  const cell = e.target.closest(".wafer-cell.pickable");
+  if (!cell || !waferDragStart) {
+    waferDragStart = null;
+    return;
+  }
+  const end = { col: Number(cell.dataset.col), row: Number(cell.dataset.row) };
+  if (end.col === waferDragStart.col && end.row === waferDragStart.row) {
+    togglePick(end.col, end.row, cell.dataset.bin);
+  } else {
+    scanPickRectangle(waferDragStart, end);
+  }
+  waferDragStart = null;
+  updatePickControls();
+  if (selectedIndex >= 0) renderWaferPane(lastSubstrates[selectedIndex]);
+});
+
+document.getElementById("btn-clear-picks").addEventListener("click", () => {
+  stagedPicks = [];
+  updatePickControls();
+  if (selectedIndex >= 0) renderWaferPane(lastSubstrates[selectedIndex]);
+});
+
+async function applyPicks() {
+  if (!stagedPicks.length || selectedIndex < 0) return;
+  const substrate = lastSubstrates[selectedIndex];
+  const status = document.getElementById("status");
+  const applyBtn = document.getElementById("btn-apply-picks");
+  applyBtn.disabled = true;
+  try {
+    const res = await fetch("/api/simple_bingo/apply_picks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        strate_text: substrate.text,
+        wafer_ring: substrate.wafer_ring,
+        index: selectedIndex,
+        picks: stagedPicks,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "套用失敗");
+    lastSubstrates[selectedIndex] = data.substrate;
+    stagedPicks = [];
+    status.className = "ok";
+    status.textContent =
+      `已補上 ${data.filled_count} 顆到「${data.substrate.substrate_id}」，` +
+      `記得重新肉眼核對、確認無誤後再下載。`;
+    selectSubstrate(selectedIndex);
+  } catch (err) {
+    status.className = "error";
+    status.textContent = err.message;
+  } finally {
+    updatePickControls();
+  }
+}
+
+document.getElementById("btn-apply-picks").addEventListener("click", applyPicks);
 
 function renderBingoMapPane(substrate) {
   const container = document.getElementById("substrate-grid");
@@ -393,6 +518,10 @@ function renderRawStrateBox(substrate) {
 
 function selectSubstrate(i) {
   if (!lastSubstrates.length) return;
+  // 切換/重新整理基板時清掉待填入清單——wafer座標是跟著「目前選到的
+  // 這枚基板的來源wafer」走的，換一枚基板後舊的待填入清單已經不適用，
+  // 留著只會讓人誤以為還能套用到新基板上。
+  stagedPicks = [];
   selectedIndex = i;
   const substrate = lastSubstrates[i];
   renderList();
@@ -410,6 +539,7 @@ function selectSubstrate(i) {
   renderWaferPane(substrate);
   renderBingoMapPane(substrate);
   renderRawStrateBox(substrate);
+  updatePickControls();
 }
 
 document.getElementById("chk-raw-strate").addEventListener("change", () => {
