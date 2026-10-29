@@ -1768,3 +1768,23 @@ wafer的資訊」，並要求「多一個勾選視窗顯示這枚strate的資訊
 
 用Playwright驗證：勾選後`#raw-strate-box`確實顯示且內容包含`SUBSTRATE_ID`、切換到清單中第二枚後
 內容有跟著換、取消勾選後區塊確實隱藏。
+
+## simple_bingo_viewer新增「選擇整個資料夾」：解決wafer圖找不到的根本辦法(2026/10/29)
+
+上一節記錄了「wafer圖找不到是因為log涵蓋範圍不夠」，使用者接著直接問「如果改選用整個資料夾這樣是
+不是可以改善找不到別份log」——答案是對的，而且比請他自己手動Ctrl/Shift多選好幾天份的log更一勞永逸，
+所以直接加這個功能，不是只回答「對，但要自己多選」。
+
+**實作方式**：新增`#log-folder`這個獨立的`<input type="file" webkitdirectory directory multiple>`，
+平常`display:none`，透過一個「或選擇整個資料夾」按鈕觸發(`webkitdirectory`沒辦法跟一般的多檔選取共用
+同一個`<input>`，瀏覽器對同一個input只能二選一種挑選模式，所以拆成兩個獨立input，各自對應一顆按鈕)。
+選了資料夾後瀏覽器會把整個資料夾(含子資料夾)所有檔案都丟進來，前端用`isLogLikeFile()`依副檔名
+(`.log`/`.txt`/`.zip`，不分大小寫)過濾，非log檔案(常見的ini、縮圖快取等)直接略過不送給後端，避免
+後端收到垃圾資料報錯。`pendingFiles`是「一般多選」跟「選資料夾」共用的那份待解析清單——兩種選法
+互斥，後選的那次會蓋掉前一次(選了資料夾又手動選檔案，或反過來，都只用最後一次選的結果，不會疊加)，
+`extractLog()`統一從`pendingFiles`讀，不再直接讀`fileInput.files`。
+
+測試：Playwright的`set_input_files`對`webkitdirectory`的input要求直接傳資料夾路徑(不是檔案清單，
+跟一般input用法不同)——在`/tmp`建一個假資料夾，裡面放1份真實fixture改名`day1.log`+1個無關的
+`.ini`垃圾檔，驗證選資料夾後畫面顯示「找到1個log檔案（略過1個非log檔案）」、按解析後正確解出1枚
+基板，確認過濾邏輯跟統計訊息都對。

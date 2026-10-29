@@ -105,12 +105,45 @@ async function extractOneFile(file) {
   return data;
 }
 
+// 2026/10/29新增：「選擇整個資料夾」——使用者反映分別好幾天的基板，各自
+// 來源wafer的WaferStart事件常常落在不同天的log檔案裡，一個個Ctrl/Shift
+// 手動多選很容易漏掉；改用`webkitdirectory`讓瀏覽器把整個資料夾(含子
+// 資料夾)的檔案一次丟進來，前端自己過濾只留.log/.log.zip/.txt(資料夾裡
+// 常常還混著跟log無關的檔案，例如ini/縮圖快取，不能整批硬塞給後端)。
+// `pendingFiles`是「選一般多個檔案」跟「選整個資料夾」共用的那份清單——
+// 兩種選法互斥，後選的那次會蓋掉前一次的結果，不會疊加混在一起。
+const LOG_FILE_EXTENSIONS = [".log", ".txt", ".zip"];
+function isLogLikeFile(file) {
+  const name = file.name.toLowerCase();
+  return LOG_FILE_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+let pendingFiles = [];
+
+document.getElementById("log-file").addEventListener("change", (e) => {
+  pendingFiles = [...e.target.files];
+  document.getElementById("folder-picked-label").textContent = "";
+});
+
+document.getElementById("btn-pick-folder").addEventListener("click", () => {
+  document.getElementById("log-folder").click();
+});
+
+document.getElementById("log-folder").addEventListener("change", (e) => {
+  const all = [...e.target.files];
+  pendingFiles = all.filter(isLogLikeFile);
+  document.getElementById("log-file").value = "";
+  const label = document.getElementById("folder-picked-label");
+  const skipped = all.length - pendingFiles.length;
+  label.textContent = `已選資料夾，找到 ${pendingFiles.length} 個log檔案` +
+    (skipped ? `（略過 ${skipped} 個非log檔案）` : "");
+});
+
 async function extractLog() {
-  const fileInput = document.getElementById("log-file");
   const status = document.getElementById("status");
   const loading = document.getElementById("loading-indicator");
   const btn = document.getElementById("btn-extract");
-  const files = [...fileInput.files];
+  const files = pendingFiles;
   if (!files.length) {
     status.className = "error";
     status.textContent = "請先選擇log檔案（可以是.zip，也可以一次選多個）";
