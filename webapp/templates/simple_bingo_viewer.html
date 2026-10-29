@@ -20,6 +20,9 @@
   .sbv-pane{flex:1;min-width:280px}
   .sbv-pane h3{margin:0 0 0.4rem;font-size:1rem}
   .sbv-empty{padding:2.5rem 1rem;text-align:center;color:var(--muted)}
+  /* 2026/10/29新增：勾選後直接看這一枚的.strate原始內容(跟下載拿到的檔案
+     一字不差)，不用真的下載一次才能確認裡面的欄位對不對。 */
+  #raw-strate-box{margin-top:0.5rem;max-height:320px;overflow:auto;background:#0f1f2e;color:#d7e6f0;padding:0.8rem 1rem;border-radius:10px;font-size:0.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-all}
   /* 2026/10/29新增：登入畫面——蓋在整個頁面上方，輸入工號前擋住底下的
      操作，不是真的帳號密碼驗證，只是確保每次使用都留下工號可追溯。 */
   #login-overlay{position:fixed;inset:0;background:rgba(15,32,51,.6);display:flex;align-items:center;justify-content:center;z-index:999}
@@ -111,6 +114,10 @@
       <div class="notice" style="margin-top:0.5rem">
         正向／反向只改下面兩張圖怎麼排，<b>不影響「下載」拿到的.strate檔案內容</b>——拿實物比對，哪個方向對得上就切哪個。
       </div>
+      <label class="row" style="gap:0.4rem;margin-top:0.6rem;font-size:0.85rem;font-weight:normal">
+        <input type="checkbox" id="chk-raw-strate"> 顯示這一枚的STRATE原始資料(.strate檔案內容，跟「下載」拿到的一樣)
+      </label>
+      <pre id="raw-strate-box" style="display:none"></pre>
       <div class="sbv-panes" style="margin-top:0.8rem">
         <div class="sbv-pane">
           <h3>這一枚來源的wafer圖</h3>

@@ -1744,3 +1744,27 @@ context裡用`window.fetch`包一層`setTimeout`延遲1.2秒再送出真正的fe
 greenlet調度影響)，這樣才穩定在「fetch進行中」那個時間點截到畫面，確認`#btn-extract`確實
 `disabled===true`、`#loading-indicator`確實帶著`active` class、🐸真的在跳，解析完成後兩者都正確
 收回原狀。
+
+## simple_bingo_viewer新增「顯示STRATE原始資料」勾選框+wafer圖找不到的原因說明(2026/10/29)
+
+使用者傳了2張截圖(32枚基板的真實資料)，有的基板(J1508611，wafer_ring=E891FA)左邊wafer圖顯示
+「找不到WaferStart資料」、有的(J8097489，wafer_ring=E8F124)正常顯示，問「為什麼有些會出現沒有
+wafer的資訊」，並要求「多一個勾選視窗顯示這枚strate的資訊」。
+
+**wafer圖找不到不是bug，是log涵蓋範圍問題**：右邊BINGO MAP(這枚基板自己的StrateMap/DIE_INFO)
+一定完整，因為那是這枚基板自己的交易記錄，跟著log檔案走；但左邊wafer圖要配對的是另一個獨立事件
+「WaferStart」(來源wafer被掃描記錄的那一刻)，如果使用者這次上傳的log範圍沒有涵蓋到那次WaferStart
+發生的時間/log檔案(常見情況：32枚基板分別來自好幾片不同wafer，有些wafer是別天掃描記錄的)，自然
+配對不到。把`renderWaferPane()`找不到時的訊息從單純「沒找到」改成直接講清楚原因+解法(把相關那幾天
+的log一起多選上傳)，不要讓使用者誤以為是程式壞掉。
+
+**新增`#chk-raw-strate`勾選框+`#raw-strate-box`**：勾了就直接把`substrate.text`(跟下載拿到的
+.strate內容一字不差，`downloadSubstrate()`用的同一份)顯示在畫面上一個深色等寬字體的捲動區塊裡，
+不用真的下載存檔才能核對ASSY_LOT/MAPPING_LOT/EQPID/Ref/T2_POINT/T2_Flat這些欄位對不對——這跟
+之前v87分析時發現的「Ref/T2_POINT/T2_Flat欄位經常是空的」直接相關，讓使用者能快速肉眼確認這份log
+解析出來的欄位值，不用等下載完開檔案才發現不對。checkbox狀態故意**不**隨著左邊清單切換基板重置
+(`renderRawStrateBox()`在`selectSubstrate()`裡每次都呼叫，但只有`checked`時才更新內容、換基板
+不會自動勾/取消勾)，這樣逐枚核對時不用每切一枚就重新勾一次。
+
+用Playwright驗證：勾選後`#raw-strate-box`確實顯示且內容包含`SUBSTRATE_ID`、切換到清單中第二枚後
+內容有跟著換、取消勾選後區塊確實隱藏。

@@ -177,7 +177,10 @@ function renderWaferPane(substrate) {
   const wm = findWaferMapFor(substrate);
   if (!wm || !wm.cells.length) {
     container.innerHTML = '<p class="sbv-empty">這份log裡沒有找到這枚基板來源wafer（' +
-      (substrate.wafer_ring || "無Wafer Ring") + '）的WaferStart資料。</p>';
+      (substrate.wafer_ring || "無Wafer Ring") +
+      '）的WaferStart資料——通常是因為這片來源wafer是在<b>別份log</b>（不同時段/天）被掃描記錄的，' +
+      '不在目前這批上傳範圍裡。右邊這枚本身的BINGO MAP資料不受影響，仍然完整；' +
+      '如果想看這片wafer的圖，把相關那幾天的log一起多選上傳即可（不影響已經解析出來的其他基板）。</p>';
     document.getElementById("wafer-bin-legend").innerHTML = "";
     return;
   }
@@ -324,6 +327,21 @@ function downloadSubstrate(substrate) {
   URL.revokeObjectURL(url);
 }
 
+// 2026/10/29新增：勾選後直接在畫面上看這一枚的.strate原始內容——跟
+// downloadSubstrate()下載拿到的substrate.text是同一份資料，不用真的存
+// 一次檔案才能核對裡面的欄位。checkbox狀態故意不隨切換基板重置(勾著就
+// 一直顯示)，這樣逐枚核對時不用每切一枚就重勾一次。
+function renderRawStrateBox(substrate) {
+  const box = document.getElementById("raw-strate-box");
+  const checked = document.getElementById("chk-raw-strate").checked;
+  if (checked && substrate) {
+    box.textContent = substrate.text;
+    box.style.display = "";
+  } else {
+    box.style.display = "none";
+  }
+}
+
 function selectSubstrate(i) {
   if (!lastSubstrates.length) return;
   selectedIndex = i;
@@ -342,7 +360,12 @@ function selectSubstrate(i) {
 
   renderWaferPane(substrate);
   renderBingoMapPane(substrate);
+  renderRawStrateBox(substrate);
 }
+
+document.getElementById("chk-raw-strate").addEventListener("change", () => {
+  renderRawStrateBox(selectedIndex >= 0 ? lastSubstrates[selectedIndex] : null);
+});
 
 document.getElementById("btn-extract").addEventListener("click", extractLog);
 for (const el of document.querySelectorAll('input[name="orientation"]')) {
