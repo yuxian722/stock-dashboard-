@@ -41,12 +41,51 @@ trimmed from it) rather than guessed:
   讓「swap wafer_xy」這個錯誤結論看起來像是通過了真實資料驗證。這次靠
   log-vs-.strate的直接比對(不透過任何中間轉換的FRM查表)才真正拆穿。
 
-- `ASSY_LOT`/`OPER` never appear anywhere in this log — not in
-  `StrateMap`, not in any other transaction type. `MAPPING_LOT` isn't in
-  `StrateMap` either (only `WaferMap`/`WaferStart` carry it, for the
-  wafer, not the substrate). All three are left blank in the extracted
-  `StrateFile`, to be filled in by hand afterward — per user instruction
-  2026/08/18, rather than guessing a cross-transaction correlation.
+- `ASSY_LOT`/`OPER` never appear anywhere in `StrateMap` itself, and
+  neither does `MAPPING_LOT` (only `WaferMap`/`WaferStart` carry something
+  by that name, and that's for the wafer, not the substrate). Originally
+  (2026/08/18) all three were left blank in the extracted `StrateFile` —
+  per user instruction at the time, rather than guessing a cross-transaction
+  correlation without real data to check it against.
+
+  2026/10/29更正：使用者實際下載檔案比對真正的.strate(從SMAP系統直接
+  拿到的)才發現ASSY_LOT/MAPPING_LOT/OPER三個欄位都有值，回報「這些都在
+  secs log都有」——這次有使用者提供的真實完整log(`BAA0520261004_02.0.log`，
+  5.2MB，EQPID=BAA05)可以核對，不再是憑空猜測。確認這三個欄位來自
+  `JobInfoFromAFC`(`Type="Request"`)這個完全獨立的交易類型，是AFC端在
+  「開始處理一批新的job」時送出的job dispatch，不是每個substrate各自
+  攜帶：
+  ```
+  <Transaction name="JobInfoFromAFC" TID="3935" Type="Request" DEID="BAA05">
+      <Assy_Lot>V40ABDW</Assy_Lot>
+      <LotID>K6132J50052</LotID>
+      <Mapping_Lot>K6132J50052</Mapping_Lot>
+      <Oper>2070</Oper>
+      <OperatorID>26987</OperatorID>
+      ...
+  </Transaction>
+  ```
+  `<Assy_Lot>`/`<Mapping_Lot>`/`<Oper>`跟`.strate`的`ASSY_LOT`/`MAPPING_LOT`/
+  `OPER`直接對應(不是`OperatorID`，那是實際操作人員工號，跟.strate裡的
+  `OPER`是不同東西——用真實.strate的`OPER=2070`去對，值對得上`<Oper>`不是
+  `<OperatorID>`)。這個交易**沒有**FrameID/SUBSTRATE_ID可以直接跟某一枚
+  基板配對，只能靠log裡的先後順序：同一份log文字裡，在這次job dispatch
+  之後、下一次job dispatch之前出現的所有`StrateMap`事件，都屬於這個job，
+  繼承同一組ASSY_LOT/MAPPING_LOT/OPER——用這份真實log驗證過：
+  `JobInfoFromAFC`(`V40ABDW`/`K6132J50052`/`2070`)之後緊接著出現的第一個
+  `StrateMap`(`SUBSTRATE_ID=K2RQB1L6`)，時間上就落在同一個job dispatch
+  之後10分鐘內，合理對應。`extract_strate_files()`現在逐一掃過transaction
+  順序、記住「目前最近一次看到的job dispatch」，每個`StrateMap`都套用
+  當下記住的那一組值；在log裡**第一次job dispatch出現之前**的
+  `StrateMap`(例如log一開頭就有的`SUBSTRATE_ID=K2MRI1V1`，在Oct 1
+  03:32，比這份log裡第一個`JobInfoFromAFC`(Oct 3 22:53)早了快3天)，
+  仍然沒有任何job資訊可用，維持跟以前一樣留白——這不是bug，是log範圍
+  真的沒涵蓋到那次job dispatch(很可能在更早一份log檔案裡)，跟「選整個
+  資料夾」能不能解決wafer圖找不到的狀況是同一種log涵蓋範圍限制。這個
+  correlation目前只在**同一份檔案自己的文字範圍內**生效，還沒有做到跨
+  多個上傳檔案接力(每個檔案各自獨立呼叫`extract_strate_files()`)，所以
+  一份檔案最開頭、job dispatch出現之前的那幾枚基板，即使選了整個資料夾
+  一起上傳，也可能仍然留白。
 
 - `WaferStart` events: one per physical wafer, carrying a flat `<BinList>`
   string (`ColCount * RowCount` characters, one per die position — a
@@ -176,15 +215,29 @@ def _die_list(elem: ET.Element, tag: str) -> list[DieInfo]:
     ]
 
 
-def strate_file_from_element(elem: ET.Element) -> StrateFile:
+_JOB_INFO_TAGS = {"assy_lot": "Assy_Lot", "mapping_lot": "Mapping_Lot", "oper": "Oper"}
+
+
+def _job_info_from_element(elem: ET.Element) -> dict[str, str]:
+    """Pull ASSY_LOT/MAPPING_LOT/OPER out of one <Transaction
+    name="JobInfoFromAFC" Type="Request"> element — see the module
+    docstring's 2026/10/29 note for why these three (and not StrateMap
+    itself) carry that data."""
+    return {key: _text(elem, tag) for key, tag in _JOB_INFO_TAGS.items()}
+
+
+def strate_file_from_element(elem: ET.Element, job_info: dict[str, str] | None = None) -> StrateFile:
     """Build a StrateFile from one <Transaction name="StrateMap"> element.
-    ASSY_LOT/MAPPING_LOT/OPER aren't in this transaction at all (see
-    module docstring) — left blank for the operator to fill in by hand."""
+    `job_info` is the nearest-preceding JobInfoFromAFC dispatch's
+    assy_lot/mapping_lot/oper (see extract_strate_files()) — omit it (or
+    pass {}) when none precedes this StrateMap in the log, which leaves
+    those three fields blank same as before this correlation existed."""
+    job_info = job_info or {}
     return StrateFile(
-        assy_lot="",
-        mapping_lot="",
+        assy_lot=job_info.get("assy_lot", ""),
+        mapping_lot=job_info.get("mapping_lot", ""),
         eqpid=_text(elem, "EQPID"),
-        oper="",
+        oper=job_info.get("oper", ""),
         substrate_id=_text(elem, "SUBSTRATE_ID"),
         substrate_row=_int_text(elem, "RowCount"),
         substrate_column=_int_text(elem, "ColCount"),
@@ -203,12 +256,21 @@ def strate_file_from_element(elem: ET.Element) -> StrateFile:
 
 
 def extract_strate_files(text: str) -> list[StrateFile]:
-    """One StrateFile per completed substrate (`StrateMap` Event)."""
-    return [
-        strate_file_from_element(elem)
-        for name, ttype, elem in iter_transactions(text)
-        if name == "StrateMap" and ttype == "Event"
-    ]
+    """One StrateFile per completed substrate (`StrateMap` Event).
+    ASSY_LOT/MAPPING_LOT/OPER come from the nearest-preceding
+    `JobInfoFromAFC` Request in this same log text (transactions are
+    walked in log/document order, which is chronological order) — see
+    the module docstring's 2026/10/29 note. A StrateMap with no job
+    dispatch before it anywhere in this text gets "" for all three, same
+    as before this correlation existed."""
+    files = []
+    current_job: dict[str, str] = {}
+    for name, ttype, elem in iter_transactions(text):
+        if name == "JobInfoFromAFC" and ttype == "Request":
+            current_job = _job_info_from_element(elem)
+        elif name == "StrateMap" and ttype == "Event":
+            files.append(strate_file_from_element(elem, current_job))
+    return files
 
 
 @dataclass

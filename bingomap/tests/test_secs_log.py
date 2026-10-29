@@ -361,3 +361,37 @@ def test_iter_transactions_handles_self_closing_tag_immediately_before_real_one(
     assert ("Foo", "Reply") in names_types
     reply_elem = next(e for n, t, e in results if t == "Reply")
     assert reply_elem.find("A").text == "1"
+
+
+JOBINFO_FIXTURE = Path(__file__).parent / "fixtures" / "BAA0520261004_02.0_jobinfo.log"
+
+
+def test_extract_strate_files_fills_lot_fields_from_preceding_jobinfofromafc():
+    """2026/10/29：使用者實際下載.strate跟真正SMAP系統產生的檔案比對，
+    發現ASSY_LOT/MAPPING_LOT/OPER都空白，但這些欄位真的有在SECS log裡
+    ——只是在StrateMap以外、一個叫JobInfoFromAFC的獨立job dispatch交易
+    裡，沒有FrameID/SUBSTRATE_ID可以直接配對，只能靠log裡的先後順序。
+    這份fixture是從使用者提供的真實log(BAA0520261004_02.0.log，EQPID=
+    BAA05)裁出來的，依照原始log順序保留3個片段：①最前面一枚StrateMap
+    (K2MRI1V1，在任何JobInfoFromAFC之前出現)、②一次JobInfoFromAFC
+    Request(V40ABDW/K6132J50052/2070)、③緊接著這次job dispatch之後的
+    下一枚StrateMap(K2RQB1L6)。"""
+    text = decode_secs_log(JOBINFO_FIXTURE.read_bytes())
+    files = extract_strate_files(text)
+    assert len(files) == 2
+
+    before_dispatch, after_dispatch = files
+    assert before_dispatch.substrate_id == "K2MRI1V1"
+    # 這枚基板的StrateMap事件在log裡任何job dispatch之前出現——沒有資料
+    # 可以correlate，維持跟修正前一樣留白，不是這次改壞了。
+    assert before_dispatch.assy_lot == ""
+    assert before_dispatch.mapping_lot == ""
+    assert before_dispatch.oper == ""
+
+    assert after_dispatch.substrate_id == "K2RQB1L6"
+    assert after_dispatch.assy_lot == "V40ABDW"
+    assert after_dispatch.mapping_lot == "K6132J50052"
+    assert after_dispatch.oper == "2070"
+    # EQPID仍然來自StrateMap自己(跟job dispatch無關)，確認沒有被job_info
+    # 覆蓋掉。
+    assert after_dispatch.eqpid == "BAA05"

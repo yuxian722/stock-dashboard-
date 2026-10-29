@@ -1847,3 +1847,53 @@ animation用逗號接在同一個`.finish`元素上同時跑(`animation:sbv-glow
 這類純視覺細節一樣沒寫自動化斷言，用Playwright對`.sbv-loading-track`這個局部區域連續截圖(涵蓋一整個
 1.4秒跳躍週期的10個時間點)，肉眼確認騰空時4條腿有明顯張開、落地時收起來、南瓜在青蛙靠近時確實有
 跳開的動作，不是只有發光在閃。
+
+## bingomap/secs_log.py：ASSY_LOT/MAPPING_LOT/OPER其實在log裡，來自JobInfoFromAFC這個獨立交易，用先後順序配對(2026/10/29)
+
+使用者拿`simple_bingo_viewer`下載的`.strate`跟真正SMAP系統產生的同一枚基板檔案逐欄比對(Notepad++
+雙開兩個tab並排截圖)，發現ASSY_LOT/MAPPING_LOT/OPER(批號/mapping lot/站別)三個欄位我們的工具全部
+留白，SMAP系統產生的那份卻都有值(`ASSY_LOT=V40ABDC`、`MAPPING_LOT=K6131600054`、`OPER=2070`)，
+回報「這些都在secs log都有」。
+
+這牽涉到這個專案2026/08/18就記錄過的既有結論——「ASSY_LOT/OPER/MAPPING_LOT在StrateMap交易裡完全
+不存在，留白是刻意的，不要憑空猜跨交易關聯」。這次**不是推翻那個結論，是補上去**：使用者這次提供了
+真實完整的log(`BAA0520261004_02.0.log`，5.2MB，EQPID=BAA05，透過聊天檔案上傳直接給我，不是用猜的)，
+解碼後全文搜尋才找到：這三個欄位確實不在`StrateMap`本身，但在一個完全獨立的交易類型
+`JobInfoFromAFC`(`Type="Request"`)裡，是AFC端「開始處理一批新job」時送出的job dispatch：
+```
+<Transaction name="JobInfoFromAFC" TID="3935" Type="Request" DEID="BAA05">
+    <Assy_Lot>V40ABDW</Assy_Lot>
+    <LotID>K6132J50052</LotID>
+    <Mapping_Lot>K6132J50052</Mapping_Lot>
+    <Oper>2070</Oper>
+    <OperatorID>26987</OperatorID>
+    ...
+</Transaction>
+```
+`<Assy_Lot>`/`<Mapping_Lot>`/`<Oper>`直接對應`.strate`的`ASSY_LOT`/`MAPPING_LOT`/`OPER`——注意不是
+`<OperatorID>`(那是真人操作員工號，`.strate`的`OPER`其實是站別/製程代碼，用真實.strate檔案的
+`OPER=2070`去對值才確認對應到`<Oper>`不是`<OperatorID>`，兩個很容易搞混)。
+
+這個交易**沒有**FrameID/SUBSTRATE_ID能直接配對到某一枚基板，只能靠log文字本身的先後順序：
+`iter_transactions()`本來就是依照log原始順序(即時間順序)逐一讀出transaction，所以
+`extract_strate_files()`改成邊掃邊記「目前最近一次看到的job dispatch」，每遇到一個`StrateMap`
+就套用當下記住的那組值——在log裡**第一次job dispatch出現之前**的`StrateMap`沒有資料可以
+correlate，維持跟以前一樣留白(不是退步，是log範圍真的沒涵蓋到那次dispatch，往前要翻更早一份log)。
+
+用使用者提供的這份真實log實測：53枚基板裡有36枚(68%)現在能正確填上ASSY_LOT/MAPPING_LOT/OPER，
+手動核對其中一枚(`K2RQB1L6`緊接著`V40ABDW`/`K6132J50052`/`2070`這次job dispatch之後出現)跟真實
+log內容一字不差；剩下17枚是這份log一開頭、在Oct 3 22:53那次job dispatch之前就已經存在的基板(最早
+一筆Oct 1 03:32)，那次真正的job dispatch理論上在更早的log檔案裡，這份log沒收錄到，維持留白——
+這跟「選整個資料夾才能把wafer圖配對齊全」是同一種log涵蓋範圍限制，提醒使用者一起上傳同一個job
+涵蓋到的所有log檔案會改善這個狀況。
+
+目前這個correlation只在**同一份檔案自己的文字範圍內**生效——`extract_strate_files()`每個檔案各自
+獨立呼叫、互不相干，還沒有做到「跨多個上傳檔案接力記住最後一次job dispatch」，所以就算用「選整個
+資料夾」一次上傳很多天的log，每一份檔案開頭、該檔案自己範圍內job dispatch出現之前的那幾枚基板，
+仍然可能留白——這是已知、可預期的剩餘限制，不是這次沒修好。
+
+新增回歸測試`test_extract_strate_files_fills_lot_fields_from_preceding_jobinfofromafc`，用從使用者
+提供的真實log裁出的3段真實片段(①job dispatch之前的一枚StrateMap、②一次JobInfoFromAFC Request、
+③dispatch之後緊接著的下一枚StrateMap，依照原始log順序保留，存進
+`tests/fixtures/BAA0520261004_02.0_jobinfo.log`)鎖定：dispatch之前的那枚維持留白、dispatch之後的
+那枚三個欄位都正確對上真實值。
