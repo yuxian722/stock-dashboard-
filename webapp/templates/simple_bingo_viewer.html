@@ -39,43 +39,51 @@
      檔案對不對」，實際上多半是「正在跑，只是畫面上沒有任何提示」，所以
      加一隻🐸不斷跳向終點旗，確認畫面活著、不是當掉；旗子只是終點視覺，
      青蛙會無限循環跳(不知道真實進度百分之幾)，解析完成或失敗就整條藏起來。
-     2026/10/29再調整：使用者反應要「活潑、更多動畫」，原本只有單純上下
-     平移+小角度旋轉看起來太呆板，改成有擠壓/拉伸(squash & stretch，
-     卡通跳躍動畫的經典手法)、地上跟著縮放的陰影(強化「這是跳離地面」的
-     立體感)、終點旗子自己也會輕輕搖擺，整體節奏也加快(1.4秒跳2下，而
-     不是1.2秒跳1下)。 */
-  .sbv-loading{display:none;align-items:center;gap:0.7rem;margin-top:0.6rem;padding:0.6rem 0.8rem;background:#eef6ff;border:1px solid var(--line);border-radius:10px}
+     2026/10/29再調整(第一次)：使用者反應要「活潑、更多動畫」，原本只有
+     單純上下平移+小角度旋轉看起來太呆板，改成有擠壓/拉伸(squash &
+     stretch，卡通跳躍動畫的經典手法)、地上跟著縮放的陰影、終點旗子自己
+     也會輕輕搖擺。
+     2026/10/29再調整(第二次)：使用者進一步要求「青蛙要再大再浮誇一點，
+     視窗要在中心」——原本是貼著上傳按鈕下面的一條小橫幅，不夠顯眼也不夠
+     大；改成跟`#login-overlay`同一種做法的全螢幕置中彈出視窗
+     (`position:fixed;inset:0`蓋住整個畫面、卡片置中)，青蛙字級從24px
+     放大到58px，跳躍弧線、擠壓/拉伸的縮放幅度、旋轉角度全部等比放大，
+     視覺上更誇張更搶眼——解析中這段時間就是要讓人一眼看到「真的在跑」，
+     不用省畫面空間。座標改用百分比(而不是寫死px)，卡片寬度用
+     `min(90vw,380px)`跟著視窗大小縮放，手機或小視窗也不會爆版。 */
+  .sbv-loading{display:none;position:fixed;inset:0;background:rgba(15,32,51,.55);align-items:center;justify-content:center;z-index:998}
   .sbv-loading.active{display:flex}
-  .sbv-loading-track{position:relative;flex:none;width:200px;height:44px;background:linear-gradient(to right,#dff3e0,#fff7d6);border-radius:18px;overflow:hidden}
-  .sbv-loading-track .shadow{position:absolute;bottom:5px;left:2px;width:18px;height:6px;background:rgba(15,40,20,.28);border-radius:50%;animation:sbv-shadow 1.4s ease-in-out infinite}
-  .sbv-loading-track .frog{position:absolute;bottom:4px;left:2px;font-size:24px;line-height:1;transform-origin:bottom center;animation:sbv-hop 1.4s cubic-bezier(.4,0,.2,1) infinite}
-  .sbv-loading-track .finish{position:absolute;right:8px;top:50%;margin-top:-10px;font-size:18px;transform-origin:left bottom;animation:sbv-flag 1s ease-in-out infinite}
-  .sbv-loading-text{font-size:0.82rem;color:var(--muted)}
+  .sbv-loading-card{background:#fff;border-radius:22px;padding:2rem 1.8rem 1.6rem;box-shadow:0 24px 70px rgba(0,0,0,.3);text-align:center;width:min(90vw,380px)}
+  .sbv-loading-track{position:relative;width:100%;max-width:320px;height:120px;margin:0 auto;background:linear-gradient(to right,#dff3e0,#fff7d6);border-radius:24px;overflow:hidden}
+  .sbv-loading-track .shadow{position:absolute;bottom:10px;left:2%;width:13%;height:14px;background:rgba(15,40,20,.32);border-radius:50%;animation:sbv-shadow 1.4s ease-in-out infinite}
+  .sbv-loading-track .frog{position:absolute;bottom:8px;left:2%;font-size:58px;line-height:1;transform-origin:bottom center;animation:sbv-hop 1.4s cubic-bezier(.4,0,.2,1) infinite}
+  .sbv-loading-track .finish{position:absolute;right:10px;top:50%;margin-top:-18px;font-size:34px;transform-origin:left bottom;animation:sbv-flag 1s ease-in-out infinite}
+  .sbv-loading-text{display:block;margin-top:1rem;font-size:0.9rem;color:var(--muted)}
   @keyframes sbv-hop{
-    0%  {left:2px;  bottom:4px;  transform:scaleX(1.2)  scaleY(0.8)  rotate(0deg)}
-    8%  {left:12px; bottom:4px;  transform:scaleX(0.8)  scaleY(1.25) rotate(-10deg)}
-    25% {left:60px; bottom:34px; transform:scaleX(0.95) scaleY(1.05) rotate(-18deg)}
-    42% {left:100px;bottom:4px;  transform:scaleX(1.25) scaleY(0.75) rotate(0deg)}
-    50% {left:104px;bottom:4px;  transform:scaleX(0.8)  scaleY(1.25) rotate(-10deg)}
-    67% {left:150px;bottom:34px; transform:scaleX(0.95) scaleY(1.05) rotate(-18deg)}
-    84% {left:188px;bottom:4px;  transform:scaleX(1.25) scaleY(0.75) rotate(0deg)}
-    92% {left:188px;bottom:4px;  transform:scaleX(0.9)  scaleY(1.1)  rotate(-4deg)}
-    100%{left:2px;  bottom:4px;  transform:scaleX(1.2)  scaleY(0.8)  rotate(0deg)}
+    0%  {left:2%;  bottom:8px;  transform:scaleX(1.35) scaleY(0.65) rotate(0deg)}
+    8%  {left:8%;  bottom:8px;  transform:scaleX(0.65) scaleY(1.45) rotate(-18deg)}
+    25% {left:36%; bottom:78px; transform:scaleX(0.9)  scaleY(1.1)  rotate(-30deg)}
+    42% {left:60%; bottom:8px;  transform:scaleX(1.4)  scaleY(0.6)  rotate(0deg)}
+    50% {left:63%; bottom:8px;  transform:scaleX(0.65) scaleY(1.45) rotate(-18deg)}
+    67% {left:84%; bottom:78px; transform:scaleX(0.9)  scaleY(1.1)  rotate(-30deg)}
+    84% {left:96%; bottom:8px;  transform:scaleX(1.4)  scaleY(0.6)  rotate(0deg)}
+    92% {left:96%; bottom:8px;  transform:scaleX(1.0)  scaleY(1.2)  rotate(-8deg)}
+    100%{left:2%;  bottom:8px;  transform:scaleX(1.35) scaleY(0.65) rotate(0deg)}
   }
   @keyframes sbv-shadow{
-    0%  {left:2px;  opacity:.35; transform:scaleX(1)}
-    8%  {left:12px; opacity:.3;  transform:scaleX(0.8)}
-    25% {left:60px; opacity:.1;  transform:scaleX(0.4)}
-    42% {left:100px;opacity:.35; transform:scaleX(1)}
-    50% {left:104px;opacity:.3;  transform:scaleX(0.8)}
-    67% {left:150px;opacity:.1;  transform:scaleX(0.4)}
-    84% {left:188px;opacity:.35; transform:scaleX(1)}
-    92% {left:188px;opacity:.35; transform:scaleX(1)}
-    100%{left:2px;  opacity:.35; transform:scaleX(1)}
+    0%  {left:2%;  opacity:.4;  transform:scaleX(1)}
+    8%  {left:8%;  opacity:.3;  transform:scaleX(0.65)}
+    25% {left:36%; opacity:.08; transform:scaleX(0.3)}
+    42% {left:60%; opacity:.4;  transform:scaleX(1)}
+    50% {left:63%; opacity:.3;  transform:scaleX(0.65)}
+    67% {left:84%; opacity:.08; transform:scaleX(0.3)}
+    84% {left:96%; opacity:.4;  transform:scaleX(1)}
+    92% {left:96%; opacity:.4;  transform:scaleX(1)}
+    100%{left:2%;  opacity:.4;  transform:scaleX(1)}
   }
   @keyframes sbv-flag{
     0%,100%{transform:rotate(0deg)}
-    50%{transform:rotate(18deg)}
+    50%{transform:rotate(24deg)}
   }
 </style>
 </head>
@@ -119,8 +127,10 @@
   </p>
   <button id="btn-extract">解析Log</button>
   <div class="sbv-loading" id="loading-indicator">
-    <div class="sbv-loading-track"><span class="shadow"></span><span class="frog">🐸</span><span class="finish">🏁</span></div>
-    <span class="sbv-loading-text" id="loading-text">解析中，請稍候...（檔案比較大或選很多個檔案時會跑久一點，畫面沒有卡住）</span>
+    <div class="sbv-loading-card">
+      <div class="sbv-loading-track"><span class="shadow"></span><span class="frog">🐸</span><span class="finish">🏁</span></div>
+      <span class="sbv-loading-text" id="loading-text">解析中，請稍候...（檔案比較大或選很多個檔案時會跑久一點，畫面沒有卡住）</span>
+    </div>
   </div>
   <p id="status"></p>
 </section>
