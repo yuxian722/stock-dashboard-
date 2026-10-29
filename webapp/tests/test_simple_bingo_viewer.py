@@ -7,7 +7,9 @@ that module's already-confirmed REAL_GAP_POSITIONS constant so a
 regression in either place shows up as a mismatch, not two independently
 -guessable "expected" sets."""
 import base64
+import io
 import sys
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -77,3 +79,51 @@ def test_extract_includes_wafer_maps_matched_by_wafer_ring():
     for s in data["substrates"]:
         assert s["wafer_ring"] in wafer_rings
         assert len(s["wafer_positions"]) == s["num_dies"]
+
+
+def _zip_bytes(entries: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, content in entries.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
+def test_extract_accepts_a_zipped_log_directly():
+    """2026/10/29：使用者真實的log資料夾裡，每個檔案本來就是`.log.zip`
+    (壓縮過的)，不是解壓縮好的純文字——直接把zip的位元組丟給舊版的
+    decode_secs_log()會解出亂碼，extract_strate_files()自然找不到任何
+    StrateMap，使用者看到的錯誤訊息（「這份log裡沒有找到StrateMap資料」）
+    因此是誤導的。這裡用真實的gold-edge-down fixture現場包成zip，鎖定
+    「上傳.zip跟直接上傳解壓縮後的.log，結果要一模一樣」這件事。"""
+    client = app.test_client()
+    zipped = _zip_bytes({"BAB0820261002_18.0.log": FIXTURE.read_bytes()})
+    log_base64 = base64.b64encode(zipped).decode("ascii")
+
+    res = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64})
+    assert res.status_code == 200
+    substrates = res.get_json()["substrates"]
+    assert len(substrates) == 1
+    assert substrates[0]["substrate_id"] == "Z26306101253"
+    assert substrates[0]["num_dies"] == 299
+
+
+def test_extract_accepts_a_folder_zip_containing_nested_log_zips():
+    """同一批資料夾壓成一個zip、裡面每份log又各自是一個.log.zip(使用者
+    提到v87支援這種巢狀結構)——兩份log合併解析，基板數量要是兩份log
+    各自基板數量的總和，不能漏掉任何一份，也不能互相覆蓋掉。"""
+    client = app.test_client()
+    inner_zip = _zip_bytes({"BAB0820261002_18.0.log": FIXTURE.read_bytes()})
+    folder_zip = _zip_bytes(
+        {
+            "BAB0820261002_18.0.log.zip": inner_zip,
+            "BAB0820261003_03.0.log.zip": inner_zip,
+        }
+    )
+    log_base64 = base64.b64encode(folder_zip).decode("ascii")
+
+    res = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64})
+    assert res.status_code == 200
+    substrates = res.get_json()["substrates"]
+    assert len(substrates) == 2  # one from each nested .log.zip
+    assert {s["substrate_id"] for s in substrates} == {"Z26306101253"}

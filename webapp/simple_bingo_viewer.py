@@ -47,12 +47,26 @@
 改到回傳/下載的`.strate`文字內容一個字)，不是又猜一次座標公式——使用者
 拿實物比對、哪個方向對得上就切哪個，兩個方向之間可以隨時切換重畫，不
 需要重新上傳log。
+
+2026/10/29再追加：使用者實際的log資料夾(`AFC/Log/<EQPID>`)裡，每個檔案
+都已經是`.log.zip`(壓縮過的)，不是解壓縮好的純文字`.log`——一開始只接受
+base64後直接丟給`decode_secs_log()`，餵進去的其實是zip的二進位內容，
+解碼出來自然是亂碼、`extract_strate_files()`找不到任何`StrateMap`交易，
+使用者看到的「這份log裡沒有找到StrateMap(基板)資料」這個錯誤訊息因此
+是誤導的(聽起來像是log本身沒有資料，其實是根本沒解壓縮)。改成：收到的
+位元組如果是zip格式(開頭`PK`)，自動解壓縮，裡面每個`.log`/`.txt`項目各自
+decode；如果zip裡還包了zip(使用者提到v87支援「選整個LOG資料夾壓成的
+zip，裡面包.log.zip」這種巢狀情況)，遞迴再解一層。解出來的每份log各自
+呼叫`extract_strate_files()`/`extract_wafer_maps()`，結果合併成同一批
+(一次選一整個資料夾的zip，等於一次看完好幾天的基板+wafer資料)。
 """
 from __future__ import annotations
 
 import base64
 import binascii
+import io
 import os
+import zipfile
 
 from flask import Flask, jsonify, render_template, request
 
@@ -69,12 +83,48 @@ from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_waf
 from bingomap.strate import StrateFile  # noqa: E402
 
 
-def _decode_uploaded_log(data: dict) -> tuple[str | None, tuple[dict, int] | None]:
-    """Same base64+decode_secs_log() contract as webapp/app.py's
-    _decode_uploaded_log() — duplicated here on purpose (this file is
-    meant to stand completely on its own, see module docstring) rather
-    than importing from webapp.app, which would pull in that module's
-    whole dependency chain (openpyxl etc.) just for this one helper."""
+def _is_zip(raw: bytes) -> bool:
+    return raw[:2] == b"PK"
+
+
+def _collect_log_bytes(raw: bytes, out: list[bytes], *, depth: int = 0) -> None:
+    """Recursively unzip: a plain .log/.txt file's bytes go straight into
+    `out`; a .zip's entries are each recursed into (handles both a single
+    `<name>.log.zip` and a whole-folder zip that contains several nested
+    `.log.zip` entries, per the user's description of how v87 reads
+    these). Depth-capped at 5 — real folders are at most one level of
+    nesting, this is just a guard against a maliciously/accidentally
+    self-referential zip looping forever."""
+    if depth > 5:
+        return
+    if not _is_zip(raw):
+        out.append(raw)
+        return
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            for name in zf.namelist():
+                if name.endswith("/"):
+                    continue
+                if not (name.lower().endswith(".log") or name.lower().endswith(".txt") or name.lower().endswith(".zip")):
+                    continue
+                _collect_log_bytes(zf.read(name), out, depth=depth + 1)
+    except zipfile.BadZipFile:
+        # Starts with "PK" but isn't actually a valid zip — fall back to
+        # treating it as raw log bytes rather than silently dropping it;
+        # decode_secs_log()/extract_strate_files() will just find nothing
+        # useful and the caller gets the existing "找不到StrateMap" error.
+        out.append(raw)
+
+
+def _decode_uploaded_logs(data: dict) -> tuple[list[str] | None, tuple[dict, int] | None]:
+    """Same base64 contract as webapp/app.py's _decode_uploaded_log() —
+    duplicated here on purpose (this file is meant to stand completely on
+    its own, see module docstring) rather than importing from webapp.app,
+    which would pull in that module's whole dependency chain (openpyxl
+    etc.) just for this one helper. Returns a LIST of decoded log texts
+    (one per .log/.txt found after unzipping, could be more than one if
+    a whole-folder zip was uploaded) instead of a single string — see
+    2026/10/29 docstring note above for why zip support was added."""
     log_b64 = data.get("log_base64", "")
     if not log_b64:
         return None, ({"error": "請提供SECS log檔案"}, 400)
@@ -82,7 +132,12 @@ def _decode_uploaded_log(data: dict) -> tuple[str | None, tuple[dict, int] | Non
         raw = base64.b64decode(log_b64)
     except (ValueError, binascii.Error) as exc:
         return None, ({"error": f"檔案內容解碼失敗：{exc}"}, 400)
-    return decode_secs_log(raw), None
+
+    raw_logs: list[bytes] = []
+    _collect_log_bytes(raw, raw_logs)
+    if not raw_logs:
+        return None, ({"error": "這份zip裡沒有找到任何.log/.txt檔案"}, 400)
+    return [decode_secs_log(b) for b in raw_logs], None
 
 
 def _substrate_positions(sf: StrateFile) -> list[dict]:
@@ -175,15 +230,21 @@ def index():
 @app.post("/api/simple_bingo/extract")
 def api_extract():
     data = request.get_json(force=True)
-    text, err = _decode_uploaded_log(data)
+    texts, err = _decode_uploaded_logs(data)
     if err:
         return jsonify(err[0]), err[1]
 
-    strate_files = extract_strate_files(text)
-    if not strate_files:
-        return jsonify({"error": "這份log裡沒有找到StrateMap(基板)資料"}), 400
+    # 一次上傳可能解出好幾份log(整個資料夾壓成一個zip的情況)——每份各自
+    # 解析，基板/wafer清單合併成同一批，index重新編號讓前端的清單/下載
+    # 檔名不會互相撞號。
+    strate_files: list[StrateFile] = []
+    wafer_maps = []
+    for text in texts:
+        strate_files.extend(extract_strate_files(text))
+        wafer_maps.extend(extract_wafer_maps(text))
 
-    wafer_maps = extract_wafer_maps(text)
+    if not strate_files:
+        return jsonify({"error": "解壓縮後的log裡沒有找到StrateMap(基板)資料"}), 400
 
     return jsonify(
         {

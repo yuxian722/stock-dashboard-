@@ -44,30 +44,46 @@ function arrayBufferToBase64(buf) {
   return btoa(binary);
 }
 
-async function extractLog() {
-  const fileInput = document.getElementById("log-file");
-  const status = document.getElementById("status");
-  const file = fileInput.files[0];
-  if (!file) {
-    status.className = "error";
-    status.textContent = "請先選擇log檔案";
-    return;
-  }
-  status.className = "";
-  status.textContent = "解析中...";
-
+// 2026/10/29新增：一次可以選多個檔案(ctrl/shift多選)，每個檔案各自丟給
+// 後端解析(後端自己也會解壓縮.zip、甚至zip裡包zip)，結果合併成同一批——
+// 對應使用者實際的工作方式：log資料夾裡放的是一天一個的.log.zip，想看
+// 好幾天的話用這個，不用自己先手動合併檔案。
+async function extractOneFile(file) {
   const buf = await file.arrayBuffer();
   const log_base64 = arrayBufferToBase64(buf);
-
   const res = await fetch("/api/simple_bingo/extract", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ log_base64 }),
   });
   const data = await res.json();
-  if (!res.ok) {
+  if (!res.ok) throw new Error(`${file.name}：${data.error || "解析失敗"}`);
+  return data;
+}
+
+async function extractLog() {
+  const fileInput = document.getElementById("log-file");
+  const status = document.getElementById("status");
+  const files = [...fileInput.files];
+  if (!files.length) {
     status.className = "error";
-    status.textContent = data.error || "解析失敗";
+    status.textContent = "請先選擇log檔案（可以是.zip，也可以一次選多個）";
+    return;
+  }
+  status.className = "";
+  status.textContent = `解析中...（共 ${files.length} 個檔案）`;
+
+  let data;
+  try {
+    const results = [];
+    for (const file of files) results.push(await extractOneFile(file));
+    data = {
+      substrates: results.flatMap((r) => r.substrates),
+      wafer_maps: results.flatMap((r) => r.wafer_maps || []),
+    };
+  } catch (err) {
+    status.className = "error";
+    status.textContent = err.message;
     document.getElementById("result-area").style.display = "none";
     return;
   }

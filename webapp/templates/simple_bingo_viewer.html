@@ -32,7 +32,10 @@
 
 <section class="panel" id="upload-panel">
   <h2><span class="step-badge">1</span>上傳SECS Log</h2>
-  <label>選擇log檔案 <input type="file" id="log-file" accept=".log,.txt"></label>
+  <label>選擇log檔案 <input type="file" id="log-file" accept=".log,.txt,.zip" multiple></label>
+  <p class="hint" style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem">
+    可以直接選壓縮過的<code>.log.zip</code>(自動解壓縮，zip裡包zip也可以)；也可以用Ctrl/Shift一次選多個檔案(例如好幾天份)，結果會合併成同一批。
+  </p>
   <button id="btn-extract">解析Log</button>
   <p id="status"></p>
 </section>
