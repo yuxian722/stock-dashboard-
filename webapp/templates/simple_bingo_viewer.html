@@ -57,7 +57,17 @@
      配色，終點旗子🏁換成南瓜燈🎃(還加一圈會明暗脈動的光暈，像真的在
      發光)，卡片上方新增一排蝙蝠🦇跟小幽靈👻用不同速度/高度飄過(彼此
      animation-delay錯開，才不會看起來像同一隻複製貼上)，青蛙腳下的影子
-     也從原本偏綠色調改成暖橘色調跟整體氣氛一致。 */
+     也從原本偏綠色調改成暖橘色調跟整體氣氛一致。
+     2026/10/29再調整(第四次)：使用者指出🐸這個emoji只有一顆頭、看不出
+     「四隻腳在跳」，而且希望畫面讀起來像「青蛙在追南瓜」而不是單純跳向
+     一個靜止的目標。改用自畫的SVG青蛙(橢圓身體+2顆眼睛+4條腿，後腿大、
+     前腿小，符合真實青蛙跳躍時主要靠後腿發力的比例)取代原本的emoji，
+     4條腿各自用獨立的keyframe(`sbv-backleg`/`sbv-frontleg`)跟身體的
+     `sbv-hop`對齊同樣的時間節點(8%蹲低蓄力、25%/67%騰空、42%/84%落地)，
+     後腿蹬直、前腿前伸再收回，看起來才像真的在用腳跳，不是整隻平移。
+     南瓜燈加一個`sbv-pumpkin-dodge`動畫，青蛙每次落地靠近時(42%/84%)
+     南瓜就彈一下閃開，製造「怎麼追都差一點抓不到」的追逐感，而不是青蛙
+     每次都理所當然地跳到終點停下來。 */
   .sbv-loading{display:none;position:fixed;inset:0;background:rgba(10,6,20,.65);align-items:center;justify-content:center;z-index:998}
   .sbv-loading.active{display:flex}
   .sbv-loading-card{background:linear-gradient(165deg,#2b1055 0%,#1a0b2e 70%,#120820 100%);border-radius:22px;padding:1.6rem 1.8rem 1.6rem;box-shadow:0 0 0 2px rgba(255,140,26,.25),0 24px 70px rgba(0,0,0,.55);text-align:center;width:min(90vw,380px)}
@@ -67,8 +77,14 @@
   .sbv-loading-flock .ghost{font-size:17px;top:6px;animation-duration:4s;animation-delay:-2.3s;opacity:0.85}
   .sbv-loading-track{position:relative;width:100%;max-width:320px;height:120px;margin:0 auto;background:linear-gradient(to right,#4a1f7a,#ff8c1a55);border-radius:24px;overflow:hidden}
   .sbv-loading-track .shadow{position:absolute;bottom:10px;left:2%;width:13%;height:14px;background:rgba(90,30,10,.4);border-radius:50%;animation:sbv-shadow 1.4s ease-in-out infinite}
-  .sbv-loading-track .frog{position:absolute;bottom:8px;left:2%;font-size:58px;line-height:1;transform-origin:bottom center;animation:sbv-hop 1.4s cubic-bezier(.4,0,.2,1) infinite}
-  .sbv-loading-track .finish{position:absolute;right:10px;top:50%;margin-top:-18px;font-size:34px;transform-origin:left bottom;animation:sbv-flag 1s ease-in-out infinite,sbv-glow 1.6s ease-in-out infinite}
+  .sbv-loading-track .frog{position:absolute;bottom:8px;left:2%;width:58px;height:48px;transform-origin:bottom center;animation:sbv-hop 1.4s cubic-bezier(.4,0,.2,1) infinite}
+  .sbv-loading-track .frog-svg{display:block;width:100%;height:100%;overflow:visible}
+  .sbv-loading-track .leg{transform-box:fill-box}
+  .sbv-loading-track .back-l{transform-origin:88% 25%;animation:sbv-backleg-l 1.4s cubic-bezier(.4,0,.2,1) infinite}
+  .sbv-loading-track .back-r{transform-origin:12% 25%;animation:sbv-backleg-r 1.4s cubic-bezier(.4,0,.2,1) infinite}
+  .sbv-loading-track .front-l{transform-origin:75% 15%;animation:sbv-frontleg-l 1.4s cubic-bezier(.4,0,.2,1) infinite}
+  .sbv-loading-track .front-r{transform-origin:25% 15%;animation:sbv-frontleg-r 1.4s cubic-bezier(.4,0,.2,1) infinite}
+  .sbv-loading-track .finish{position:absolute;right:10px;top:50%;margin-top:-18px;font-size:34px;transform-origin:center bottom;animation:sbv-glow 1.6s ease-in-out infinite,sbv-pumpkin-dodge 1.4s ease-in-out infinite}
   .sbv-loading-text{display:block;margin-top:1rem;font-size:0.9rem;color:#f0dcff}
   @keyframes sbv-fly{
     0%  {left:-10%; transform:translateY(0)}
@@ -78,6 +94,57 @@
   @keyframes sbv-glow{
     0%,100%{filter:drop-shadow(0 0 3px #ff8c1a)}
     50%{filter:drop-shadow(0 0 12px #ffb04d)}
+  }
+  @keyframes sbv-pumpkin-dodge{
+    0%, 38%  {transform:translate(0,0) rotate(0deg)}
+    42%      {transform:translate(5px,-12px) rotate(-12deg)}
+    46%, 80% {transform:translate(0,0) rotate(0deg)}
+    84%      {transform:translate(5px,-12px) rotate(12deg)}
+    88%,100% {transform:translate(0,0) rotate(0deg)}
+  }
+  @keyframes sbv-backleg-l{
+    0%  {transform:rotate(50deg)}
+    8%  {transform:rotate(75deg)}
+    25% {transform:rotate(0deg)}
+    42% {transform:rotate(50deg)}
+    50% {transform:rotate(75deg)}
+    67% {transform:rotate(0deg)}
+    84% {transform:rotate(50deg)}
+    92% {transform:rotate(55deg)}
+    100%{transform:rotate(50deg)}
+  }
+  @keyframes sbv-backleg-r{
+    0%  {transform:rotate(-50deg)}
+    8%  {transform:rotate(-75deg)}
+    25% {transform:rotate(0deg)}
+    42% {transform:rotate(-50deg)}
+    50% {transform:rotate(-75deg)}
+    67% {transform:rotate(0deg)}
+    84% {transform:rotate(-50deg)}
+    92% {transform:rotate(-55deg)}
+    100%{transform:rotate(-50deg)}
+  }
+  @keyframes sbv-frontleg-l{
+    0%  {transform:rotate(10deg)}
+    8%  {transform:rotate(25deg)}
+    25% {transform:rotate(-20deg)}
+    42% {transform:rotate(10deg)}
+    50% {transform:rotate(25deg)}
+    67% {transform:rotate(-20deg)}
+    84% {transform:rotate(10deg)}
+    92% {transform:rotate(15deg)}
+    100%{transform:rotate(10deg)}
+  }
+  @keyframes sbv-frontleg-r{
+    0%  {transform:rotate(-10deg)}
+    8%  {transform:rotate(-25deg)}
+    25% {transform:rotate(20deg)}
+    42% {transform:rotate(-10deg)}
+    50% {transform:rotate(-25deg)}
+    67% {transform:rotate(20deg)}
+    84% {transform:rotate(-10deg)}
+    92% {transform:rotate(-15deg)}
+    100%{transform:rotate(-10deg)}
   }
   @keyframes sbv-hop{
     0%  {left:2%;  bottom:8px;  transform:scaleX(1.35) scaleY(0.65) rotate(0deg)}
@@ -151,7 +218,27 @@
       <div class="sbv-loading-flock">
         <span class="bat1">🦇</span><span class="bat2">🦇</span><span class="ghost">👻</span>
       </div>
-      <div class="sbv-loading-track"><span class="shadow"></span><span class="frog">🐸</span><span class="finish">🎃</span></div>
+      <div class="sbv-loading-track">
+        <span class="shadow"></span>
+        <div class="frog">
+          <svg class="frog-svg" viewBox="0 0 100 80">
+            <g class="leg back-l"><path d="M0 70 Q2 56 20 54 Q28 60 24 72 Q10 78 0 70 Z" fill="#2fb84a"/></g>
+            <g class="leg back-r"><path d="M100 70 Q98 56 80 54 Q72 60 76 72 Q90 78 100 70 Z" fill="#2fb84a"/></g>
+            <g class="leg front-l"><path d="M18 66 Q13 74 19 80 Q30 78 30 69 Q25 63 18 66 Z" fill="#35c553"/></g>
+            <g class="leg front-r"><path d="M82 66 Q87 74 81 80 Q70 78 70 69 Q75 63 82 66 Z" fill="#35c553"/></g>
+            <ellipse cx="50" cy="46" rx="32" ry="24" fill="#3ddc55"/>
+            <ellipse cx="50" cy="56" rx="20" ry="13" fill="#eaffd0"/>
+            <circle cx="34" cy="22" r="11" fill="#3ddc55"/>
+            <circle cx="66" cy="22" r="11" fill="#3ddc55"/>
+            <circle cx="34" cy="22" r="6.5" fill="#fff"/>
+            <circle cx="66" cy="22" r="6.5" fill="#fff"/>
+            <circle cx="36" cy="22" r="3" fill="#153a1f"/>
+            <circle cx="68" cy="22" r="3" fill="#153a1f"/>
+            <path d="M38 50 Q50 58 62 50" stroke="#1d7a33" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="finish">🎃</span>
+      </div>
       <span class="sbv-loading-text" id="loading-text">🎃 解析中，請稍候...（檔案比較大或選很多個檔案時會跑久一點，畫面沒有卡住）</span>
     </div>
   </div>
