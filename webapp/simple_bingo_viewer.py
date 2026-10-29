@@ -4,6 +4,29 @@
 點進去就開啟」的簡單版本：上傳SECS log → 每一枚基板各自秀出BINGO MAP
 格子圖(可以跟實物肉眼核對) + 對應的.strate檔案 → 核對過的直接下載。
 
+2026/10/29大改版：使用者決定把整個工具大砍成只留「補資料」這一件事
+(②誤吸偏移/③Crack位置回推/⑤上片狀態人工確認/⑥SECS格式化參數全部不要)，
+而且只做「A. 資料本身已經完整(SECS log或現成.strate)，只是要看圖核對、
+下載」這個情境，不做①頁原本「從空白wafer圖手動點座標建立全新檔案」那個
+情境(B)——B之後要不要做、怎麼做，另外再討論，這次先把A做到「簡單明瞭
+好操作」。
+
+新版面：左半wafer圖(這一枚基板來源的那片wafer，依bin上色，疊加一層標示
+「這一枚基板用了wafer上的哪些格子」)、右半這一枚自己的BINGO MAP格子圖，
+畫面左側一欄列出這批所有基板(可能到20幾枚)，點哪一枚兩邊的圖就換成哪
+一枚的。wafer圖跟bin顏色/疊加標示的畫法，直接照抄`strate_xml.js`裡
+`renderWaferGrid()`/`BIN_COLORS`/`matchedSubstrates`這一整套已經驗證過
+的邏輯(同一個專案不要自己重寫一份座標系統)——疊加用的CSS類別特地選了
+`.focus`(只加外框、不蓋掉底色)而不是`.referenced`(會用純色蓋掉格子，
+會讓wafer自己的bin顏色看不到)，因為這裡要同時看到「這格本來是什麼bin」
+跟「這格屬不屬於目前選到的基板」兩個資訊，不能只留其中一個。
+
+這次沒有接FRM二進位讀取——wafer圖的資料來源是log自己的`WaferStart`事件
+(`extract_wafer_maps()`，跟④頁同一套)，方向已經由這套函式自動比對同一
+份log裡這片wafer自己的`StrateMap`已知位置校正過，不需要像①頁處理FRM
+檔案時那樣，另外給swap_xy/mirror_x/mirror_y三個手動勾選框——這也是這次
+「簡單明瞭」具體省下的一塊，不是漏做，是這個資料來源本來就不需要。
+
 刻意做成完全獨立的Flask app(不是app.py裡再加一個路由)，理由：
 - 「簡單一點」的要求，這支檔案只做一件事，不用在那支已經有6個分頁、
   上千行的app.py裡再找地方塞新邏輯，之後要維護/刪除這個簡化版也不會
@@ -42,7 +65,7 @@ app = Flask(
     static_folder=os.path.join(WEBAPP_DIR, "static"),
 )
 
-from bingomap.secs_log import decode_secs_log, extract_strate_files  # noqa: E402
+from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_wafer_maps  # noqa: E402
 from bingomap.strate import StrateFile  # noqa: E402
 
 
@@ -81,6 +104,36 @@ def _substrate_positions(sf: StrateFile) -> list[dict]:
     return [{"col": c, "row": r, "bin": b} for (c, r), b in positions.items()]
 
 
+def _wafer_positions(sf: StrateFile) -> list[dict]:
+    """This substrate's die positions in terms of the SOURCE WAFER's own
+    col:row (`wafer_xy`, not `sub_pos`) — used to highlight, on the left-
+    pane wafer grid, which of that wafer's cells this one substrate
+    actually drew from. Same col:row convention as the WaferStart wafer
+    map below (see bingomap/secs_log.py's module docstring — no swap
+    needed, this project's real DB machine)."""
+    positions: dict[tuple[int, int], str] = {}
+    for d in sf.die_info + sf.other_layer_die_info:
+        col_str, _, row_str = d.wafer_xy.partition(":")
+        try:
+            col, row = int(col_str), int(row_str)
+        except ValueError:
+            continue
+        positions[(col, row)] = d.bin
+    return [{"col": c, "row": r, "bin": b} for (c, r), b in positions.items()]
+
+
+def _wafer_map_summary(wm, index: int) -> dict:
+    cells = wm.wafer_map.cells
+    return {
+        "index": index,
+        "frame_id": wm.frame_id,
+        "wafer_id": wm.wafer_id,
+        "columns": wm.wafer_map.columns,
+        "rows": wm.wafer_map.rows,
+        "cells": [{"col": x, "row": y, "bin": bin_} for (x, y), bin_ in cells.items()],
+    }
+
+
 def _substrate_summary(sf: StrateFile, index: int) -> dict:
     last_ts = max((d.timestamp for d in sf.die_info), default="")
     wafer_ring = sf.die_info[0].wafer_ring if sf.die_info else ""
@@ -108,6 +161,7 @@ def _substrate_summary(sf: StrateFile, index: int) -> dict:
         "min_row": min(0, data_min_row),
         "max_row": max(sf.substrate_row - 1, data_max_row),
         "positions": positions,
+        "wafer_positions": _wafer_positions(sf),
         "filename": f"{base_name}_{last_ts}.strate" if last_ts else f"{base_name}.strate",
         "text": sf.to_text(),
     }
@@ -129,7 +183,14 @@ def api_extract():
     if not strate_files:
         return jsonify({"error": "這份log裡沒有找到StrateMap(基板)資料"}), 400
 
-    return jsonify({"substrates": [_substrate_summary(sf, i) for i, sf in enumerate(strate_files)]})
+    wafer_maps = extract_wafer_maps(text)
+
+    return jsonify(
+        {
+            "substrates": [_substrate_summary(sf, i) for i, sf in enumerate(strate_files)],
+            "wafer_maps": [_wafer_map_summary(wm, i) for i, wm in enumerate(wafer_maps)],
+        }
+    )
 
 
 if __name__ == "__main__":

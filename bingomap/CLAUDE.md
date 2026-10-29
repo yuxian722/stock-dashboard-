@@ -1624,3 +1624,35 @@ extract`只負責讀出`StrateMap`事件的`sub_pos`/`bin`，不做任何方向�
 `test_blank_generator_gold_edge_orientation.py`裡已經驗證過的`REAL_GAP_POSITIONS`常數(不是自己
 另外猜一組期望值)，鎖定這支新endpoint解析同一份真實金邊朝下log，算出來的9個空缺位置跟那份測試
 的結論完全一致。
+
+## simple_bingo_viewer改版：左wafer圖/右BINGO MAP雙欄版面，先只做「資料已經完整、只是要看圖核對下載」這個情境(2026/10/29)
+
+使用者討論完整個主程式(6個分頁)要大砍成只留「補資料」之後，決定分階段做：先把這支已經存在的簡化版
+小工具(前一則記錄的`simple_bingo_viewer.py`)，從「每枚基板各自一張卡片上下排列、只有BINGO MAP一張
+圖」，改成「左側一欄列出全部基板(可能到20幾枚)、點一枚，主畫面固定左半wafer圖／右半BINGO MAP圖」，
+範圍明確限定在**A情境**(SECS log/現成STRATE本身資料已經完整，只是要核對、下載)，不做**B情境**
+(①頁原本那種「從空白wafer圖手動點座標建立全新檔案」)——B要不要做、怎麼做，之後再討論，這次只把A
+做到「簡單明瞭」。
+
+**這次刻意沒有的東西**：wafer圖的資料來源是log自己的`WaferStart`事件(`extract_wafer_maps()`，跟④
+頁同一套)，方向已經由這套函式自動比對同一份log裡這片wafer自己的`StrateMap`已知位置校正過(見本文件
+前面「secs_log.py的WaferStart也是per-machine座標系統」那則)，**不需要**像①頁處理FRM檔案時那樣
+再多開swap_xy/mirror_x/mirror_y三個手動勾選框——不是漏做，是這個資料來源本來就不需要，省掉這三個
+勾選框是這次「簡單」具體省下的東西，不是閹割掉某個還有用的能力。
+
+**wafer圖疊加標示的畫法**：直接照抄`strate_xml.js`裡`renderWaferGrid()`/`BIN_COLORS`/
+`matchedSubstrates`那一整套已經驗證過的邏輯(同一個專案的座標系統/色碼規格不要自己重新驗證一次)，
+但疊加用的CSS類別特地選`.focus`(只加外框、不蓋掉底色)而不是`strate_xml.js`原本用的`.referenced`
+(會用純色背景蓋掉格子)——這裡要同時看到「這格本來是什麼bin顏色」跟「這格屬不屬於目前選到的基板」
+兩個資訊，用`.referenced`會讓bin顏色被蓋掉看不到，不符合「左邊wafer圖、核對實物」這個新用途的需求。
+
+**正向/反向套用範圍擴大**：舊版只套用在BINGO MAP格子圖，這次wafer圖(左)、BINGO MAP圖(右)**兩張圖
+套用同一個`orientation`狀態**一起翻轉——如果只翻其中一張，使用者在兩張圖之間對照「這格對應那格」
+的直覺會被打亂，兩張圖的「上下方向」必須維持一致。
+
+新增回歸測試`test_extract_includes_wafer_maps_matched_by_wafer_ring`，用既有的BB93AE多枚基板真實
+fixture驗證：每一枚基板都能用`wafer_ring`找到對應的`WaferStart`資料，而且每一枚回傳的
+`wafer_positions`(wafer_xy為主的座標，給左邊wafer圖疊加標示用，跟原本給右邊BINGO MAP用的
+`positions`/sub_pos是兩組不同的座標、服務不同的圖)筆數要跟`num_dies`對得上，不會漏掉任何一顆。
+用Playwright對真實資料實際跑過一次完整流程(上傳log→點兩枚不同基板→切正向/反向)，screenshot
+確認兩張圖都正確跟著切換、疊加標示沒有跑位。

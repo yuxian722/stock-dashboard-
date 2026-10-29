@@ -50,3 +50,30 @@ def test_extract_without_log_base64_returns_400():
     res = client.post("/api/simple_bingo/extract", json={})
     assert res.status_code == 400
     assert "log" in res.get_json()["error"]
+
+
+MULTI_SUBSTRATE_FIXTURE = (
+    Path(__file__).parent.parent.parent
+    / "bingomap" / "tests" / "fixtures" / "BAA0320260906_17.0_BB93AE_8L808002A1.log"
+)
+
+
+def test_extract_includes_wafer_maps_matched_by_wafer_ring():
+    """2026/10/29改版新增：左半wafer圖需要的資料——每枚基板都要能用
+    wafer_ring找到它來源那片wafer的WaferStart bin map，而且每顆die
+    的wafer_xy(不是sub_pos)位置數要跟num_dies對得上，不然前端疊加
+    標示會漏顆或對不到格子。"""
+    client = app.test_client()
+    log_base64 = base64.b64encode(MULTI_SUBSTRATE_FIXTURE.read_bytes()).decode("ascii")
+
+    res = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64})
+    assert res.status_code == 200
+    data = res.get_json()
+
+    assert len(data["substrates"]) == 6
+    assert len(data["wafer_maps"]) > 0
+    wafer_rings = {wm["frame_id"] for wm in data["wafer_maps"]}
+
+    for s in data["substrates"]:
+        assert s["wafer_ring"] in wafer_rings
+        assert len(s["wafer_positions"]) == s["num_dies"]

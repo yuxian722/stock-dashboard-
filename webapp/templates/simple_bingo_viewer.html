@@ -5,19 +5,29 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SECS LOG BINGO MAP 檢視器</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  /* 2026/10/29改版專用的版面樣式——只有這支簡化版在用，不動style.css本身，
+     避免影響其他還在用舊版面的頁面。 */
+  .sbv-layout{display:flex;gap:1.25rem;align-items:flex-start;margin-top:1rem}
+  .sbv-list{width:220px;flex:none;max-height:80vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .sbv-list-item{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;color:var(--ink);padding:0.7rem 0.8rem;font-weight:400;border-radius:0}
+  .sbv-list-item:hover{background:#f1f5f9}
+  .sbv-list-item.active{background:var(--blue);color:#fff;font-weight:700}
+  .sbv-list-item b{display:block;font-size:0.95rem}
+  .sbv-list-item span{display:block;font-size:0.76rem;opacity:0.85;margin-top:2px}
+  .sbv-main{flex:1;min-width:0}
+  .sbv-panes{display:flex;gap:1.25rem;flex-wrap:wrap}
+  .sbv-pane{flex:1;min-width:280px}
+  .sbv-pane h3{margin:0 0 0.4rem;font-size:1rem}
+  .sbv-empty{padding:2.5rem 1rem;text-align:center;color:var(--muted)}
+</style>
 </head>
 <body>
 <div class="wrap">
 
 <div class="hero">
   <h1>SECS LOG BINGO MAP 檢視器</h1>
-  <p>上傳機台的SECS/AFC log → 每一枚基板各自秀出BINGO MAP格子圖，可以直接拿實物核對 → 核對過的按「下載」拿.strate檔案</p>
-</div>
-
-<div class="notice">
-  這是簡化版獨立小工具，只做「看圖＋下載」這件事。解析用的是這個專案裡既有、已經用真實log驗證過的
-  parser，跟④STRATE補檔頁同一套，不是另外重寫的邏輯——每一枚基板的格子圖，直接秀出log裡
-  <code>StrateMap</code>事件記錄的實際基板位置(不用重新點座標)。
+  <p>上傳機台的SECS/AFC log → 左邊選一枚基板 → 右上wafer圖／右下BINGO MAP圖直接核對 → 對了就下載</p>
 </div>
 
 <section class="panel" id="upload-panel">
@@ -27,25 +37,41 @@
   <p id="status"></p>
 </section>
 
-<section class="panel" id="orientation-panel" style="display:none">
-  <h2><span class="step-badge">2</span>BINGO MAP顯示方向</h2>
-  <div class="notice">
-    拿實物比對畫面方向時用——<b>這個選項只影響下面格子圖怎麼畫，不會改變「下載」拿到的.strate檔案內容
-    一個字</b>（檔案裡的座標永遠是機台原始記錄的座標）。哪個方向跟手上的實物對得上就切哪個，可以隨時
-    切換重畫，不用重新上傳log。
+<div class="sbv-layout" id="result-area" style="display:none">
+  <div class="sbv-list" id="substrate-list"></div>
+  <div class="sbv-main">
+    <div class="panel" id="detail-panel">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:0.6rem">
+        <h2 id="detail-title" style="margin:0">請在左邊選一枚基板</h2>
+        <div class="row" style="gap:0.8rem">
+          <label style="margin:0"><input type="radio" name="orientation" value="forward" checked> 正向</label>
+          <label style="margin:0"><input type="radio" name="orientation" value="reverse"> 反向</label>
+          <button id="btn-download" style="display:none"></button>
+        </div>
+      </div>
+      <p id="detail-info" class="small"></p>
+      <div class="notice" style="margin-top:0.5rem">
+        正向／反向只改下面兩張圖怎麼排，<b>不影響「下載」拿到的.strate檔案內容</b>——拿實物比對，哪個方向對得上就切哪個。
+      </div>
+      <div class="sbv-panes" style="margin-top:0.8rem">
+        <div class="sbv-pane">
+          <h3>這一枚來源的wafer圖</h3>
+          <div class="legend" id="wafer-bin-legend"></div>
+          <div class="legend"><span><i style="outline:3px solid #f97316;outline-offset:-3px;background:#fff"></i>這一枚用到的格子</span></div>
+          <div class="lyr-wafer-wrap"><div id="wafer-grid" class="lyr-wafer-grid"></div></div>
+        </div>
+        <div class="sbv-pane">
+          <h3>這一枚的BINGO MAP</h3>
+          <div class="legend">
+            <span><i style="background:var(--blue)"></i>有die</span>
+            <span><i style="background:#fff;border:1px solid var(--line)"></i>無die</span>
+          </div>
+          <div class="lyr-substrate-grid" id="substrate-grid"></div>
+        </div>
+      </div>
+    </div>
   </div>
-  <label style="margin-right:1.2rem"><input type="radio" name="orientation" value="forward" checked> 正向</label>
-  <label><input type="radio" name="orientation" value="reverse"> 反向（列上下顛倒，欄不變）</label>
-</section>
-
-<section class="panel" id="substrates-panel" style="display:none;grid-column:1/-1">
-  <h2><span class="step-badge">3</span>基板BINGO MAP（共 <span id="substrate-count">0</span> 枚）</h2>
-  <div class="legend">
-    <span><i style="background:var(--blue)"></i>有die（這個位置已上片）</span>
-    <span><i style="background:#fff;border:1px solid var(--line)"></i>無die</span>
-  </div>
-  <div id="substrates-list"></div>
-</section>
+</div>
 
 </div>
 <script src="{{ url_for('static', filename='simple_bingo_viewer.js') }}"></script>
