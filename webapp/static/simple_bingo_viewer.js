@@ -142,11 +142,12 @@ document.getElementById("log-folder").addEventListener("change", (e) => {
 async function extractLog() {
   const status = document.getElementById("status");
   const loading = document.getElementById("loading-indicator");
+  const loadingText = document.getElementById("loading-text");
   const btn = document.getElementById("btn-extract");
   const files = pendingFiles;
   if (!files.length) {
     status.className = "error";
-    status.textContent = "請先選擇log檔案（可以是.zip，也可以一次選多個）";
+    status.textContent = "請先選擇log檔案（可以是.zip，也可以一次選多個，或選整個資料夾）";
     return;
   }
   status.className = "";
@@ -156,28 +157,43 @@ async function extractLog() {
   loading.classList.add("active");
   btn.disabled = true;
 
-  let data;
+  // 2026/10/29修正重大bug：「選整個資料夾」上傳499個檔案時，一碰到第一個
+  // 沒有StrateMap資料的檔案（資料夾裡混著跟STRATE無關的log，例如
+  // Trace*.log，後端對這種檔案一律回400）整批就直接中斷、前面已經解析
+  // 成功的檔案全部被丟掉，使用者完全看不到任何結果。改成逐一個別try/catch
+  // ——單一檔案失敗只記錄下來，不中斷其他檔案的解析；全部跑完之後，只要
+  // 有任何一個檔案成功就顯示結果，並且把「略過幾個檔案」的統計一起列出來，
+  // 不是靜默吞掉也不是整批報廢。
+  const results = [];
+  const failures = [];
   try {
-    const results = [];
-    for (const file of files) results.push(await extractOneFile(file));
-    data = {
-      substrates: results.flatMap((r) => r.substrates),
-      wafer_maps: results.flatMap((r) => r.wafer_maps || []),
-    };
-  } catch (err) {
-    status.className = "error";
-    status.textContent = err.message;
-    document.getElementById("result-area").style.display = "none";
-    return;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      loadingText.textContent = `解析中，請稍候...（第 ${i + 1}/${files.length} 個檔案：${file.name}）`;
+      try {
+        results.push(await extractOneFile(file));
+      } catch (err) {
+        failures.push({ name: file.name, message: err.message });
+      }
+    }
   } finally {
     loading.classList.remove("active");
     btn.disabled = false;
   }
 
-  lastSubstrates = data.substrates;
-  lastWaferMaps = data.wafer_maps || [];
-  status.className = "ok";
-  status.textContent = `解析完成，找到 ${lastSubstrates.length} 枚基板。`;
+  if (!results.length) {
+    status.className = "error";
+    status.textContent = `選的 ${files.length} 個檔案都沒有解析出基板資料` +
+      (failures.length ? `（例如「${failures[0].name}」：${failures[0].message}）` : "");
+    document.getElementById("result-area").style.display = "none";
+    return;
+  }
+
+  lastSubstrates = results.flatMap((r) => r.substrates);
+  lastWaferMaps = results.flatMap((r) => r.wafer_maps || []);
+  status.className = failures.length ? "" : "ok";
+  status.textContent = `解析完成，找到 ${lastSubstrates.length} 枚基板（共 ${files.length} 個檔案，成功 ${results.length} 個` +
+    (failures.length ? `，略過 ${failures.length} 個沒有基板資料的檔案）` : `）`);
   document.getElementById("result-area").style.display = "";
   renderList();
   selectSubstrate(0);
