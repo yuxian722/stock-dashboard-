@@ -50,15 +50,35 @@
      放大到58px，跳躍弧線、擠壓/拉伸的縮放幅度、旋轉角度全部等比放大，
      視覺上更誇張更搶眼——解析中這段時間就是要讓人一眼看到「真的在跑」，
      不用省畫面空間。座標改用百分比(而不是寫死px)，卡片寬度用
-     `min(90vw,380px)`跟著視窗大小縮放，手機或小視窗也不會爆版。 */
-  .sbv-loading{display:none;position:fixed;inset:0;background:rgba(15,32,51,.55);align-items:center;justify-content:center;z-index:998}
+     `min(90vw,380px)`跟著視窗大小縮放，手機或小視窗也不會爆版。
+     2026/10/29再調整(第三次)：使用者要求「生動活潑」或「萬聖節氣氛」，
+     剛好現在是10/29接近萬聖節，直接加節慶氣氛——保留使用者已經確認喜歡
+     的跳跳蛙(核心互動不換掉)，但整張卡片改成暗夜紫黑漸層+南瓜橘的萬聖節
+     配色，終點旗子🏁換成南瓜燈🎃(還加一圈會明暗脈動的光暈，像真的在
+     發光)，卡片上方新增一排蝙蝠🦇跟小幽靈👻用不同速度/高度飄過(彼此
+     animation-delay錯開，才不會看起來像同一隻複製貼上)，青蛙腳下的影子
+     也從原本偏綠色調改成暖橘色調跟整體氣氛一致。 */
+  .sbv-loading{display:none;position:fixed;inset:0;background:rgba(10,6,20,.65);align-items:center;justify-content:center;z-index:998}
   .sbv-loading.active{display:flex}
-  .sbv-loading-card{background:#fff;border-radius:22px;padding:2rem 1.8rem 1.6rem;box-shadow:0 24px 70px rgba(0,0,0,.3);text-align:center;width:min(90vw,380px)}
-  .sbv-loading-track{position:relative;width:100%;max-width:320px;height:120px;margin:0 auto;background:linear-gradient(to right,#dff3e0,#fff7d6);border-radius:24px;overflow:hidden}
-  .sbv-loading-track .shadow{position:absolute;bottom:10px;left:2%;width:13%;height:14px;background:rgba(15,40,20,.32);border-radius:50%;animation:sbv-shadow 1.4s ease-in-out infinite}
+  .sbv-loading-card{background:linear-gradient(165deg,#2b1055 0%,#1a0b2e 70%,#120820 100%);border-radius:22px;padding:1.6rem 1.8rem 1.6rem;box-shadow:0 0 0 2px rgba(255,140,26,.25),0 24px 70px rgba(0,0,0,.55);text-align:center;width:min(90vw,380px)}
+  .sbv-loading-flock{position:relative;height:26px;margin-bottom:0.3rem;overflow:hidden}
+  .sbv-loading-flock span{position:absolute;top:4px;left:-10%;font-size:18px;animation:sbv-fly 3.2s linear infinite}
+  .sbv-loading-flock .bat2{font-size:15px;top:0;animation-duration:2.5s;animation-delay:-1.1s}
+  .sbv-loading-flock .ghost{font-size:17px;top:6px;animation-duration:4s;animation-delay:-2.3s;opacity:0.85}
+  .sbv-loading-track{position:relative;width:100%;max-width:320px;height:120px;margin:0 auto;background:linear-gradient(to right,#4a1f7a,#ff8c1a55);border-radius:24px;overflow:hidden}
+  .sbv-loading-track .shadow{position:absolute;bottom:10px;left:2%;width:13%;height:14px;background:rgba(90,30,10,.4);border-radius:50%;animation:sbv-shadow 1.4s ease-in-out infinite}
   .sbv-loading-track .frog{position:absolute;bottom:8px;left:2%;font-size:58px;line-height:1;transform-origin:bottom center;animation:sbv-hop 1.4s cubic-bezier(.4,0,.2,1) infinite}
-  .sbv-loading-track .finish{position:absolute;right:10px;top:50%;margin-top:-18px;font-size:34px;transform-origin:left bottom;animation:sbv-flag 1s ease-in-out infinite}
-  .sbv-loading-text{display:block;margin-top:1rem;font-size:0.9rem;color:var(--muted)}
+  .sbv-loading-track .finish{position:absolute;right:10px;top:50%;margin-top:-18px;font-size:34px;transform-origin:left bottom;animation:sbv-flag 1s ease-in-out infinite,sbv-glow 1.6s ease-in-out infinite}
+  .sbv-loading-text{display:block;margin-top:1rem;font-size:0.9rem;color:#f0dcff}
+  @keyframes sbv-fly{
+    0%  {left:-10%; transform:translateY(0)}
+    50% {transform:translateY(-8px)}
+    100%{left:110%;  transform:translateY(0)}
+  }
+  @keyframes sbv-glow{
+    0%,100%{filter:drop-shadow(0 0 3px #ff8c1a)}
+    50%{filter:drop-shadow(0 0 12px #ffb04d)}
+  }
   @keyframes sbv-hop{
     0%  {left:2%;  bottom:8px;  transform:scaleX(1.35) scaleY(0.65) rotate(0deg)}
     8%  {left:8%;  bottom:8px;  transform:scaleX(0.65) scaleY(1.45) rotate(-18deg)}
@@ -128,8 +148,11 @@
   <button id="btn-extract">解析Log</button>
   <div class="sbv-loading" id="loading-indicator">
     <div class="sbv-loading-card">
-      <div class="sbv-loading-track"><span class="shadow"></span><span class="frog">🐸</span><span class="finish">🏁</span></div>
-      <span class="sbv-loading-text" id="loading-text">解析中，請稍候...（檔案比較大或選很多個檔案時會跑久一點，畫面沒有卡住）</span>
+      <div class="sbv-loading-flock">
+        <span class="bat1">🦇</span><span class="bat2">🦇</span><span class="ghost">👻</span>
+      </div>
+      <div class="sbv-loading-track"><span class="shadow"></span><span class="frog">🐸</span><span class="finish">🎃</span></div>
+      <span class="sbv-loading-text" id="loading-text">🎃 解析中，請稍候...（檔案比較大或選很多個檔案時會跑久一點，畫面沒有卡住）</span>
     </div>
   </div>
   <p id="status"></p>
