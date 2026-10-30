@@ -142,6 +142,20 @@ SUBSTRATE_ID、從wafer圖挑die填進一張完全空白的BINGO MAP、下載一
 - **下載沿用既有`downloadSubstrate()`**：後端回傳的物件跟`_substrate_summary()`
   其他地方回傳的形狀完全一樣(positions/wafer_positions/filename/text)，
   前端直接丟進既有的下載+稽核記錄函式，不用另外寫一套。
+
+2026/10/30再補上：這支工具最早的docstring(見本文件最上面)寫的範圍其實是
+「A. 資料本身已經完整(**SECS log或現成.strate**)」——但實際上線的只有
+SECS log那一半，使用者手上已經是現成`.strate`檔案(例如直接從SMAP網路
+磁碟機`F:/SMAP/SECS/SubstrateMap/...`抓下來的，截圖裡那個資料夾整個
+都是`.strate`檔案)時，上傳進來會被當成log解析、找不到任何`StrateMap`
+交易而報錯——這不是新需求，是原始設計漏掉的一半，現在補齊：`_is_strate_text()`
+用檔案第一行是不是`ASSY_LOT=`(`.strate`檔案16行header的第一個固定欄位，
+SECS log不可能這樣開頭)分辨這份上傳內容是log還是現成.strate，是的話
+直接`StrateFile.parse()`讀成一枚基板，不用假裝它是log硬塞給
+`extract_strate_files()`。`.strate`檔案本身沒有WaferStart資料，不會
+貢獻wafer_map(左邊wafer圖會顯示跟平常log涵蓋範圍不夠一樣的「找不到」
+訊息，這是正確行為)——想同時看到wafer圖，把對應的SECS log一起多選上傳
+即可，跟「選整個資料夾」同一套多檔合併機制自然就支援混合log+.strate。
 """
 from __future__ import annotations
 
@@ -210,7 +224,7 @@ def _collect_log_bytes(raw: bytes, out: list[bytes], *, depth: int = 0) -> None:
             for name in zf.namelist():
                 if name.endswith("/"):
                     continue
-                if not (name.lower().endswith(".log") or name.lower().endswith(".txt") or name.lower().endswith(".zip")):
+                if not name.lower().endswith((".log", ".txt", ".zip", ".strate")):
                     continue
                 _collect_log_bytes(zf.read(name), out, depth=depth + 1)
     except zipfile.BadZipFile:
@@ -438,6 +452,20 @@ def api_build_new_substrate():
     return jsonify({"substrate": _substrate_summary(new_sf, -1)})
 
 
+def _is_strate_text(text: str) -> bool:
+    """A raw `.strate` file (16 `KEY=VALUE` header lines then
+    `[DIE_INFO_BEG]`, see strate.py's module docstring) vs a SECS/AFC log
+    (XML `<Transaction>` blocks). 2026/10/30：使用者實際上有時候手上已經
+    是現成的`.strate`檔案(例如直接從SMAP網路磁碟機抓下來的，這個工具
+    最早的module docstring其實就寫過「A. 資料本身已經完整(SECS log或
+    現成.strate)」——但一直只做了log那一半，現成.strate那一半從來沒有
+    真的接起來)，要能直接選這種檔案上傳來看圖核對/下載，不是只能選log。
+    `.strate`檔案的第一行固定是`ASSY_LOT=...`(HEADER_FIELDS的第一個
+    欄位)，SECS log不可能以這個開頭，用這個當判斷依據最直接。"""
+    first_line = text.lstrip("﻿").split("\n", 1)[0].strip()
+    return first_line.startswith("ASSY_LOT=")
+
+
 @app.post("/api/simple_bingo/extract")
 def api_extract():
     data = request.get_json(force=True)
@@ -445,17 +473,30 @@ def api_extract():
     if err:
         return jsonify(err[0]), err[1]
 
-    # 一次上傳可能解出好幾份log(整個資料夾壓成一個zip的情況)——每份各自
-    # 解析，基板/wafer清單合併成同一批，index重新編號讓前端的清單/下載
-    # 檔名不會互相撞號。
+    # 一次上傳可能解出好幾份log(整個資料夾壓成一個zip的情況)、也可能混著
+    # 現成的.strate檔案——每份各自解析，基板/wafer清單合併成同一批，
+    # index重新編號讓前端的清單/下載檔名不會互相撞號。.strate檔案本身
+    # 沒有WaferStart資料，不會貢獻任何wafer_map——如果想連這枚基板的
+    # 來源wafer圖都看到，要把對應的SECS log一起多選上傳(既有的多檔合併
+    # 行為本來就支援)。
     strate_files: list[StrateFile] = []
     wafer_maps = []
+    strate_parse_errors: list[str] = []
     for text in texts:
+        if _is_strate_text(text):
+            try:
+                strate_files.append(StrateFile.parse(text))
+            except StrateFormatError as exc:
+                strate_parse_errors.append(str(exc))
+            continue
         strate_files.extend(extract_strate_files(text))
         wafer_maps.extend(extract_wafer_maps(text))
 
     if not strate_files:
-        return jsonify({"error": "解壓縮後的log裡沒有找到StrateMap(基板)資料"}), 400
+        error_msg = "解壓縮後的log裡沒有找到StrateMap(基板)資料，也不是看得懂的.strate檔案格式"
+        if strate_parse_errors:
+            error_msg += f"（{strate_parse_errors[0]}）"
+        return jsonify({"error": error_msg}), 400
 
     return jsonify(
         {

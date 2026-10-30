@@ -108,11 +108,14 @@ async function extractOneFile(file) {
 // 2026/10/29新增：「選擇整個資料夾」——使用者反映分別好幾天的基板，各自
 // 來源wafer的WaferStart事件常常落在不同天的log檔案裡，一個個Ctrl/Shift
 // 手動多選很容易漏掉；改用`webkitdirectory`讓瀏覽器把整個資料夾(含子
-// 資料夾)的檔案一次丟進來，前端自己過濾只留.log/.log.zip/.txt(資料夾裡
+// 資料夾)的檔案一次丟進來，前端自己過濾只留看得懂的副檔名(資料夾裡
 // 常常還混著跟log無關的檔案，例如ini/縮圖快取，不能整批硬塞給後端)。
 // `pendingFiles`是「選一般多個檔案」跟「選整個資料夾」共用的那份清單——
 // 兩種選法互斥，後選的那次會蓋掉前一次的結果，不會疊加混在一起。
-const LOG_FILE_EXTENSIONS = [".log", ".txt", ".zip"];
+// 2026/10/30新增`.strate`：使用者手上有時候已經是現成的.strate檔案
+// (不是SECS log)，後端`_is_strate_text()`看內容自動分辨要用哪種方式
+// 解析，前端這裡只負責「別把看起來無關的檔案也送進去」這一層過濾。
+const LOG_FILE_EXTENSIONS = [".log", ".txt", ".zip", ".strate"];
 function isLogLikeFile(file) {
   const name = file.name.toLowerCase();
   return LOG_FILE_EXTENSIONS.some((ext) => name.endsWith(ext));

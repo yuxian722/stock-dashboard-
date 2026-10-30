@@ -21,6 +21,10 @@ import webapp.simple_bingo_viewer as sbv  # noqa: E402
 from webapp.simple_bingo_viewer import app  # noqa: E402
 
 FIXTURE = Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "BAA0820260814_07_Z26306101253.log"
+STRATE_FIXTURE = (
+    Path(__file__).parent.parent.parent
+    / "bingomap" / "tests" / "fixtures" / "2070_V36AWAQ_J8204486_20260906135238.strate"
+)
 
 
 def test_extract_real_gold_edge_down_fixture_matches_known_gaps():
@@ -258,3 +262,58 @@ def test_build_new_substrate_requires_template_id_and_picks():
     )
     assert res.status_code == 400
     assert "流水號" in res.get_json()["error"]
+
+def test_extract_accepts_a_raw_strate_file_directly():
+    """2026/10/30：這支工具最早的docstring寫的範圍是「SECS log或現成
+    .strate」，但一直只接了log那一半——使用者手上有時候已經是現成的
+    .strate檔案(截圖裡直接從SMAP網路磁碟機抓下來的一整個資料夾都是
+    .strate)，上傳這種檔案不該被當成log解析失敗。這份真實.strate
+    fixture(跟稍早JobInfoFromAFC那組測試用來核對ASSY_LOT/MAPPING_LOT/
+    OPER的同一份檔案)直接上傳，應該解析成1枚基板，欄位值原封不動對上
+    檔案本身的header，不是重新猜出來的。"""
+    client = app.test_client()
+    log_base64 = base64.b64encode(STRATE_FIXTURE.read_bytes()).decode("ascii")
+
+    res = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert len(data["substrates"]) == 1
+    # .strate檔案本身沒有WaferStart資料，不會貢獻任何wafer_map。
+    assert data["wafer_maps"] == []
+
+    s = data["substrates"][0]
+    assert s["substrate_id"] == "J8204486"
+    assert s["wafer_ring"] == "BB93AE"
+    assert s["eqpid"] == "BAA03"
+    assert s["num_dies"] == 304
+    assert s["total_bond_die_qty"] == 304
+
+    reparsed = sbv.StrateFile.parse(s["text"])
+    assert reparsed.assy_lot == "V36AWAQ"
+    assert reparsed.mapping_lot == "8N027703A1"
+    assert reparsed.oper == "2070"
+
+
+def test_extract_mixes_a_strate_file_and_a_log_in_the_same_upload():
+    """混著選.strate檔案+SECS log(Ctrl/Shift多選、或選整個資料夾)要能
+    合併成同一批——.strate那枚沒有wafer圖，log那6枚wafer圖不受影響。"""
+    client = app.test_client()
+    log_b64 = base64.b64encode(MULTI_SUBSTRATE_FIXTURE.read_bytes()).decode("ascii")
+    strate_b64 = base64.b64encode(STRATE_FIXTURE.read_bytes()).decode("ascii")
+
+    res_log = client.post("/api/simple_bingo/extract", json={"log_base64": log_b64}).get_json()
+    res_strate = client.post("/api/simple_bingo/extract", json={"log_base64": strate_b64}).get_json()
+    assert len(res_log["substrates"]) == 6
+    assert len(res_strate["substrates"]) == 1
+    assert len(res_log["wafer_maps"]) > 0
+    assert res_strate["wafer_maps"] == []
+
+
+def test_extract_rejects_a_malformed_strate_file_with_a_clear_message():
+    client = app.test_client()
+    bad_strate = "ASSY_LOT=V36AWAQ\r\nMAPPING_LOT=X\r\n"  # missing [DIE_INFO_BEG] etc.
+    log_base64 = base64.b64encode(bad_strate.encode("utf-8")).decode("ascii")
+
+    res = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64})
+    assert res.status_code == 400
+    assert "strate" in res.get_json()["error"].lower() or "DIE_INFO" in res.get_json()["error"]

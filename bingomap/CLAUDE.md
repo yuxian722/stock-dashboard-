@@ -2042,3 +2042,28 @@ fixture(確認`bingomap`套件真的被正確打包進去，不是只有webapp�
 呼叫後`simple_bingo_viewer_downloads.csv`真的寫在執行檔旁邊(不是消失在暫存資料夾裡)——這些驗證
 雖然不是真正的Windows執行檔，但PyInstaller的`sys.frozen`/`sys._MEIPASS`機制跨平台行為一致，可以
 合理確信Windows版的同一套邏輯會有一樣的結果，實際的Windows .exe留給GitHub Actions真正組出來。
+
+## simple_bingo_viewer補上「現成.strate檔案」上傳路徑：最早的docstring就寫了「SECS log或現成.strate」，一直只做了一半(2026/10/30)
+
+使用者截圖裡是在`F:/SMAP/SECS/SubstrateMap/V42ABGT10`這個網路磁碟機資料夾選檔案，整個資料夾都是
+`.strate`檔案，Windows開檔視窗的篩選條件只有`*.log;*.txt;*.zip`——選不到任何東西。回報「你這個要
+檔案類型要多一點」。
+
+查了這支工具最早(2026/10/28)寫的module docstring才發現：原本的範圍本來就是「A. 資料本身已經完整
+(**SECS log或現成.strate**)，只是要看圖核對、下載」——但一路做下來只真的接了SECS log這一半，
+「現成.strate」那一半從頭到尾沒有真的實作，上傳.strate檔案會被`extract_strate_files()`當成log
+解析、找不到任何`StrateMap`交易、報一個誤導的錯誤訊息。這不是新需求，是原始設計就漏掉的一半，這次
+補齊。
+
+**判斷邏輯**：`_is_strate_text()`看解碼後文字的第一行是不是`ASSY_LOT=`(`.strate`檔案16行header
+固定的第一個欄位，SECS log不可能這樣開頭)，是的話直接`StrateFile.parse()`讀成一枚基板，不是的話
+走原本的`extract_strate_files()`。`.strate`檔案本身沒有WaferStart資料，不會貢獻任何wafer_map——
+左邊wafer圖會顯示「找不到wafer資料」，這是正確行為，不是漏做；想同時看到來源wafer圖，把對應的
+SECS log一起多選上傳即可，跟既有的多檔合併機制(含「選整個資料夾」)天然相容，不用另外處理。前端
+`accept`屬性跟`isLogLikeFile()`都加上`.strate`，資料夾裡混著zip解壓縮後的`.strate`項目也一併放行。
+
+新增3個後端測試：`test_extract_accepts_a_raw_strate_file_directly`(用真實.strate fixture，確認
+欄位值跟檔案本身header一字不差、wafer_maps是空的)、`test_extract_mixes_a_strate_file_and_a_log_in_the_same_upload`、
+`test_extract_rejects_a_malformed_strate_file_with_a_clear_message`。Playwright端到端驗證：真的
+上傳這份.strate fixture，確認基板資訊、BINGO MAP(304格全部正確顯示)、wafer圖的「找不到」訊息都
+符合預期。
