@@ -213,6 +213,12 @@ function renderList() {
     btn.addEventListener("click", () => selectSubstrate(i));
     list.appendChild(btn);
   });
+  // 2026/10/30新增：使用者反映「下載檔案要多一項全部下載」——清單一次
+  // 可能有20幾枚基板，一枚一枚點下載太累。按鈕文字跟著目前這批的枚數走，
+  // 清單是空的就整個隱藏(沒有可以下載的東西)。
+  const allBtn = document.getElementById("btn-download-all");
+  allBtn.style.display = lastSubstrates.length ? "" : "none";
+  allBtn.textContent = `全部下載（共 ${lastSubstrates.length} 枚，.zip）`;
 }
 
 function findWaferMapFor(substrate) {
@@ -565,6 +571,145 @@ function downloadSubstrate(substrate) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ---- 2026/10/30新增：「全部下載」打包成一個.zip -------------------------
+// 這支工具一貫「不依賴外部CDN/函式庫」(見module docstring)，打包zip也
+// 不例外——自己寫一個只支援STORED(不壓縮)項目的最小ZIP產生器，不是真的
+// 要省壓縮率(.strate檔案都很小，壓不壓差異不大)，是換掉「額外帶一份
+// DEFLATE壓縮實作」的複雜度，STORED只需要CRC-32+照ZIP規格排版二進位
+// 欄位，不需要真的壓縮演算法。
+function crc32(bytes) {
+  let crc = ~0;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return ~crc >>> 0;
+}
+
+function buildZip(entries) {
+  // entries: [{name, data: Uint8Array}] — STORED-only zip per PKZIP APPNOTE
+  // §4.3: local file header(30B固定) + 檔名 + 資料，逐一項目重複；接著
+  // 一份central directory(每項46B固定+檔名)；最後end of central directory
+  // (22B固定)收尾。compressed size跟uncompressed size寫一樣的值(因為沒有
+  // 壓縮)，method固定填0(= stored)。
+  const encoder = new TextEncoder();
+  const localChunks = [];
+  const centralChunks = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBytes = encoder.encode(entry.name);
+    const data = entry.data;
+    const crc = crc32(data);
+
+    // 2026/10/30：第一版這裡的欄位位移抄錯了——照搬了central directory的
+    // 排版(sig/version made by/version needed/...)，但local file header
+    // 沒有「version made by」這個欄位，少了2 bytes，後面全部欄位(crc起)
+    // 都因此多偏移了2 bytes，寫出來的zip乍看能建出來、Playwright下載也
+    // 正常觸發，但Python的zipfile.testzip()一讀就報「File name in
+    // directory and header differ」——這種格式類bug光靠「看起來有跑」
+    // 完全抓不到，靠真正拿標準工具(Python zipfile)讀回來交叉驗證才抓到，
+    // 跟這個專案一貫「不能只看起來對」的原則一致。正確的local file
+    // header欄位位移：sig(0,4B) version(4,2B) flags(6,2B) method(8,2B)
+    // modtime(10,2B) moddate(12,2B) crc(14,4B) compsize(18,4B)
+    // uncompsize(22,4B) namelen(26,2B) extralen(28,2B)，總共30 bytes。
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true); // version needed to extract
+    local.setUint16(6, 0, true); // general purpose flag
+    local.setUint16(8, 0, true); // method = stored
+    local.setUint16(10, 0, true); // mod time
+    local.setUint16(12, 0x21, true); // mod date(任意合法值，這些.strate檔名裡本來就有時間戳記)
+    local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true); // compressed size
+    local.setUint32(22, data.length, true); // uncompressed size
+    local.setUint16(26, nameBytes.length, true);
+    // extra field length(位移30)留0，不用再寫
+
+    localChunks.push(new Uint8Array(local.buffer), nameBytes, data);
+
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(4, 20, true); // version made by
+    central.setUint16(6, 20, true); // version needed
+    central.setUint16(8, 0, true);
+    central.setUint16(10, 0, true);
+    central.setUint16(12, 0, true);
+    central.setUint16(14, 0x21, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, data.length, true);
+    central.setUint32(24, data.length, true);
+    central.setUint16(28, nameBytes.length, true);
+    central.setUint16(30, 0, true); // extra length
+    central.setUint16(32, 0, true); // comment length
+    central.setUint16(34, 0, true); // disk number start
+    central.setUint16(36, 0, true); // internal attrs
+    central.setUint32(38, 0, true); // external attrs
+    central.setUint32(42, offset, true); // local header offset
+
+    centralChunks.push(new Uint8Array(central.buffer), nameBytes);
+
+    offset += local.byteLength + nameBytes.length + data.length;
+  }
+
+  const centralStart = offset;
+  const centralSize = centralChunks.reduce((sum, c) => sum + c.length, 0);
+
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(4, 0, true);
+  end.setUint16(6, 0, true);
+  end.setUint16(8, entries.length, true); // entries on this disk
+  end.setUint16(10, entries.length, true); // entries total
+  end.setUint32(12, centralSize, true);
+  end.setUint32(16, centralStart, true);
+  end.setUint16(20, 0, true); // comment length
+
+  const allChunks = [...localChunks, ...centralChunks, new Uint8Array(end.buffer)];
+  const total = allChunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(total);
+  let pos = 0;
+  for (const chunk of allChunks) {
+    out.set(chunk, pos);
+    pos += chunk.length;
+  }
+  return out;
+}
+
+// 清單裡每一枚都各自記一筆下載紀錄(跟使用者一枚一枚點下載的稽核效果
+// 一樣，只是這次是一次按鈕觸發N筆)，再把全部.strate內容打包成一個zip
+// 觸發瀏覽器下載——正向/反向不影響內容(純顯示層轉換，見module docstring)，
+// 直接用每枚substrate.text本來的內容，不用管目前畫面上切的是哪個方向。
+function downloadAllSubstrates() {
+  if (!lastSubstrates.length) return;
+  const encoder = new TextEncoder();
+  const usedNames = new Set();
+  const entries = lastSubstrates.map((s) => {
+    let name = s.filename || `${s.substrate_id || "substrate"}.strate`;
+    while (usedNames.has(name)) name = `_${name}`; // 極少見的檔名撞名，前面加底線避免互相覆蓋
+    usedNames.add(name);
+    logDownload(s);
+    return { name, data: encoder.encode(s.text) };
+  });
+
+  const zipBytes = buildZip(entries);
+  const blob = new Blob([zipBytes], { type: "application/zip" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const ts = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  a.download = `BINGO_MAP_全部基板_${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}${pad(ts.getHours())}${pad(ts.getMinutes())}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("btn-download-all").addEventListener("click", downloadAllSubstrates);
 
 // 2026/10/29新增：勾選後直接在畫面上看這一枚的.strate原始內容——跟
 // downloadSubstrate()下載拿到的substrate.text是同一份資料，不用真的存

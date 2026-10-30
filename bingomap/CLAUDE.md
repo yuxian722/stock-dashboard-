@@ -2067,3 +2067,25 @@ SECS log一起多選上傳即可，跟既有的多檔合併機制(含「選整�
 `test_extract_rejects_a_malformed_strate_file_with_a_clear_message`。Playwright端到端驗證：真的
 上傳這份.strate fixture，確認基板資訊、BINGO MAP(304格全部正確顯示)、wafer圖的「找不到」訊息都
 符合預期。
+
+## simple_bingo_viewer新增「全部下載」打包成.zip：自己寫的STORED-only zip產生器，第一版欄位位移抄錯被Python zipfile抓到(2026/10/30)
+
+使用者的清單一次有20幾枚基板，一枚一枚點「下載」太累，要求「下載檔案要多一項全部下載」。
+
+**設計**：在清單上方加「全部下載（共N枚，.zip）」按鈕，把`lastSubstrates`裡每一枚的`.strate`文字
+內容打包成一個zip一次下載，每枚各自記一筆下載稽核紀錄(效果等同使用者一枚一枚點下載，只是一次按鈕
+觸發N筆)——正向/反向不影響打包內容(純顯示層轉換，直接用每枚`substrate.text`本來的值)。沿用這支
+工具「不依賴外部CDN/函式庫」的一貫原則，自己寫一個只支援STORED(不壓縮)項目的最小ZIP產生器
+(`buildZip()`)，不去外面抓一個完整zip函式庫——`.strate`檔案都很小，壓不壓差異不大，STORED只需要
+CRC-32+照ZIP規格排版二進位欄位，不需要真的壓縮演算法，複雜度低很多。
+
+**第一版欄位位移抄錯，被Python zipfile.testzip()抓到**：local file header(30 bytes固定)的欄位
+位移被我誤抄成central directory header(46 bytes固定)的排版——central directory比local file
+header多一個「version made by」欄位，導致local header裡crc/compressed size/uncompressed size/
+filename length全部多偏移了2 bytes。這種bug在Playwright裡「看起來有跑」(檔案確實下載下來、檔名
+正確)，完全看不出問題——真正拿Python標準函式庫的`zipfile.ZipFile().testzip()`讀回來，才抓到
+「File name in directory and header differ」這個格式錯誤，印證這個專案一貫「不能只看起來對，要
+拿真正會解析這個格式的工具交叉驗證」的原則，光靠自己肉眼檢查二進位欄位排版非常容易抄錯還渾然
+不覺。修正後用`zipfile.testzip()`回傳`None`(代表沒有任何一個entry壞掉)、6個entries逐一讀出來
+跟`extract_strate_files()`直接解析同一份log得到的`StrateFile.to_text()`逐字比對，完全一致才
+確認真的修好。
