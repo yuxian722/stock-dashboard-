@@ -1938,3 +1938,32 @@ bin都正確)、`test_apply_picks_rejects_more_picks_than_blank_positions`、
 (`BAA0320260906_17.0_BB93AE_8L808002A1.log`的J8204604，8個真實缺口、有對應wafer map)跑過完整流程：
 單點切換暫存、拖曳框選3顆、套用後BINGO MAP空白格數正確少3格、畫面上的DIE數量從36變39、待填入清單
 正確清空，截圖確認新填入的格子在wafer圖上也正確顯示橘色「已用」外框。
+
+## simple_bingo_viewer：手動補入的位置要分開畫在獨立的空白BINGO MAP上，不能混進原本真實資料那張圖(2026/10/29)
+
+上一節做完「框選wafer→自動依序填入空白位置」之後，使用者反映「我要的是多一個空白bingomap的圖在
+原本的下方，你目前是使用同一個bingomap圖」——原本的做法是直接把`apply_picks`合併後的
+`substrate.positions`(真實資料+手動補入全部混在一起)拿去畫同一張`#substrate-grid`，手動補入的
+格子雖然有`.focus`外框標示在wafer圖那邊，但BINGO MAP這邊跟log原本就有的資料完全看不出差別，使用者
+沒辦法一眼確認「這次到底手動加了哪些」。
+
+**解法**：新增第二張獨立的、座標範圍/軸向完全對齊的空白BINGO MAP(`#substrate-grid-new`)放在原本
+那張下面。關鍵是前端要記住「這枚基板第一次被選到時、還沒套用任何手動補入的真實positions」當基準
+(`baselinePositionsByIndex`，用`selectedIndex`當key，在`apply_picks`之後`lastSubstrates[i]`被換成
+合併後的新版本、`selectSubstrate(i)`重新渲染同一枚基板時，因為這個index的基準已經存在，不會被
+覆蓋)——上面那張`renderBingoMapPane()`永遠只畫基準內的格子(=log真實資料，不受後續手動補入影響)，
+下面新增的`renderNewPicksBingoMapPane()`只畫「現在合併後有、但不在基準內」的格子(=這個session
+手動加的，用集合差集算，不用額外記錄每次apply增加了哪些，天然正確)。重新上傳一批新log時
+(`extractLog()`成功)要整個清掉`baselinePositionsByIndex`，不然新這批第N枚基板會誤用前一批第N枚
+基板的舊基準。
+
+**下載的檔案內容沒變**——這次純粹是畫面呈現上的調整，`substrate.text`/`downloadSubstrate()`走的
+還是後端合併後的完整結果(真實+手動補入都在裡面)，只是「畫在哪張圖上」分開了，方便肉眼核對「這次
+手動加了哪些」跟「log本來就有什麼」兩件事不要混在一起看。
+
+抽出共用的`renderSubstrateGrid(containerId, substrate, positions, emptyLabel)`，兩張圖(真實/新增)
+都呼叫同一份繪圖邏輯、只是傳進去的positions來源不同，不是複製貼上兩份幾乎一樣的程式碼。
+
+用Playwright驗證：解析log後，上面那張圖(真實)顯示36格(J8204604原本的真實die數)、下面那張(新增)
+是空的(0格)；框選3顆套用後，上面那張**仍然是36格、完全沒變**，下面那張變成剛好3格——確認兩張圖
+真的互相獨立、沒有互相污染。

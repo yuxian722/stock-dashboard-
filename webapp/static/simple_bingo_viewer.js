@@ -191,6 +191,9 @@ async function extractLog() {
 
   lastSubstrates = results.flatMap((r) => r.substrates);
   lastWaferMaps = results.flatMap((r) => r.wafer_maps || []);
+  // 新的一批log，之前記住的「哪些位置是log本來就有的」基準全部作廢——
+  // 不清掉的話，新這批第N枚基板會誤用前一批第N枚基板的基準。
+  baselinePositionsByIndex.clear();
   status.className = failures.length ? "" : "ok";
   status.textContent = `解析完成，找到 ${lastSubstrates.length} 枚基板（共 ${files.length} 個檔案，成功 ${results.length} 個` +
     (failures.length ? `，略過 ${failures.length} 個沒有基板資料的檔案）` : `）`);
@@ -414,10 +417,30 @@ async function applyPicks() {
 
 document.getElementById("btn-apply-picks").addEventListener("click", applyPicks);
 
-function renderBingoMapPane(substrate) {
-  const container = document.getElementById("substrate-grid");
+// 2026/10/29新增：手動補入的位置要畫在「獨立的一張空白BINGO MAP」上，
+// 不能混進原本真實log資料那張圖——使用者明確反映「你目前是使用同一個
+// bingomap圖」，要求分開看。baselinePositionsByIndex記住「第一次選到
+// 這枚基板時」的真實positions(log本來就有的，還沒套用任何手動補入)，
+// 之後不管套用幾次手動補入(apply_picks回傳的substrate.positions已經是
+// 合併後的最新結果，含舊的+新的)，這份基準都不會跟著變——renderBingoMapPane()
+// 只畫基準內的(=log真實資料那張圖永遠不受手動補入影響)，
+// renderNewPicksBingoMapPane()只畫「現在有、但不在基準內」的那些格子
+// (=這次session手動加的)。重新上傳一批新log(extractLog()成功)時要整個
+// 清掉，不然會把前一批的基準誤用在新資料上；單純切換到別枚已存在的基板
+// 不用清，各自index的基準互相獨立。
+const baselinePositionsByIndex = new Map();
+
+function baselinePositionsFor(i, substrate) {
+  if (!baselinePositionsByIndex.has(i)) {
+    baselinePositionsByIndex.set(i, substrate.positions);
+  }
+  return baselinePositionsByIndex.get(i);
+}
+
+function renderSubstrateGrid(containerId, substrate, positions, emptyLabel) {
+  const container = document.getElementById(containerId);
   container.innerHTML = "";
-  const { min_col, max_col, min_row, max_row, positions } = substrate;
+  const { min_col, max_col, min_row, max_row } = substrate;
   const posByRowCol = new Map();
   for (const p of positions) posByRowCol.set(`${p.col},${p.row}`, p);
 
@@ -453,12 +476,24 @@ function renderBingoMapPane(substrate) {
         cell.classList.add("filled");
         cell.title = `${col}:${row} — bin=${pos.bin}`;
       } else {
-        cell.title = `${col}:${row} — 無die`;
+        cell.title = `${col}:${row} — ${emptyLabel}`;
       }
       rowEl.appendChild(cell);
     }
     container.appendChild(rowEl);
   }
+}
+
+function renderBingoMapPane(substrate) {
+  renderSubstrateGrid("substrate-grid", substrate, baselinePositionsFor(selectedIndex, substrate), "無die");
+}
+
+function renderNewPicksBingoMapPane(substrate) {
+  const baselineKeys = new Set(
+    baselinePositionsFor(selectedIndex, substrate).map((p) => `${p.col},${p.row}`)
+  );
+  const added = substrate.positions.filter((p) => !baselineKeys.has(`${p.col},${p.row}`));
+  renderSubstrateGrid("substrate-grid-new", substrate, added, "還沒補");
 }
 
 // 2026/10/29新增：每次下載記一筆(工號/時間/流水號/方向)到後端的CSV——
@@ -538,6 +573,7 @@ function selectSubstrate(i) {
 
   renderWaferPane(substrate);
   renderBingoMapPane(substrate);
+  renderNewPicksBingoMapPane(substrate);
   renderRawStrateBox(substrate);
   updatePickControls();
 }
