@@ -1967,3 +1967,41 @@ bin都正確)、`test_apply_picks_rejects_more_picks_than_blank_positions`、
 用Playwright驗證：解析log後，上面那張圖(真實)顯示36格(J8204604原本的真實die數)、下面那張(新增)
 是空的(0格)；框選3顆套用後，上面那張**仍然是36格、完全沒變**，下面那張變成剛好3格——確認兩張圖
 真的互相獨立、沒有互相污染。
+
+## simple_bingo_viewer：手動補位功能重做成「獨立建立全新基板」，不是補既有基板的缺口(2026/10/29)
+
+上一節做的「補進目前選到的這枚基板自己的空白位置、合併回同一份檔案」實際測試後，使用者看了畫面
+回報「你是不是誤會我的意思，我要這個空白的bingomap可以讓我點選進去我要座標...要可以讓我填入基板ID
+且可以下載檔案」——用`AskUserQuestion`當面確認(不是再猜一次)，答案是「完全獨立建立全新基板，不綁定
+任何既有基板」：自己輸入SUBSTRATE_ID，從wafer圖挑die填進一張完全空白的BINGO MAP，下載一份獨立
+全新的`.strate`檔案，不跟清單裡任何一枚基板的既有資料合併。
+
+**改法**：`/api/simple_bingo/apply_picks`整個換成`/api/simple_bingo/build_new_substrate`——
+可填目標從「這枚基板目前還空白的位置」(扣掉已有的)改成「樣板基板宣告的SUBSTRATE_COLUMN x
+SUBSTRATE_ROW整個形狀」(column-major排序，因為是從零開始蓋，不是補洞)；樣板基板只借
+ASSY_LOT/MAPPING_LOT/EQPID/OPER/列數/欄數/NOTCH/Ref/T2_POINT/T2_Flat這些欄位(同一片wafer上的
+基板通常同形狀同批號)，SUBSTRATE_ID是這枚全新基板真正需要使用者輸入的那一個欄位，不是整個表單都
+要重填。沒有用`bingomap/assignment.py`的`assign_dies()`(雖然語意上更接近「blank skeleton+picks」)，
+因為那套函式需要一個`die_info`已經窮舉所有合法位置的真正blank skeleton StrateFile，這裡沒有這種
+骨架可用，硬塞還要多一層「造假骨架」的轉換，不如直接寫這段迴圈。
+
+**前端從「暫存→按套用→後端合併」簡化成純前端即時預覽**：因為這次stagedPicks本身就是全新基板的
+全部內容，不需要再跟既有真實資料做column-major配對，框選的當下直接在前端重新算一次
+column-major排序(`newSubstrateTargets()`，純座標排序的小函式，不是.strate格式序列化，複製一份
+在前端做即時預覽風險很低)、立刻重畫空白BINGO MAP，不用等後端來回；只有真正按「下載這枚新基板」
+那一刻才呼叫後端，用`StrateFile.parse()`/`to_text()`產生正式格式的檔案文字——後端回傳的物件形狀
+跟`_substrate_summary()`其他地方完全一樣，直接丟進既有的`downloadSubstrate()`(連同稽核記錄)，
+不用另外寫一套下載邏輯。
+
+**順便修掉一個真實的「沒反應」bug**：使用者在上一版截圖裡點了已經被這枚基板自己用掉的格子(橘框
+`.focus`)，完全沒有任何提示，使用者以為是功能壞掉。wafer格子不管能不能選，現在一律存
+`dataset.col/row/bin`，加一個plain click(跟drag用的mousedown/mouseup分開，避免重複觸發)監聽
+器：點到不能選的格子時，依bin值/是否已被使用給出具體原因(「bin=7非良品」/「已經被這枚基板自己
+用掉」/「這個位置沒有die資料」)，短暫顯示1.8秒後自動還原成正常的「已選N顆」。
+
+測試：後端3個(`test_build_new_substrate_uses_template_shape_and_custom_id`鎖定column-major
+排序落在(0,0)/(0,1)、自訂ID正確寫入、header欄位借用樣板；`_rejects_more_picks_than_shape_allows`；
+`_requires_template_id_and_picks`)。Playwright完整走一次：點不能選的格子確認有提示訊息且1.8秒
+後自動消失、框選3顆即時出現在空白預覽圖(不用按任何「套用」)、原本的真實BINGO MAP全程沒有被動到、
+下載按鈕要流水號+至少1顆選取才會啟用、真的觸發下載並確認拿到的檔案內容含`SUBSTRATE_ID=NEWTEST001`
+且是CRLF格式、切換到別枚基板後選取/流水號輸入框/預覽圖全部正確清空。

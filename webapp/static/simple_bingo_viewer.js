@@ -191,9 +191,6 @@ async function extractLog() {
 
   lastSubstrates = results.flatMap((r) => r.substrates);
   lastWaferMaps = results.flatMap((r) => r.wafer_maps || []);
-  // 新的一批log，之前記住的「哪些位置是log本來就有的」基準全部作廢——
-  // 不清掉的話，新這批第N枚基板會誤用前一批第N枚基板的基準。
-  baselinePositionsByIndex.clear();
   status.className = failures.length ? "" : "ok";
   status.textContent = `解析完成，找到 ${lastSubstrates.length} 枚基板（共 ${files.length} 個檔案，成功 ${results.length} 個` +
     (failures.length ? `，略過 ${failures.length} 個沒有基板資料的檔案）` : `）`);
@@ -285,16 +282,19 @@ function renderWaferPane(substrate) {
         // 基板」，兩個資訊都要留著，不能只顯示其中一個。
         cell.classList.add("focus");
       }
-      // 2026/10/29新增：手動補空白位置——只有「良品(bin=1)、還沒被這枚
-      // 基板自己用掉」的格子才能點選/框選，跟app.js的toggleStagePick()
-      // 同一條規則(不能手動塞一顆壞die進良品位置)。dataset存真正的col/row
-      // (不受正向/反向顯示排序影響，跟.focus判斷用同一份座標)，drag-select
-      // 事件處理器直接讀這個，不用另外反推畫面排序。
+      // 2026/10/29新增：只有「良品(bin=1)、還沒被這枚基板自己用掉」的
+      // 格子才能點選/框選，跟app.js的toggleStagePick()同一條規則(不能
+      // 手動塞一顆壞die進良品位置)。dataset存真正的col/row(不受正向/反向
+      // 顯示排序影響，跟.focus判斷用同一份座標)，drag-select事件處理器
+      // 直接讀這個，不用另外反推畫面排序。即使不能選也存col/row/bin——
+      // 點到不能選的格子時，click handler要能根據這些資料給出「為什麼
+      // 不能選」的具體提示，不能像一開始那樣完全沒反應(使用者誤以為是
+      // 功能壞掉)。
+      cell.dataset.col = col;
+      cell.dataset.row = row;
+      if (bin !== undefined) cell.dataset.bin = bin;
       if (bin === "1" && !highlight.has(key)) {
         cell.classList.add("pickable");
-        cell.dataset.col = col;
-        cell.dataset.row = row;
-        cell.dataset.bin = bin;
         if (stagedPicks.some((p) => p.x === col && p.y === row)) {
           cell.classList.add("staged");
         }
@@ -306,13 +306,22 @@ function renderWaferPane(substrate) {
   }
 }
 
-// ---- 2026/10/29新增：手動補空白位置 ------------------------------------
-// 在wafer圖上點選/框選良品die(stagedPicks，跟app.js的picksByLayer同一種
-// 「先暫存、再一次送出」心智模型)，按「套用到空白位置」後依照這枚基板
-// bounding box的column-major順序自動依序對應填入目前還空白的位置——跟
-// 使用者確認過：不用自己一格一格指定要填哪裡，照順序自動分配即可。
+// ---- 2026/10/29新增、同日改版：手動建立全新基板 ------------------------
+// 第一版做成「補進目前選到的這枚基板自己的空白位置、合併回同一份檔案」，
+// 使用者看了畫面後回報「你是不是誤會我的意思」——要的是完全獨立、不綁定
+// 清單裡任何一枚基板的全新基板：自己輸入SUBSTRATE_ID，從wafer圖挑die
+// 填進一張完全空白的BINGO MAP，下載一份獨立全新的.strate檔案，不跟任何
+// 既有資料合併(用AskUserQuestion當面確認過這個方向)。
+//
+// stagedPicks在這一版裡本身就是「這枚全新基板的全部內容」，不是「暫存、
+// 等套用」——框選的當下直接即時重畫空白BINGO MAP預覽(newSubstrateTargets()
+// 純粹是座標排序的小函式，不是.strate格式序列化，複製一份在前端做預覽
+// 風險很低；真正送出下載時，後端還是會用StrateFile.parse()/to_text()
+// 重新產生一次正式格式，前端這份只是「看起來對不對」的即時預覽，不是
+// 最終依據)。
 let stagedPicks = []; // {x, y, bin}[]
 let waferDragStart = null;
+let pickStatusResetTimer = null;
 
 function togglePick(col, row, bin) {
   const idx = stagedPicks.findIndex((p) => p.x === col && p.y === row);
@@ -340,16 +349,19 @@ function scanPickRectangle(start, end) {
 }
 
 function updatePickControls() {
-  const controls = document.getElementById("pick-controls");
   const status = document.getElementById("pick-status");
-  const applyBtn = document.getElementById("btn-apply-picks");
-  if (selectedIndex < 0 || !lastSubstrates.length) {
-    controls.style.display = "none";
-    return;
+  const downloadBtn = document.getElementById("btn-download-new");
+  const idInput = document.getElementById("new-substrate-id");
+  status.textContent = `已選 ${stagedPicks.length} 顆`;
+  downloadBtn.disabled = stagedPicks.length === 0 || !idInput.value.trim();
+}
+
+function refreshPickUI() {
+  updatePickControls();
+  if (selectedIndex >= 0) {
+    renderWaferPane(lastSubstrates[selectedIndex]);
+    renderNewSubstratePreview(lastSubstrates[selectedIndex]);
   }
-  controls.style.display = "flex";
-  status.textContent = `已選 ${stagedPicks.length} 顆待填入空白位置`;
-  applyBtn.disabled = stagedPicks.length === 0;
 }
 
 const waferGridEl = document.getElementById("wafer-grid");
@@ -371,42 +383,63 @@ waferGridEl.addEventListener("mouseup", (e) => {
     scanPickRectangle(waferDragStart, end);
   }
   waferDragStart = null;
-  updatePickControls();
-  if (selectedIndex >= 0) renderWaferPane(lastSubstrates[selectedIndex]);
+  refreshPickUI();
+});
+
+// 2026/10/29新增：點到不能選的格子(非良品、或已經被這枚基板自己用掉)
+// 原本完全沒有任何反應——使用者誤以為是「功能壞掉」，實際上是點錯格子。
+// 這裡用plain click(不是drag的mousedown/mouseup，避免跟上面那組重複
+// 觸發)補一句具體原因，短暫顯示在pick-status位置、1.8秒後自動還原成
+// 正常的「已選N顆」。
+waferGridEl.addEventListener("click", (e) => {
+  const cell = e.target.closest(".wafer-cell");
+  if (!cell || cell.classList.contains("pickable")) return;
+  const bin = cell.dataset.bin;
+  let reason;
+  if (bin === undefined) {
+    reason = "這個位置在wafer圖上沒有die資料，不能選。";
+  } else if (bin !== "1") {
+    reason = `這格是bin=${bin}(非良品)，不能選——只能選良品(bin=1)。`;
+  } else {
+    reason = "這格已經被目前這枚基板自己用掉了，不能重複選。";
+  }
+  const status = document.getElementById("pick-status");
+  status.textContent = reason;
+  clearTimeout(pickStatusResetTimer);
+  pickStatusResetTimer = setTimeout(updatePickControls, 1800);
 });
 
 document.getElementById("btn-clear-picks").addEventListener("click", () => {
   stagedPicks = [];
-  updatePickControls();
-  if (selectedIndex >= 0) renderWaferPane(lastSubstrates[selectedIndex]);
+  refreshPickUI();
 });
 
-async function applyPicks() {
-  if (!stagedPicks.length || selectedIndex < 0) return;
-  const substrate = lastSubstrates[selectedIndex];
+document.getElementById("new-substrate-id").addEventListener("input", updatePickControls);
+
+async function downloadNewSubstrate() {
+  const idInput = document.getElementById("new-substrate-id");
+  const substrateId = idInput.value.trim();
+  if (!stagedPicks.length || !substrateId || selectedIndex < 0) return;
+  const template = lastSubstrates[selectedIndex];
   const status = document.getElementById("status");
-  const applyBtn = document.getElementById("btn-apply-picks");
-  applyBtn.disabled = true;
+  const downloadBtn = document.getElementById("btn-download-new");
+  downloadBtn.disabled = true;
   try {
-    const res = await fetch("/api/simple_bingo/apply_picks", {
+    const res = await fetch("/api/simple_bingo/build_new_substrate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        strate_text: substrate.text,
-        wafer_ring: substrate.wafer_ring,
-        index: selectedIndex,
+        template_text: template.text,
+        substrate_id: substrateId,
+        wafer_ring: template.wafer_ring,
         picks: stagedPicks,
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "套用失敗");
-    lastSubstrates[selectedIndex] = data.substrate;
-    stagedPicks = [];
+    if (!res.ok) throw new Error(data.error || "建立失敗");
     status.className = "ok";
-    status.textContent =
-      `已補上 ${data.filled_count} 顆到「${data.substrate.substrate_id}」，` +
-      `記得重新肉眼核對、確認無誤後再下載。`;
-    selectSubstrate(selectedIndex);
+    status.textContent = `已建立新基板「${data.substrate.substrate_id}」，開始下載。`;
+    downloadSubstrate(data.substrate);
   } catch (err) {
     status.className = "error";
     status.textContent = err.message;
@@ -415,26 +448,28 @@ async function applyPicks() {
   }
 }
 
-document.getElementById("btn-apply-picks").addEventListener("click", applyPicks);
+document.getElementById("btn-download-new").addEventListener("click", downloadNewSubstrate);
 
-// 2026/10/29新增：手動補入的位置要畫在「獨立的一張空白BINGO MAP」上，
-// 不能混進原本真實log資料那張圖——使用者明確反映「你目前是使用同一個
-// bingomap圖」，要求分開看。baselinePositionsByIndex記住「第一次選到
-// 這枚基板時」的真實positions(log本來就有的，還沒套用任何手動補入)，
-// 之後不管套用幾次手動補入(apply_picks回傳的substrate.positions已經是
-// 合併後的最新結果，含舊的+新的)，這份基準都不會跟著變——renderBingoMapPane()
-// 只畫基準內的(=log真實資料那張圖永遠不受手動補入影響)，
-// renderNewPicksBingoMapPane()只畫「現在有、但不在基準內」的那些格子
-// (=這次session手動加的)。重新上傳一批新log(extractLog()成功)時要整個
-// 清掉，不然會把前一批的基準誤用在新資料上；單純切換到別枚已存在的基板
-// 不用清，各自index的基準互相獨立。
-const baselinePositionsByIndex = new Map();
-
-function baselinePositionsFor(i, substrate) {
-  if (!baselinePositionsByIndex.has(i)) {
-    baselinePositionsByIndex.set(i, substrate.positions);
+// 全新基板的形狀借用「目前選到的這一枚」當樣板(同一片wafer上的基板通常
+// 同形狀)，用它的bounding box(min/max col/row)當範圍、column-major排序
+// (欄由小到大、每欄內列由小到大)——跟後端build_new_substrate()用同一種
+// 排序邏輯，保證前端這份即時預覽跟下載後的正式檔案排列順序一致。
+function newSubstrateTargets(substrate) {
+  const targets = [];
+  for (let col = substrate.min_col; col <= substrate.max_col; col++) {
+    for (let row = substrate.min_row; row <= substrate.max_row; row++) {
+      targets.push({ col, row });
+    }
   }
-  return baselinePositionsByIndex.get(i);
+  return targets;
+}
+
+function renderNewSubstratePreview(substrate) {
+  const targets = newSubstrateTargets(substrate);
+  const positions = stagedPicks
+    .map((pick, i) => (targets[i] ? { col: targets[i].col, row: targets[i].row, bin: pick.bin } : null))
+    .filter(Boolean);
+  renderSubstrateGrid("substrate-grid-new", substrate, positions, "還沒選");
 }
 
 function renderSubstrateGrid(containerId, substrate, positions, emptyLabel) {
@@ -485,15 +520,7 @@ function renderSubstrateGrid(containerId, substrate, positions, emptyLabel) {
 }
 
 function renderBingoMapPane(substrate) {
-  renderSubstrateGrid("substrate-grid", substrate, baselinePositionsFor(selectedIndex, substrate), "無die");
-}
-
-function renderNewPicksBingoMapPane(substrate) {
-  const baselineKeys = new Set(
-    baselinePositionsFor(selectedIndex, substrate).map((p) => `${p.col},${p.row}`)
-  );
-  const added = substrate.positions.filter((p) => !baselineKeys.has(`${p.col},${p.row}`));
-  renderSubstrateGrid("substrate-grid-new", substrate, added, "還沒補");
+  renderSubstrateGrid("substrate-grid", substrate, substrate.positions, "無die");
 }
 
 // 2026/10/29新增：每次下載記一筆(工號/時間/流水號/方向)到後端的CSV——
@@ -553,10 +580,12 @@ function renderRawStrateBox(substrate) {
 
 function selectSubstrate(i) {
   if (!lastSubstrates.length) return;
-  // 切換/重新整理基板時清掉待填入清單——wafer座標是跟著「目前選到的
-  // 這枚基板的來源wafer」走的，換一枚基板後舊的待填入清單已經不適用，
-  // 留著只會讓人誤以為還能套用到新基板上。
+  // 切換基板時清掉「手動建立全新基板」的選取——wafer座標、樣板欄位都是
+  // 跟著「目前選到的這一枚」走的，換一枚之後舊的選取已經不適用，留著
+  // 只會讓人誤以為還能套用到新樣板上。流水號輸入框也一併清空，避免
+  // 不小心沿用上一枚的輸入值下載出錯誤的檔案。
   stagedPicks = [];
+  document.getElementById("new-substrate-id").value = "";
   selectedIndex = i;
   const substrate = lastSubstrates[i];
   renderList();
@@ -573,7 +602,7 @@ function selectSubstrate(i) {
 
   renderWaferPane(substrate);
   renderBingoMapPane(substrate);
-  renderNewPicksBingoMapPane(substrate);
+  renderNewSubstratePreview(substrate);
   renderRawStrateBox(substrate);
   updatePickControls();
 }

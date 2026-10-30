@@ -105,15 +105,43 @@ deferred，這次使用者要求補上B)。
   這跟整支工具一貫的「拿實物比對、相信操作員肉眼判斷」設計哲學一致
   (不引入一套我們沒有可靠資料來源能正確做的形狀驗證)，但也代表**理論上
   使用者可以手動填到形狀外的角落**，是刻意接受的已知限制，不是沒注意到。
-- **後端重新產生檔案**：前端只送「目前這枚基板的`.strate`文字內容」+
-  「這次框選的wafer座標/bin清單」，後端用`StrateFile.parse()`讀回
-  (本來就是`to_text()`的反函式，彼此是round-trip過的)、算出空白目標、
-  組出新的`DieInfo`列(index接續現有最大值、timestamp用「現在」的真實
-  時間而不是回填log當時的時間戳記——這些是這次操作當下真的發生的動作，
-  用真實時間比較誠實；f9沿用這枚基板既有DIE_INFO裡最常見的那個layer值，
-  不是整支工具唯一出現過的某個常數)，`to_text()`吐回新的檔案文字——
-  不在前端JavaScript另外重寫一份序列化邏輯，避免前後端格式兩邊維護、
-  容易走樣。
+- **後端重新產生檔案**：前端只送picks清單，後端用`StrateFile.parse()`/
+  `to_text()`處理格式——不在前端JavaScript另外重寫一份序列化邏輯，避免
+  前後端格式兩邊維護、容易走樣。
+
+2026/10/29再更正：上面這版做出來(`/api/simple_bingo/apply_picks`，補進
+「目前選到的這枚基板」自己的空白位置、合併回同一份檔案下載)之後，使用
+者看了實際畫面回報「你是不是誤會我的意思」——沒有要補某一枚既有基板的
+缺口，要的是完全獨立、不綁定清單裡任何一枚基板的全新基板：自己輸入
+SUBSTRATE_ID、從wafer圖挑die填進一張完全空白的BINGO MAP、下載一份獨立
+全新的`.strate`檔案，不跟任何既有資料合併。用`AskUserQuestion`當面
+確認過這個方向(而不是再猜一次)，選項是「獨立建立全新基板」。
+
+改成`/api/simple_bingo/build_new_substrate`：
+- **形狀/其他欄位哪裡來**：使用者沒有另外畫一個「輸入列數欄數」的UI，
+  這支工具就近拿「目前清單裡選到的那一枚基板」當樣板——同一片wafer上
+  通常有好幾枚同形狀的基板，清單裡隨便一枚現成的就能提供
+  ASSY_LOT/MAPPING_LOT/EQPID/OPER/SUBSTRATE_ROW/SUBSTRATE_COLUMN/
+  SUBSTRATE_BLOCK/NOTCH/Ref/T2_POINT/T2_Flat這些欄位的合理預設值(同一片
+  wafer、同一個job，這些欄位幾乎必然相同)，只有SUBSTRATE_ID是這枚全新
+  基板真正需要使用者自己輸入的——不是又多加一套表單。
+- **可填位置＝整個宣告形狀，不是「扣掉已有的」**：跟補缺口版的關鍵差異
+  ——這裡`targets`是`range(SUBSTRATE_COLUMN) x range(SUBSTRATE_ROW)`的
+  全部組合(column-major)，因為這次是從零開始蓋，不是在既有基板上補洞。
+  沒有引入`bingomap/assignment.py`的`assign_dies()`(雖然語意上更接近)，
+  因為那套函式需要一個「`die_info`已經窮舉所有合法位置」的真正blank
+  skeleton StrateFile當輸入，這裡沒有這種骨架可用(只有宣告的
+  列數x欄數)，硬塞進去還要多一層「造一個假骨架」的轉換，不如直接寫
+  這段迴圈來得直接。
+- **前端即時預覽、不用「先暫存再送出套用」**：補缺口版需要分「暫存
+  (stagedPicks)→按套用→後端幫忙套進既有基板」三步，是因為要跟既有真實
+  資料做column-major配對；這次重新設計成純前端狀態——選的picks本身就是
+  要蓋的全新基板全部內容，框選的當下直接重畫這張空白BINGO MAP(不用等
+  後端來回)，只有真正「下載」那一刻才呼叫後端把picks轉成正式`.strate`
+  格式文字。
+- **下載沿用既有`downloadSubstrate()`**：後端回傳的物件跟`_substrate_summary()`
+  其他地方回傳的形狀完全一樣(positions/wafer_positions/filename/text)，
+  前端直接丟進既有的下載+稽核記錄函式，不用另外寫一套。
 """
 from __future__ import annotations
 
@@ -123,7 +151,6 @@ import csv
 import io
 import os
 import zipfile
-from collections import Counter
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -336,64 +363,40 @@ def api_log_download():
     return jsonify({"ok": True})
 
 
-def _blank_targets_in_order(sf: StrateFile) -> list[str]:
-    """Column-major scan (outer loop = column, inner loop = row, both
-    ascending — same convention bingomap/blank_generator.py uses) of this
-    substrate's own bounding box, listing every "col:row" position inside
-    it with no die yet. See this module's 2026/10/29 docstring note on
-    手動補空白位置 for why this (not a real blank-wafer skeleton) is the
-    best "which positions are fillable" source available here."""
-    filled = {d.sub_pos for d in sf.die_info}
-    cols: list[int] = []
-    rows: list[int] = []
-    for d in sf.die_info:
-        col_str, _, row_str = d.sub_pos.partition(":")
-        try:
-            cols.append(int(col_str))
-            rows.append(int(row_str))
-        except ValueError:
-            continue
-    if not cols:
-        return []
-    targets = []
-    for col in range(min(cols), max(cols) + 1):
-        for row in range(min(rows), max(rows) + 1):
-            pos = f"{col}:{row}"
-            if pos not in filled:
-                targets.append(pos)
-    return targets
-
-
-@app.post("/api/simple_bingo/apply_picks")
-def api_apply_picks():
+@app.post("/api/simple_bingo/build_new_substrate")
+def api_build_new_substrate():
     data = request.get_json(force=True)
-    strate_text = data.get("strate_text", "")
+    template_text = data.get("template_text", "")
+    substrate_id = (data.get("substrate_id") or "").strip()
     wafer_ring = data.get("wafer_ring", "")
     picks = data.get("picks", [])
-    index = data.get("index", 0)
-    if not strate_text:
-        return jsonify({"error": "缺少目前這枚基板的資料"}), 400
+    if not template_text:
+        return jsonify({"error": "缺少參考基板的資料(用來帶入批號/EQPID/形狀等欄位)"}), 400
+    if not substrate_id:
+        return jsonify({"error": "請輸入這枚基板的流水號(SUBSTRATE_ID)"}), 400
     if not picks:
-        return jsonify({"error": "沒有收到任何選取的die"}), 400
+        return jsonify({"error": "還沒有從wafer圖選取任何die"}), 400
     try:
-        sf = StrateFile.parse(strate_text)
+        template = StrateFile.parse(template_text)
     except StrateFormatError as exc:
-        return jsonify({"error": f"目前基板資料格式錯誤：{exc}"}), 400
+        return jsonify({"error": f"參考基板資料格式錯誤：{exc}"}), 400
 
-    targets = _blank_targets_in_order(sf)
+    # 全新基板，不是補既有基板的缺口——可填目標是「參考基板宣告的形狀
+    # (SUBSTRATE_COLUMN x SUBSTRATE_ROW)裡的每一個位置」，column-major
+    # 排序(跟_build_die_info_list()/blank_generator.py同一種慣例)，不是
+    # 「扣掉已經有的」。
+    targets = [
+        f"{col}:{row}"
+        for col in range(template.substrate_column)
+        for row in range(template.substrate_row)
+    ]
     if len(picks) > len(targets):
-        return jsonify(
-            {"error": f"選了{len(picks)}顆，但這枚基板目前只剩{len(targets)}個空白位置可以填"}
-        ), 400
+        return jsonify({"error": f"選了{len(picks)}顆，但這個形狀只有{len(targets)}個位置"}), 400
 
-    f9_counts = Counter(d.f9 for d in sf.die_info)
-    layer = f9_counts.most_common(1)[0][0] if f9_counts else "1"
-    next_index = max((d.index for d in sf.die_info), default=0) + 1
     now = datetime.now()
-
-    new_dies = [
+    die_info = [
         DieInfo(
-            index=next_index + i,
+            index=i + 1,
             wafer_ring=wafer_ring,
             wafer_xy=f"{pick.get('x')}:{pick.get('y')}",
             sub_pos=pos,
@@ -401,18 +404,20 @@ def api_apply_picks():
             f6="0",
             f7="0",
             timestamp=(now + timedelta(seconds=i)).strftime("%Y%m%d%H%M%S"),
-            f9=layer,
+            f9="1",
         )
         for i, (pick, pos) in enumerate(zip(picks, targets))
     ]
 
-    updated = replace(
-        sf,
-        die_info=sf.die_info + new_dies,
-        total_bond_die_qty=sf.total_bond_die_qty + len(new_dies),
-        good_die=sf.good_die + len(new_dies),
+    new_sf = replace(
+        template,
+        substrate_id=substrate_id,
+        die_info=die_info,
+        other_layer_die_info=[],
+        total_bond_die_qty=len(die_info),
+        good_die=len(die_info),
     )
-    return jsonify({"substrate": _substrate_summary(updated, index), "filled_count": len(new_dies)})
+    return jsonify({"substrate": _substrate_summary(new_sf, -1)})
 
 
 @app.post("/api/simple_bingo/extract")
