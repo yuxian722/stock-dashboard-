@@ -23,6 +23,9 @@ on:
       - "bingomap/**.py"
       - ".github/workflows/build-simple-bingo-viewer-exe.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -50,3 +53,22 @@ jobs:
           name: SECS_BINGO_MAP_Viewer-windows-exe
           path: dist/SECS_BINGO_MAP_Viewer.exe
           retention-days: 30
+
+      # 2026/10/30新增：workflow artifact的下載連結走Azure blob storage
+      # (productionresultssa31.blob.core.windows.net之類的隨機子網域)，
+      # 這個session的網路代理政策擋掉了那個網域，導致建置完成後反而拿不
+      # 到檔案。改成同時發布成GitHub Release的附件——release資產走的是
+      # github.com/.../releases/download/...這個網域，代理放行，才真的
+      # 能把.exe轉交出去。用固定的tag(每次建置覆蓋掉舊的)，不是每次建置
+      # 都開一個新release，這支工具目前只需要「最新一份」。
+      - name: Publish exe as a GitHub Release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release delete simple-bingo-viewer-desktop --yes --cleanup-tag || true
+          gh release create simple-bingo-viewer-desktop dist/SECS_BINGO_MAP_Viewer.exe \
+            --title "SECS LOG BINGO MAP 檢視器（桌機版 .exe）" \
+            --notes "自動建置的桌機版執行檔，不需要安裝Python，雙擊即可開啟。來源 commit: ${{ github.sha }}" \
+            --target "${{ github.sha }}" \
+            --prerelease
