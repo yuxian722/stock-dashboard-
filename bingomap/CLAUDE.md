@@ -2005,3 +2005,40 @@ column-major排序(`newSubstrateTargets()`，純座標排序的小函式，不�
 後自動消失、框選3顆即時出現在空白預覽圖(不用按任何「套用」)、原本的真實BINGO MAP全程沒有被動到、
 下載按鈕要流水號+至少1顆選取才會啟用、真的觸發下載並確認拿到的檔案內容含`SUBSTRATE_ID=NEWTEST001`
 且是CRLF格式、切換到別枚基板後選取/流水號輸入框/預覽圖全部正確清空。
+
+## simple_bingo_viewer打包成桌機.exe：GitHub Actions在windows-latest上用PyInstaller組，不是在這個環境裡硬做(2026/10/30)
+
+使用者要求「改成桌機版可以使用」——這句話本身太模糊，用`AskUserQuestion`當面確認(列出三種可能：
+打包成.exe、桌面捷徑、其他)，答案是「打包成不用裝Python的執行檔(.exe)」。
+
+**為什麼不能在這個環境裡直接產出.exe**：這個repo的開發/測試環境是Linux，PyInstaller不支援在
+Linux上跨平台編譯出真正的Windows PE執行檔(`.exe`)——在這裡跑`pyinstaller`只會產生Linux ELF
+執行檔，使用者的Windows機器雙擊不了。解法是用GitHub Actions的`windows-latest` runner：新增
+`.github/workflows/build-simple-bingo-viewer-exe.yml`，在真正的雲端Windows環境裝Python+flask+
+pyinstaller、打包、把產出的`.exe`當artifact上傳，再下載轉交給使用者——不是在本機硬做一份跑不起來
+的東西交差。
+
+**frozen模式的路徑判斷**(`webapp/simple_bingo_viewer.py`)：原本`WEBAPP_DIR`/`DOWNLOAD_LOG_PATH`
+單純用`__file__`往上推兩層，假設這支檔案真的躺在磁碟上的`webapp/`資料夾——PyInstaller的
+`--onefile`模式執行時，所有東西(templates/static/bingomap原始碼)其實是解壓縮到一個每次啟動都
+重新建立、關閉程式就清掉的暫存資料夾(`sys._MEIPASS`)。用`getattr(sys,"frozen",False)`(PyInstaller
+官方建議的判斷方式)分兩種路徑來源：樣板檔案(templates/static)永遠可以從`sys._MEIPASS`讀(唯讀沒
+關係，反正從頭到尾都不會寫)；但下載紀錄CSV如果照原邏輯寫進這個暫存資料夾，程式一關資料就不見了，
+完全達不到「可追溯是誰下載過」的目的——改成frozen模式下寫到`.exe`檔案本身所在的那個資料夾
+(`os.path.dirname(sys.executable)`，使用者看得到、不會被清掉的真實位置)。非frozen(一般開發用
+`python webapp/simple_bingo_viewer.py`執行)完全維持原本行為不變。
+
+新增`webapp/simple_bingo_viewer_desktop_entry.py`當PyInstaller的進入點，跟現有的
+`webapp/launch_simple_bingo_viewer.py`(開發機.bat用的啟動器)刻意分開兩支檔案：開發機啟動器會
+檢查Flask裝了沒、沒裝就現場`pip install`——這在真正打包好的.exe裡完全沒必要(flask本來就已經被
+PyInstaller打包進執行檔)，硬塞這段邏輯只會讓.exe嘗試連網路pip install，離線的現場電腦反而會卡住
+或報錯；開發機啟動器也會把repo根目錄插進`sys.path`，PyInstaller打包後`sys.path`已經包含bundle
+本身，不需要也不能這樣做。
+
+**驗證方式**：在這個Linux環境裡先用PyInstaller打包出一份**Linux**版的乾跑測試(用同一套
+`--add-data`/`--paths`參數，只差`;`分隔符號在Windows上才用、Linux上用`:`)，複製到完全乾淨的
+`/tmp`資料夾、脫離repo執行——驗證首頁HTML正確渲染、`/api/simple_bingo/extract`正確解析真實log
+fixture(確認`bingomap`套件真的被正確打包進去，不是只有webapp本體)、`/api/simple_bingo/log_download`
+呼叫後`simple_bingo_viewer_downloads.csv`真的寫在執行檔旁邊(不是消失在暫存資料夾裡)——這些驗證
+雖然不是真正的Windows執行檔，但PyInstaller的`sys.frozen`/`sys._MEIPASS`機制跨平台行為一致，可以
+合理確信Windows版的同一套邏輯會有一樣的結果，實際的Windows .exe留給GitHub Actions真正組出來。

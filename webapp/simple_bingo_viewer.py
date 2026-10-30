@@ -150,14 +150,33 @@ import binascii
 import csv
 import io
 import os
+import sys
 import zipfile
 from dataclasses import replace
 from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, render_template, request
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEBAPP_DIR = os.path.join(REPO_ROOT, "webapp")
+# 2026/10/30新增：打包成桌機.exe(PyInstaller)——原本REPO_ROOT/WEBAPP_DIR
+# 單純用`__file__`往上推兩層，假設這支檔案真的躺在磁碟上的`webapp/`資料夾
+# 底下；但PyInstaller的`--onefile`打包模式執行時，所有東西(templates/
+# static/bingomap原始碼)其實是解壓縮到一個每次啟動都重新建立的暫存資料夾
+# (`sys._MEIPASS`)，不是`__file__`指向的那個位置，而且這個暫存資料夾
+# 關閉程式後就會被清掉——下載紀錄CSV如果照原本邏輯寫進WEBAPP_DIR底下，
+# 會寫進這個暫存資料夾，程式一關資料就不見了，完全達不到「可追溯」的
+# 目的。`getattr(sys,"frozen",False)`是PyInstaller官方文件建議的「目前
+# 是不是跑在打包後的exe裡」判斷方式：是的話，樣板檔案(templates/static)
+# 從`sys._MEIPASS`這個唯讀的暫存解壓縮資料夾讀，但下載紀錄CSV改寫到
+# `.exe`檔案本身所在的那個資料夾(使用者看得到、不會被清掉的真實位置)；
+# 不是frozen(一般用`python webapp/simple_bingo_viewer.py`開發執行)時，
+# 行為完全不變，維持原本「兩者都在repo的webapp/資料夾底下」。
+if getattr(sys, "frozen", False):
+    WEBAPP_DIR = os.path.join(sys._MEIPASS, "webapp")
+    DOWNLOAD_LOG_PATH = os.path.join(os.path.dirname(sys.executable), "simple_bingo_viewer_downloads.csv")
+else:
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    WEBAPP_DIR = os.path.join(REPO_ROOT, "webapp")
+    DOWNLOAD_LOG_PATH = os.path.join(WEBAPP_DIR, "simple_bingo_viewer_downloads.csv")
 
 app = Flask(
     __name__,
@@ -308,7 +327,6 @@ def _substrate_summary(sf: StrateFile, index: int) -> dict:
     }
 
 
-DOWNLOAD_LOG_PATH = os.path.join(WEBAPP_DIR, "simple_bingo_viewer_downloads.csv")
 DOWNLOAD_LOG_HEADER = ["時間", "工號", "流水號", "檔名", "Wafer Ring", "EQPID", "方向"]
 
 

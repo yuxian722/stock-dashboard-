@@ -1,0 +1,52 @@
+name: Build SECS LOG BINGO MAP 檢視器 .exe
+
+# 2026/10/30新增：使用者要求把webapp/simple_bingo_viewer.py打包成不用
+# 裝Python的桌機.exe——這個repo的開發/測試環境是Linux(見bingomap/
+# CLAUDE.md一貫的工作方式)，PyInstaller不支援在Linux上跨平台編譯出
+# 真正的Windows .exe，只能在真正的Windows環境上打包。GitHub Actions的
+# windows-latest runner是唯一現成、不用使用者自己先裝Python就能拿到
+# 一份真正Windows可執行檔的辦法，所以用workflow在雲端Windows機器上組
+# 這份.exe，再透過artifact下載下來轉交給使用者，而不是在本機嘗試(會
+# 做出Linux執行檔，使用者的Windows機器直接雙擊不了)。
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/bingomap-data-supplement-tool-saopd9
+    paths:
+      - "webapp/simple_bingo_viewer.py"
+      - "webapp/simple_bingo_viewer_desktop_entry.py"
+      - "webapp/templates/simple_bingo_viewer.html"
+      - "webapp/static/simple_bingo_viewer.js"
+      - "webapp/static/style.css"
+      - "bingomap/**.py"
+      - ".github/workflows/build-simple-bingo-viewer-exe.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip flask pyinstaller
+
+      - name: Build standalone .exe
+        run: >
+          pyinstaller --onefile --console
+          --name SECS_BINGO_MAP_Viewer
+          --add-data "webapp/templates;webapp/templates"
+          --add-data "webapp/static;webapp/static"
+          --paths .
+          webapp/simple_bingo_viewer_desktop_entry.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SECS_BINGO_MAP_Viewer-windows-exe
+          path: dist/SECS_BINGO_MAP_Viewer.exe
+          retention-days: 30
