@@ -525,6 +525,45 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
   function readUint16LE(bytes, off) {
     return bytes[off] | (bytes[off + 1] << 8);
   }
+  // 安全範圍內(遠小於2^53)的64-bit小端值——真實.log.zip頂多幾MB，用不到
+  // BigInt，一般Number精度綽綽有餘。
+  function readUint64LE(bytes, off) {
+    return readUint32LE(bytes, off) + readUint32LE(bytes, off + 4) * 4294967296;
+  }
+
+  // 2026/10/30修正：使用者真實的.log.zip(用Python zipfile寫出來的)踩到
+  // ZIP64——Python的zipfile在某些情況下(不是檔案真的超過4GB，單純是它
+  // 自己判斷要用ZIP64格式時)會把central directory裡的compressed
+  // size/uncompressed size兩個32-bit欄位直接填成sentinel值0xFFFFFFFF，
+  // 真正的64-bit大小改放在每個entry自己的「extra field」裡(tag=0x0001，
+  // 格式見PKZIP APPNOTE.TXT §4.5.3)。原本的讀法完全沒處理這個extra
+  // field，直接拿0xFFFFFFFF這個假值去跟inflateRaw()解壓縮出來的真實
+  // 長度比對，兩者當然對不上，整個entry被判定「解壓縮失敗」——但
+  // inflateRaw()本身其實是對的(DEFLATE bit stream自己有終止旗標，不靠
+  // 外部長度欄位就能正確停在真正的資料結尾，這也是為什麼使用者本機截圖
+  // 裡「400個檔案全部失敗」看起來很誇張、但實際上並不是解壓縮演算法本身
+  // 錯了，是長度檢查用了假資料)。拿使用者這次傳的真實.log.zip
+  // (BAA0520261004_02.0.log.zip)在Node裡直接測出這個問題，不是憑空
+  // 猜的——`readZip`丟出的錯誤訊息`expected 4294967295`就是
+  // 0xFFFFFFFF這個sentinel本身，現場就能看出問題在哪。
+  function parseZip64Sizes(bytes, extraStart, extraLen, wantUncompressed, wantCompressed, wantOffset) {
+    let pos = extraStart;
+    const end = extraStart + extraLen;
+    while (pos + 4 <= end) {
+      const id = readUint16LE(bytes, pos);
+      const size = readUint16LE(bytes, pos + 2);
+      if (id === 0x0001) {
+        let p = pos + 4;
+        const result = {};
+        if (wantUncompressed) { result.uncompressedSize = readUint64LE(bytes, p); p += 8; }
+        if (wantCompressed) { result.compressedSize = readUint64LE(bytes, p); p += 8; }
+        if (wantOffset) { result.localHeaderOffset = readUint64LE(bytes, p); p += 8; }
+        return result;
+      }
+      pos += 4 + size;
+    }
+    return null;
+  }
 
   function findEndOfCentralDirectory(bytes) {
     const SIG = 0x06054b50;
@@ -536,6 +575,7 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
   }
 
   function readZip(bytes) {
+    const ZIP64_SENTINEL = 0xffffffff;
     const eocd = findEndOfCentralDirectory(bytes);
     const entryCount = readUint16LE(bytes, eocd + 10);
     let cdOffset = readUint32LE(bytes, eocd + 16);
@@ -546,13 +586,31 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
         throw new Error("not a valid zip: central directory entry signature mismatch");
       }
       const method = readUint16LE(bytes, cdOffset + 10);
-      const compressedSize = readUint32LE(bytes, cdOffset + 20);
-      const uncompressedSize = readUint32LE(bytes, cdOffset + 24);
+      let compressedSize = readUint32LE(bytes, cdOffset + 20);
+      let uncompressedSize = readUint32LE(bytes, cdOffset + 24);
       const nameLen = readUint16LE(bytes, cdOffset + 28);
       const extraLen = readUint16LE(bytes, cdOffset + 30);
       const commentLen = readUint16LE(bytes, cdOffset + 32);
-      const localHeaderOffset = readUint32LE(bytes, cdOffset + 42);
+      let localHeaderOffset = readUint32LE(bytes, cdOffset + 42);
       const name = new TextDecoder("utf-8").decode(bytes.subarray(cdOffset + 46, cdOffset + 46 + nameLen));
+
+      if (
+        compressedSize === ZIP64_SENTINEL ||
+        uncompressedSize === ZIP64_SENTINEL ||
+        localHeaderOffset === ZIP64_SENTINEL
+      ) {
+        const z64 = parseZip64Sizes(
+          bytes, cdOffset + 46 + nameLen, extraLen,
+          uncompressedSize === ZIP64_SENTINEL,
+          compressedSize === ZIP64_SENTINEL,
+          localHeaderOffset === ZIP64_SENTINEL
+        );
+        if (z64) {
+          if (z64.uncompressedSize !== undefined) uncompressedSize = z64.uncompressedSize;
+          if (z64.compressedSize !== undefined) compressedSize = z64.compressedSize;
+          if (z64.localHeaderOffset !== undefined) localHeaderOffset = z64.localHeaderOffset;
+        }
+      }
 
       if (!name.endsWith("/")) {
         const lhNameLen = readUint16LE(bytes, localHeaderOffset + 26);

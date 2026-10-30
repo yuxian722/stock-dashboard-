@@ -2137,3 +2137,41 @@ die)、上傳6基板log(驗證J8204486的304顆die、wafer圖正確畫出bin cel
 die→輸入流水號→下載→確認`SUBSTRATE_ID`欄位正確)、巢狀資料夾zip(zip包著.log.zip)上傳能正確解開
 拿到6枚基板。全部通過，且兩種開啟方式(`file://`跟`http://`)行為一致，頁面全程沒有任何JS錯誤。
 最後執行`python3 -m pytest bingomap/ webapp/ -q`確認原本的Flask工具完全沒被動到(210個測試全過)。
+
+## secs_bingo_map_viewer_standalone.html真實bug：自製ZIP讀取器沒處理ZIP64 sentinel，使用者真實.log.zip全部「解壓縮失敗」(2026/10/30)
+
+單一HTML桌機版交付後，使用者實際拿自己電腦上`F:\SMAP\...`資料夾(400個真實`.log.zip`檔案)測試，
+選整個資料夾解析後**全部400個都報「沒有找到StrateMap資料，也不是看得懂的.strate檔案格式」**——
+這支工具背景agent當時的驗證只測過幾份小fixture(用Python `zipfile`現場包的測試zip)，從來沒有拿
+使用者真實的`.log.zip`(前幾節對話裡上傳過、還留在session裡的那兩份：
+`BAA0520261004_02.0.log.zip`、`BAB0820261002_18.0.log.zip`)直接測過自製的ZIP讀取器——這是
+我自己交付前驗證的疏漏，不是只信agent的自我報告就結案，之後又親自拿這兩份真實檔案重新測了一次
+才抓到問題。
+
+**根因**：這兩份真實.log.zip都是用Python `zipfile`寫出來的，而Python的`zipfile`在某些情況下
+(不是檔案真的超過4GB，單純它自己判斷要用ZIP64格式的情境)，central directory裡`compressed
+size`/`uncompressed size`這兩個32-bit欄位會直接填sentinel值`0xFFFFFFFF`，真正的64-bit大小改放
+在這個entry自己的「extra field」裡(tag=`0x0001`，格式見PKZIP APPNOTE.TXT §4.5.3)。自製的
+`readZip()`完全沒處理這個extra field，直接拿`0xFFFFFFFF`這個假值去跟`inflateRaw()`解壓縮出來的
+真實長度比對，兩者當然對不上，整個entry被判定「解壓縮失敗」拋例外。
+
+**關鍵釐清**：`inflateRaw()`(DEFLATE解壓縮演算法本身)其實從頭到尾都是對的——DEFLATE bit
+stream自己有final block終止旗標，不需要依賴外部宣告的長度欄位就能正確停在真正的資料結尾。問題
+完全出在「拿假的sentinel長度去做事後驗證」這一步，不是解壓縮邏輯本身錯了。這點很重要：代表前一節
+background agent的zip驗證(拿小fixture測過DEFLATE演算法正確性)方向沒錯，只是覆蓋率不夠——沒有
+真實world的ZIP64檔案可以觸發這個特定bug，單靠合成測資本來就測不出來。
+
+**除錯方式**：直接把`<script>`裡定義`ZipReader`的那段IIFE從HTML裡切出來(`sed`按行號擷取)，
+在Node.js裡單獨`require`、餵真實的.log.zip bytes進去——比起每次都要透過Playwright整個瀏覽器
+環境跑一輪，獨立抽出來在Node測快得多，錯誤訊息也更直接(`readZip threw: zip entry ...: decompressed
+5242470 bytes, expected 4294967295`，`4294967295`正是`0xFFFFFFFF`，現場就看得出是sentinel值，
+不用猜)。
+
+**修正**：新增`parseZip64Sizes()`，在central directory任一個32-bit欄位(compressed
+size/uncompressed size/local header offset)讀到sentinel時，才去掃entry自己的extra field找
+tag=`0x0001`的ZIP64記錄、照APPNOTE規定的固定順序(uncompressed→compressed→offset，各8 bytes，
+只有原本是sentinel的欄位才會出現在這個記錄裡)解出真正的64-bit值蓋過去。拿兩份真實.log.zip在
+Node裡重新測：`inflateRaw`吐出來的bytes現在用`uncompressedSize`正確比對通過，長度
+(5242470/5232254)、內容都跟這個session稍早已經解壓縮驗證過的參考檔案逐byte一致；再回到
+Playwright用`file://`重現使用者原本的操作，`BAA0520261004_02.0.log.zip`現在正確解析出53枚
+基板(跟這個session更早用Python後端解析同一份真實log得到的數字完全一致)，不再是「全部失敗」。
