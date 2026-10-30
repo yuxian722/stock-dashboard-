@@ -1,0 +1,1843 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SECS LOG BINGO MAP 檢視器（桌機版）</title>
+<style>
+/* ============================================================
+   2026/10/30：單一HTML檔案的「桌機版」——使用者要求跟同事既有的
+   「STRATE_v92桌機版.html」同一種慣例：雙擊/拖進瀏覽器就能用，完全
+   離線，不用裝Python、不用啟動伺服器、也不接任何CDN。這份樣式表是
+   webapp/static/style.css + webapp/templates/simple_bingo_viewer.html
+   原本<style>區塊的原封內容，直接整合進同一個檔案，不是重新設計一套
+   ——使用者已經認得這套版面(跟webapp/app.py系列工具共用同一套視覺
+   語言，見style.css開頭的comment)。
+   ============================================================ */
+:root{
+  --bg:#f5f7fb; --card:#fff; --ink:#142033; --muted:#64748b; --line:#dbe3ef;
+  --blue:#1769d1; --blue-dark:#0f2a44;
+  --green:#0f8f5f; --green-bg:#ecfdf5;
+  --yellow:#b7791f; --yellow-bg:#fffbeb;
+  --red:#b42318; --red-bg:#fff1f2;
+  --wafer-cell-size:20px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:1.5rem 1.5rem 3rem;
+  background:linear-gradient(180deg,#eef4fb,#f8fafc);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft JhengHei","Noto Sans TC",sans-serif;
+  color:var(--ink);
+}
+.wrap{max-width:1800px;margin:0 auto}
+.hero{
+  background:linear-gradient(135deg,var(--blue-dark),#123d65);
+  color:#fff; border-radius:22px; padding:24px 28px;
+  box-shadow:0 16px 35px rgba(15,42,68,.18);
+  margin-bottom:1.25rem;
+}
+.hero h1{margin:0 0 6px;font-size:1.6rem}
+.hero p{margin:4px 0;color:#d9e7f3;font-size:0.92rem}
+.panel{
+  background:rgba(255,255,255,.96); border:1px solid var(--line);
+  border-radius:18px; padding:18px 20px; margin-top:0;
+  box-shadow:0 8px 24px rgba(15,42,68,.08);
+}
+h2{font-size:1rem;margin:0 0 0.9rem;display:flex;align-items:center;gap:0.5rem}
+h2 .step-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:1.6rem;height:1.6rem;border-radius:50%;
+  background:var(--blue);color:#fff;font-size:0.85rem;font-weight:700;flex:none;
+}
+label{display:flex;flex-direction:column;font-weight:700;font-size:0.78rem;color:var(--muted);gap:0.25rem}
+input,select,textarea{
+  font-size:0.92rem;padding:0.5rem 0.6rem;border:1px solid #cbd5e1;
+  border-radius:10px;background:#fbfcfe;color:var(--ink);font-family:inherit;
+}
+input:focus,select:focus,textarea:focus{
+  outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(23,105,209,.14);
+}
+button{
+  border:0;border-radius:12px;background:var(--blue);color:#fff;
+  font-weight:700;padding:0.6rem 1.1rem;margin-top:0.5rem;cursor:pointer;
+  box-shadow:0 6px 14px rgba(23,105,209,.2);font-size:0.88rem;
+  transition:background .15s ease;
+}
+button:hover{background:#1257ab}
+button:disabled{background:#9fb3c8;box-shadow:none;cursor:not-allowed}
+button.secondary{background:#475569;box-shadow:none}
+button.secondary:hover{background:#334155}
+.notice{
+  border-left:5px solid var(--blue);background:#eff6ff;color:#1e3a5f;
+  padding:10px 14px;border-radius:10px;font-size:0.82rem;line-height:1.55;margin:0.4rem 0 0.7rem;
+}
+.notice code{background:rgba(23,105,209,.1);padding:0.05rem 0.3rem;border-radius:4px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin:0.5rem 0;font-size:0.78rem;color:#334155}
+.legend i{display:inline-block;width:14px;height:14px;border:1px solid #777;vertical-align:middle;margin-right:4px;border-radius:3px}
+.lyr-wafer-wrap{position:relative;display:inline-block;margin-top:0.5rem;max-width:100%;overflow-x:auto}
+.lyr-wafer-grid{display:inline-block;user-select:none;background:#fff;border-radius:8px;border:1px solid var(--line)}
+.wafer-row{display:flex}
+.wafer-cell{
+  width:var(--wafer-cell-size,20px);height:var(--wafer-cell-size,20px);box-sizing:border-box;
+  border:1px solid #eef1f6;background:#fff;cursor:pointer;
+  transition:filter .1s ease;display:flex;align-items:center;justify-content:center;
+  font-size:calc(var(--wafer-cell-size,20px) * 0.45);font-weight:800;color:#0b1220;user-select:none;
+}
+.wafer-cell:hover{filter:brightness(.93)}
+.wafer-cell.bin-cell{background:var(--bin-color,#fff);border-color:rgba(0,0,0,.06)}
+.wafer-cell.focus{outline:3px solid #f97316;outline-offset:-3px;z-index:1;position:relative}
+.wafer-cell.pickable{cursor:pointer}
+.wafer-cell.staged{outline:3px dashed #2563eb;outline-offset:-3px}
+.grid-wrap-inner{position:relative;display:inline-block;margin:0.3rem 0 0.8rem;max-width:100%;overflow:auto}
+.lyr-substrate-grid{display:inline-block;user-select:none;border:1px solid var(--line);border-radius:8px;background:#fff}
+.substrate-cell{
+  width:var(--wafer-cell-size,20px);height:var(--wafer-cell-size,20px);box-sizing:border-box;
+  border:1px solid #eef1f6;background:#f3f5f8;cursor:pointer;
+}
+.substrate-cell:hover{filter:brightness(.93)}
+.substrate-cell.filled{background:var(--blue);border-color:#0f4f9e}
+.grid-axis-cell,.substrate-axis-cell{
+  width:var(--wafer-cell-size,20px);height:var(--wafer-cell-size,20px);box-sizing:border-box;
+  display:flex;align-items:center;justify-content:center;
+  font-size:calc(var(--wafer-cell-size,20px) * 0.45);font-weight:700;color:var(--muted);
+  background:#e9eef6;flex:none;
+}
+.grid-axis-corner,.substrate-axis-corner{background:#111f35}
+p.small,.small{font-size:0.78rem;color:var(--muted)}
+.row{display:flex}
+#status.ok{color:var(--green)}
+#status.error{color:var(--red);white-space:pre-wrap}
+
+/* ---- 2026/10/29系列工作留下的版面樣式(簡化版工具的sbv-*前綴)，原封搬過來 ---- */
+.sbv-layout{display:flex;gap:1.25rem;align-items:flex-start;margin-top:1rem}
+.sbv-list{width:220px;flex:none;max-height:80vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+.sbv-list-item{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;color:var(--ink);padding:0.7rem 0.8rem;font-weight:400;border-radius:0}
+.sbv-list-item:hover{background:#f1f5f9}
+.sbv-list-item.active{background:var(--blue);color:#fff;font-weight:700}
+.sbv-list-item b{display:block;font-size:0.95rem}
+.sbv-list-item span{display:block;font-size:0.76rem;opacity:0.85;margin-top:2px}
+.sbv-main{flex:1;min-width:0}
+.sbv-panes{display:flex;gap:1.25rem;flex-wrap:wrap}
+.sbv-pane{flex:1;min-width:280px}
+.sbv-pane h3{margin:0 0 0.4rem;font-size:1rem}
+.sbv-empty{padding:2.5rem 1rem;text-align:center;color:var(--muted)}
+#raw-strate-box{margin-top:0.5rem;max-height:320px;overflow:auto;background:#0f1f2e;color:#d7e6f0;padding:0.8rem 1rem;border-radius:10px;font-size:0.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-all}
+#login-overlay{position:fixed;inset:0;background:rgba(15,32,51,.6);display:flex;align-items:center;justify-content:center;z-index:999}
+#login-card{background:#fff;border-radius:16px;padding:2rem 2.2rem;width:min(90vw,380px);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+#login-card h2{margin:0 0 0.4rem}
+#login-card p{margin:0 0 1rem;color:var(--muted);font-size:0.85rem}
+#login-card input{width:100%;font-size:1.1rem;padding:0.6rem 0.7rem;margin-bottom:0.8rem}
+#login-card button{width:100%}
+#login-error{color:var(--red,#b42318);font-size:0.82rem;min-height:1.2em;margin-top:0.3rem}
+.sbv-userbar{display:flex;justify-content:flex-end;align-items:center;gap:0.6rem;font-size:0.85rem;color:var(--muted);margin-bottom:0.4rem}
+.sbv-userbar b{color:var(--ink)}
+.sbv-userbar button{padding:3px 10px;font-size:0.78rem}
+
+/* 解析中的萬聖節青蛙載入動畫——原封從simple_bingo_viewer.html搬過來，
+   細節沿革(擠壓拉伸、置中、萬聖節配色、四腳SVG、南瓜閃躲)見那支檔案
+   的docstring/comment，這裡不重複敘述。 */
+.sbv-loading{display:none;position:fixed;inset:0;background:rgba(10,6,20,.65);align-items:center;justify-content:center;z-index:998}
+.sbv-loading.active{display:flex}
+.sbv-loading-card{background:linear-gradient(165deg,#2b1055 0%,#1a0b2e 70%,#120820 100%);border-radius:22px;padding:1.6rem 1.8rem 1.6rem;box-shadow:0 0 0 2px rgba(255,140,26,.25),0 24px 70px rgba(0,0,0,.55);text-align:center;width:min(90vw,380px)}
+.sbv-loading-flock{position:relative;height:26px;margin-bottom:0.3rem;overflow:hidden}
+.sbv-loading-flock span{position:absolute;top:4px;left:-10%;font-size:18px;animation:sbv-fly 3.2s linear infinite}
+.sbv-loading-flock .bat2{font-size:15px;top:0;animation-duration:2.5s;animation-delay:-1.1s}
+.sbv-loading-flock .ghost{font-size:17px;top:6px;animation-duration:4s;animation-delay:-2.3s;opacity:0.85}
+.sbv-loading-track{position:relative;width:100%;max-width:320px;height:120px;margin:0 auto;background:linear-gradient(to right,#4a1f7a,#ff8c1a55);border-radius:24px;overflow:hidden}
+.sbv-loading-track .shadow{position:absolute;bottom:10px;left:2%;width:13%;height:14px;background:rgba(90,30,10,.4);border-radius:50%;animation:sbv-shadow 1.4s ease-in-out infinite}
+.sbv-loading-track .frog{position:absolute;bottom:8px;left:2%;width:58px;height:48px;transform-origin:bottom center;animation:sbv-hop 1.4s cubic-bezier(.4,0,.2,1) infinite}
+.sbv-loading-track .frog-svg{display:block;width:100%;height:100%;overflow:visible}
+.sbv-loading-track .leg{transform-box:fill-box}
+.sbv-loading-track .back-l{transform-origin:88% 25%;animation:sbv-backleg-l 1.4s cubic-bezier(.4,0,.2,1) infinite}
+.sbv-loading-track .back-r{transform-origin:12% 25%;animation:sbv-backleg-r 1.4s cubic-bezier(.4,0,.2,1) infinite}
+.sbv-loading-track .front-l{transform-origin:75% 15%;animation:sbv-frontleg-l 1.4s cubic-bezier(.4,0,.2,1) infinite}
+.sbv-loading-track .front-r{transform-origin:25% 15%;animation:sbv-frontleg-r 1.4s cubic-bezier(.4,0,.2,1) infinite}
+.sbv-loading-track .finish{position:absolute;right:10px;top:50%;margin-top:-18px;font-size:34px;transform-origin:center bottom;animation:sbv-glow 1.6s ease-in-out infinite,sbv-pumpkin-dodge 1.4s ease-in-out infinite}
+.sbv-loading-text{display:block;margin-top:1rem;font-size:0.9rem;color:#f0dcff}
+@keyframes sbv-fly{0%{left:-10%;transform:translateY(0)}50%{transform:translateY(-8px)}100%{left:110%;transform:translateY(0)}}
+@keyframes sbv-glow{0%,100%{filter:drop-shadow(0 0 3px #ff8c1a)}50%{filter:drop-shadow(0 0 12px #ffb04d)}}
+@keyframes sbv-pumpkin-dodge{0%,38%{transform:translate(0,0) rotate(0deg)}42%{transform:translate(5px,-12px) rotate(-12deg)}46%,80%{transform:translate(0,0) rotate(0deg)}84%{transform:translate(5px,-12px) rotate(12deg)}88%,100%{transform:translate(0,0) rotate(0deg)}}
+@keyframes sbv-backleg-l{0%{transform:rotate(50deg)}8%{transform:rotate(75deg)}25%{transform:rotate(0deg)}42%{transform:rotate(50deg)}50%{transform:rotate(75deg)}67%{transform:rotate(0deg)}84%{transform:rotate(50deg)}92%{transform:rotate(55deg)}100%{transform:rotate(50deg)}}
+@keyframes sbv-backleg-r{0%{transform:rotate(-50deg)}8%{transform:rotate(-75deg)}25%{transform:rotate(0deg)}42%{transform:rotate(-50deg)}50%{transform:rotate(-75deg)}67%{transform:rotate(0deg)}84%{transform:rotate(-50deg)}92%{transform:rotate(-55deg)}100%{transform:rotate(-50deg)}}
+@keyframes sbv-frontleg-l{0%{transform:rotate(10deg)}8%{transform:rotate(25deg)}25%{transform:rotate(-20deg)}42%{transform:rotate(10deg)}50%{transform:rotate(25deg)}67%{transform:rotate(-20deg)}84%{transform:rotate(10deg)}92%{transform:rotate(15deg)}100%{transform:rotate(10deg)}}
+@keyframes sbv-frontleg-r{0%{transform:rotate(-10deg)}8%{transform:rotate(-25deg)}25%{transform:rotate(20deg)}42%{transform:rotate(-10deg)}50%{transform:rotate(-25deg)}67%{transform:rotate(20deg)}84%{transform:rotate(-10deg)}92%{transform:rotate(-15deg)}100%{transform:rotate(-10deg)}}
+@keyframes sbv-hop{0%{left:2%;bottom:8px;transform:scaleX(1.35) scaleY(0.65) rotate(0deg)}8%{left:8%;bottom:8px;transform:scaleX(0.65) scaleY(1.45) rotate(-18deg)}25%{left:36%;bottom:78px;transform:scaleX(0.9) scaleY(1.1) rotate(-30deg)}42%{left:60%;bottom:8px;transform:scaleX(1.4) scaleY(0.6) rotate(0deg)}50%{left:63%;bottom:8px;transform:scaleX(0.65) scaleY(1.45) rotate(-18deg)}67%{left:84%;bottom:78px;transform:scaleX(0.9) scaleY(1.1) rotate(-30deg)}84%{left:96%;bottom:8px;transform:scaleX(1.4) scaleY(0.6) rotate(0deg)}92%{left:96%;bottom:8px;transform:scaleX(1.0) scaleY(1.2) rotate(-8deg)}100%{left:2%;bottom:8px;transform:scaleX(1.35) scaleY(0.65) rotate(0deg)}}
+@keyframes sbv-shadow{0%{left:2%;opacity:.4;transform:scaleX(1)}8%{left:8%;opacity:.3;transform:scaleX(0.65)}25%{left:36%;opacity:.08;transform:scaleX(0.3)}42%{left:60%;opacity:.4;transform:scaleX(1)}50%{left:63%;opacity:.3;transform:scaleX(0.65)}67%{left:84%;opacity:.08;transform:scaleX(0.3)}84%{left:96%;opacity:.4;transform:scaleX(1)}92%{left:96%;opacity:.4;transform:scaleX(1)}100%{left:2%;opacity:.4;transform:scaleX(1)}}
+</style>
+</head>
+<body>
+
+<div id="login-overlay">
+  <div id="login-card">
+    <h2>登入</h2>
+    <p>請輸入工號——這是純離線單機版(桌機版.html)，沒有伺服器，<b>不會把這個工號寫進任何紀錄檔</b>，純粹是這次操作畫面上顯示用的提醒，養成「每次使用都留下工號」的習慣。</p>
+    <input id="login-input" placeholder="工號" autocomplete="off" maxlength="20">
+    <button id="btn-login">進入</button>
+    <p id="login-error"></p>
+  </div>
+</div>
+
+<div class="wrap">
+
+<div class="sbv-userbar">
+  操作工號：<b id="current-employee-id">—</b>
+  <button type="button" class="secondary" id="btn-switch-user">更換工號</button>
+</div>
+
+<div class="hero">
+  <h1>SECS LOG BINGO MAP 檢視器（桌機版）</h1>
+  <p>上傳機台的SECS/AFC log → 左邊選一枚基板 → 右上wafer圖／右下BINGO MAP圖直接核對 → 對了就下載</p>
+  <p>純離線單一HTML檔案，雙擊或拖進瀏覽器就能用，不需要安裝Python、不需要網路。</p>
+</div>
+
+<section class="panel" id="upload-panel">
+  <h2><span class="step-badge">1</span>上傳SECS Log或.strate檔案</h2>
+  <label>選擇檔案 <input type="file" id="log-file" accept=".log,.txt,.zip,.strate" multiple></label>
+  <p class="hint" style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem">
+    可以選SECS/AFC log(含壓縮過的<code>.log.zip</code>，自動解壓縮，zip裡包zip也可以)，<b>也可以直接選現成的<code>.strate</code>檔案</b>(例如從SMAP網路磁碟機抓下來的)；也可以用Ctrl/Shift一次選多個檔案(混著選也可以)，結果會合併成同一批。
+  </p>
+  <div class="row" style="gap:0.6rem;align-items:center;margin-top:0.5rem">
+    <button type="button" class="secondary" id="btn-pick-folder">或選擇整個資料夾</button>
+    <input type="file" id="log-folder" webkitdirectory directory multiple style="display:none">
+    <span id="folder-picked-label" class="small" style="color:var(--muted)"></span>
+  </div>
+  <p class="hint" style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem">
+    選整個資料夾時會自動抓裡面所有<code>.log</code>/<code>.log.zip</code>/<code>.txt</code>/<code>.strate</code>檔案(含子資料夾)，其他檔案自動略過——<code>.strate</code>檔案本身沒有wafer圖資料，想讓某枚基板的wafer圖配得到，就把相關那幾天的log一起放進同一個資料夾再整包選。
+  </p>
+  <button id="btn-extract">解析Log</button>
+  <div class="sbv-loading" id="loading-indicator">
+    <div class="sbv-loading-card">
+      <div class="sbv-loading-flock">
+        <span class="bat1">🦇</span><span class="bat2">🦇</span><span class="ghost">👻</span>
+      </div>
+      <div class="sbv-loading-track">
+        <span class="shadow"></span>
+        <div class="frog">
+          <svg class="frog-svg" viewBox="0 0 100 80">
+            <g class="leg back-l"><path d="M0 70 Q2 56 20 54 Q28 60 24 72 Q10 78 0 70 Z" fill="#2fb84a"/></g>
+            <g class="leg back-r"><path d="M100 70 Q98 56 80 54 Q72 60 76 72 Q90 78 100 70 Z" fill="#2fb84a"/></g>
+            <g class="leg front-l"><path d="M18 66 Q13 74 19 80 Q30 78 30 69 Q25 63 18 66 Z" fill="#35c553"/></g>
+            <g class="leg front-r"><path d="M82 66 Q87 74 81 80 Q70 78 70 69 Q75 63 82 66 Z" fill="#35c553"/></g>
+            <ellipse cx="50" cy="46" rx="32" ry="24" fill="#3ddc55"/>
+            <ellipse cx="50" cy="56" rx="20" ry="13" fill="#eaffd0"/>
+            <circle cx="34" cy="22" r="11" fill="#3ddc55"/>
+            <circle cx="66" cy="22" r="11" fill="#3ddc55"/>
+            <circle cx="34" cy="22" r="6.5" fill="#fff"/>
+            <circle cx="66" cy="22" r="6.5" fill="#fff"/>
+            <circle cx="36" cy="22" r="3" fill="#153a1f"/>
+            <circle cx="68" cy="22" r="3" fill="#153a1f"/>
+            <path d="M38 50 Q50 58 62 50" stroke="#1d7a33" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="finish">🎃</span>
+      </div>
+      <span class="sbv-loading-text" id="loading-text">🎃 解析中，請稍候...</span>
+    </div>
+  </div>
+  <p id="status"></p>
+</section>
+
+<div class="sbv-layout" id="result-area" style="display:none">
+  <div style="width:220px;flex:none;display:flex;flex-direction:column;gap:0.5rem">
+    <button type="button" id="btn-download-all"></button>
+    <div class="sbv-list" id="substrate-list" style="width:100%"></div>
+  </div>
+  <div class="sbv-main">
+    <div class="panel" id="detail-panel">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:0.6rem">
+        <h2 id="detail-title" style="margin:0">請在左邊選一枚基板</h2>
+        <div class="row" style="gap:0.8rem">
+          <label style="margin:0"><input type="radio" name="orientation" value="forward" checked> 正向</label>
+          <label style="margin:0"><input type="radio" name="orientation" value="reverse"> 反向</label>
+          <button id="btn-download" style="display:none"></button>
+        </div>
+      </div>
+      <p id="detail-info" class="small"></p>
+      <div class="notice" style="margin-top:0.5rem">
+        正向／反向只改下面兩張圖怎麼排，<b>不影響「下載」拿到的.strate檔案內容</b>——拿實物比對，哪個方向對得上就切哪個。
+      </div>
+      <label class="row" style="gap:0.4rem;margin-top:0.6rem;font-size:0.85rem;font-weight:normal">
+        <input type="checkbox" id="chk-raw-strate"> 顯示這一枚的STRATE原始資料(.strate檔案內容，跟「下載」拿到的一樣)
+      </label>
+      <pre id="raw-strate-box" style="display:none"></pre>
+      <div class="sbv-panes" style="margin-top:0.8rem">
+        <div class="sbv-pane">
+          <h3>這一枚來源的wafer圖</h3>
+          <div class="legend" id="wafer-bin-legend"></div>
+          <div class="legend">
+            <span><i style="outline:3px solid #f97316;outline-offset:-3px;background:#fff"></i>這一枚用到的格子</span>
+            <span><i style="outline:3px dashed #2563eb;outline-offset:-3px;background:#fff"></i>待填入(已選取)</span>
+          </div>
+          <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0.5rem">
+            點選或拖曳框選綠色(良品)格子，選取的die會即時畫進下面「手動建立全新基板」那張空白圖；再點一次已選的格子可以取消。
+          </p>
+          <div class="lyr-wafer-wrap"><div id="wafer-grid" class="lyr-wafer-grid"></div></div>
+        </div>
+        <div class="sbv-pane">
+          <h3>這一枚的BINGO MAP</h3>
+          <div class="legend">
+            <span><i style="background:var(--blue)"></i>有die</span>
+            <span><i style="background:#fff;border:1px solid var(--line)"></i>無die</span>
+          </div>
+          <div class="lyr-substrate-grid" id="substrate-grid"></div>
+
+          <h3 style="margin-top:1.2rem">手動建立全新基板(空白BINGO MAP)</h3>
+          <div class="legend">
+            <span><i style="background:#2563eb"></i>已選取的die</span>
+            <span><i style="background:#fff;border:1px solid var(--line)"></i>還沒選</span>
+          </div>
+          <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0.5rem">
+            完全獨立、不綁定左邊清單裡任何一枚基板——形狀(列數/欄數)跟批號/EQPID等欄位借用<b>目前選到的這一枚</b>當樣板，左邊wafer圖點選/框選的die會即時畫在<b>這張空白圖上</b>；輸入這枚基板真正的流水號後即可下載成一份全新、獨立的.strate檔案。
+          </p>
+          <div class="lyr-substrate-grid" id="substrate-grid-new"></div>
+          <div class="row" id="pick-controls" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-top:0.6rem;padding:0.6rem 0.9rem;background:#eef6ff;border-radius:10px">
+            <span id="pick-status" class="small">已選 0 顆</span>
+            <button type="button" class="secondary" id="btn-clear-picks">清除選取</button>
+          </div>
+          <div class="row" style="gap:0.6rem;align-items:center;margin-top:0.6rem;flex-wrap:wrap">
+            <label style="margin:0;display:flex;gap:0.4rem;align-items:center">
+              新基板流水號(SUBSTRATE_ID)
+              <input type="text" id="new-substrate-id" placeholder="例如 K2MRI099" style="width:160px">
+            </label>
+            <button type="button" id="btn-download-new" disabled>下載這枚新基板</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+<script>
+// SECS LOG BINGO MAP 檢視器（桌機版）— 完全離線單一HTML檔案。
+// 2026/10/30新增：使用者看到同事的「STRATE_v92桌機版.html」之後要求
+// 做成同一種慣例——雙擊或拖進瀏覽器就能用，不裝Python、不開伺服器、
+// 不接任何CDN。這支<script>裡的程式碼依序是4個原本分開寫、各自驗證過
+// 的部分接在一起：
+//   1. ZipReader   — 自己寫的RFC1951 DEFLATE inflate + ZIP(central
+//                     directory)讀取器，沒有後端可以用Python的zipfile，
+//                     也不接CDN函式庫(pako/fflate)，只好手刻一份。已經
+//                     對著真實log資料用Python的zipfile壓成ZIP_STORED/
+//                     ZIP_DEFLATED兩種、以及zip包zip的巢狀資料夾，逐
+//                     byte比對SHA256通過。
+//   2. SecsCore    — bingomap/secs_log.py + bingomap/strate.py的逐行
+//                     JS翻譯(不是重新推導)，含UTF-16LE偵測、Transaction
+//                     區塊擷取、JobInfoFromAFC派工關聯、WaferStart的
+//                     8方向座標自動偵測、.strate的序列化/解析。對著
+//                     bingomap/tests/fixtures/裡3份真實log + 1份真實
+//                     .strate檔案逐欄位核對過，包含重現
+//                     bingomap/CLAUDE.md記錄過的97.5%(1425/1461)wafer
+//                     方向自動偵測命中率。
+//   3. UI glue     — 取代原本Flask後端(webapp/simple_bingo_viewer.py)
+//                     的_substrate_positions()/_wafer_positions()/
+//                     _wafer_map_summary()/_substrate_summary()/
+//                     api_build_new_substrate()這幾個函式，邏輯逐一對應
+//                     搬過來，只是從Python換成JS，全部在瀏覽器裡跑。
+//   4. UI main     — 原本webapp/static/simple_bingo_viewer.js的畫面渲染
+//                     邏輯(清單/wafer圖/BINGO MAP圖/手動建立全新基板/
+//                     正向反向切換/全部下載打包zip)幾乎原封不動搬過來，
+//                     只有牽涉到fetch()呼叫後端的幾處(extractOneFile()、
+//                     downloadNewSubstrate()、下載稽核紀錄)改成呼叫
+//                     上面1~3的本地函式，或者誠實拿掉(見下)。
+//
+// 跟Flask版比起來，這個桌機版**沒有**、也不可能有的東西：沒有伺服器，
+// 所以「每次下載記一筆工號/時間/流水號到後端CSV」這個稽核功能沒有對應
+// 物，直接拿掉——登入畫面保留工號輸入框(維持「每次使用都留下工號」的
+// 習慣、畫面上顯示用)，但文字明講「不會把這個工號寫進任何紀錄檔」，不
+// 是假裝還有記錄其實什麼都沒寫。其餘功能(多檔/整個資料夾上傳、zip自動
+// 解壓縮、wafer圖+BINGO MAP圖對照、正向/反向切換、手動建立全新基板、
+// 全部下載打包成zip、直接上傳現成.strate檔案)都完整保留。
+//
+// 驗證方式見bingomap/CLAUDE.md這份檔案對應的2026/10/30章節；這支
+// <script>本身不重新推導任何解析規則，所有非顯而易見的決定都已經在
+// 原本的Python模組/Flask工具裡驗證過，這裡單純是同一套邏輯換一種語言。
+"use strict";
+// Minimal RFC1951 raw DEFLATE inflate + a ZIP (central-directory-based)
+// reader, written from scratch for the single-file standalone viewer
+// (no CDN dependency allowed, so no pako/fflate import). Ported from the
+// well-known public-domain "puff.c" algorithm structure (bit reader,
+// fixed + dynamic Huffman, stored blocks), not from any specific existing
+// JS library's source, to avoid license/attribution ambiguity. Verified
+// byte-for-byte against real SECS log fixtures zipped with Python's
+// zipfile (both ZIP_STORED and ZIP_DEFLATED, including a folder-zip
+// containing nested .log.zip entries) — see bingomap/CLAUDE.md's
+// 2026/10/30 note on the standalone viewer for how.
+(function (root, factory) {
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = factory();
+  } else {
+    root.ZipReader = factory();
+  }
+})(typeof window !== "undefined" ? window : globalThis, function () {
+
+  class BitReader {
+    constructor(bytes) {
+      this.bytes = bytes;
+      this.bytePos = 0;
+      this.bitBuf = 0;
+      this.bitCnt = 0;
+    }
+    getBit() {
+      if (this.bitCnt === 0) {
+        this.bitBuf = this.bytes[this.bytePos++];
+        this.bitCnt = 8;
+      }
+      const bit = this.bitBuf & 1;
+      this.bitBuf >>>= 1;
+      this.bitCnt--;
+      return bit;
+    }
+    getBits(n) {
+      let v = 0;
+      for (let i = 0; i < n; i++) v |= this.getBit() << i;
+      return v >>> 0;
+    }
+    alignByte() {
+      this.bitBuf = 0;
+      this.bitCnt = 0;
+    }
+  }
+
+  function buildHuffman(lengths) {
+    const MAXBITS = 15;
+    const counts = new Array(MAXBITS + 1).fill(0);
+    for (const len of lengths) counts[len]++;
+    counts[0] = 0;
+    const offsets = new Array(MAXBITS + 2).fill(0);
+    for (let i = 1; i <= MAXBITS; i++) offsets[i + 1] = offsets[i] + counts[i];
+    const symbols = new Array(lengths.length).fill(0);
+    for (let sym = 0; sym < lengths.length; sym++) {
+      const len = lengths[sym];
+      if (len !== 0) symbols[offsets[len]++] = sym;
+    }
+    return { counts, symbols };
+  }
+
+  function decodeSymbol(br, huff) {
+    let code = 0;
+    let first = 0;
+    let index = 0;
+    for (let len = 1; len <= 15; len++) {
+      code |= br.getBit();
+      const count = huff.counts[len];
+      if (code - first < count) return huff.symbols[index + (code - first)];
+      index += count;
+      first += count;
+      first <<= 1;
+      code <<= 1;
+    }
+    throw new Error("invalid Huffman code");
+  }
+
+  const LENGTH_BASE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+  const LENGTH_EXTRA = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+  const DIST_BASE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
+  const DIST_EXTRA = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+  const CLEN_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+
+  function fixedHuffmanTrees() {
+    const litLengths = new Array(288);
+    for (let i = 0; i <= 143; i++) litLengths[i] = 8;
+    for (let i = 144; i <= 255; i++) litLengths[i] = 9;
+    for (let i = 256; i <= 279; i++) litLengths[i] = 7;
+    for (let i = 280; i <= 287; i++) litLengths[i] = 8;
+    const distLengths = new Array(30).fill(5);
+    return { lit: buildHuffman(litLengths), dist: buildHuffman(distLengths) };
+  }
+
+  function dynamicHuffmanTrees(br) {
+    const hlit = br.getBits(5) + 257;
+    const hdist = br.getBits(5) + 1;
+    const hclen = br.getBits(4) + 4;
+    const clLengths = new Array(19).fill(0);
+    for (let i = 0; i < hclen; i++) clLengths[CLEN_ORDER[i]] = br.getBits(3);
+    const clHuff = buildHuffman(clLengths);
+
+    const lengths = [];
+    while (lengths.length < hlit + hdist) {
+      const sym = decodeSymbol(br, clHuff);
+      if (sym < 16) {
+        lengths.push(sym);
+      } else if (sym === 16) {
+        const prev = lengths[lengths.length - 1];
+        const rep = br.getBits(2) + 3;
+        for (let i = 0; i < rep; i++) lengths.push(prev);
+      } else if (sym === 17) {
+        const rep = br.getBits(3) + 3;
+        for (let i = 0; i < rep; i++) lengths.push(0);
+      } else {
+        const rep = br.getBits(7) + 11;
+        for (let i = 0; i < rep; i++) lengths.push(0);
+      }
+    }
+    const litLengths = lengths.slice(0, hlit);
+    const distLengths = lengths.slice(hlit, hlit + hdist);
+    return { lit: buildHuffman(litLengths), dist: buildHuffman(distLengths) };
+  }
+
+  function inflateBlock(br, trees, out) {
+    for (;;) {
+      const sym = decodeSymbol(br, trees.lit);
+      if (sym < 256) {
+        out.push(sym);
+      } else if (sym === 256) {
+        return;
+      } else {
+        const li = sym - 257;
+        if (li >= LENGTH_BASE.length) throw new Error("invalid length symbol");
+        const length = LENGTH_BASE[li] + br.getBits(LENGTH_EXTRA[li]);
+        const dsym = decodeSymbol(br, trees.dist);
+        if (dsym >= DIST_BASE.length) throw new Error("invalid distance symbol");
+        const dist = DIST_BASE[dsym] + br.getBits(DIST_EXTRA[dsym]);
+        const start = out.length - dist;
+        if (start < 0) throw new Error("invalid back-reference distance");
+        for (let i = 0; i < length; i++) out.push(out[start + i]);
+      }
+    }
+  }
+
+  function inflateRaw(bytes) {
+    const br = new BitReader(bytes);
+    const out = [];
+    let final = 0;
+    do {
+      final = br.getBit();
+      const type = br.getBits(2);
+      if (type === 0) {
+        br.alignByte();
+        const len = bytes[br.bytePos] | (bytes[br.bytePos + 1] << 8);
+        br.bytePos += 4;
+        for (let i = 0; i < len; i++) out.push(bytes[br.bytePos++]);
+      } else if (type === 1) {
+        inflateBlock(br, fixedHuffmanTrees(), out);
+      } else if (type === 2) {
+        inflateBlock(br, dynamicHuffmanTrees(br), out);
+      } else {
+        throw new Error("invalid DEFLATE block type 3");
+      }
+    } while (!final);
+    return Uint8Array.from(out);
+  }
+
+  function readUint32LE(bytes, off) {
+    return (bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16) | (bytes[off + 3] << 24)) >>> 0;
+  }
+  function readUint16LE(bytes, off) {
+    return bytes[off] | (bytes[off + 1] << 8);
+  }
+
+  function findEndOfCentralDirectory(bytes) {
+    const SIG = 0x06054b50;
+    const minPos = Math.max(0, bytes.length - 65557);
+    for (let i = bytes.length - 22; i >= minPos; i--) {
+      if (readUint32LE(bytes, i) === SIG) return i;
+    }
+    throw new Error("not a valid zip: End Of Central Directory record not found");
+  }
+
+  function readZip(bytes) {
+    const eocd = findEndOfCentralDirectory(bytes);
+    const entryCount = readUint16LE(bytes, eocd + 10);
+    let cdOffset = readUint32LE(bytes, eocd + 16);
+
+    const entries = {};
+    for (let i = 0; i < entryCount; i++) {
+      if (readUint32LE(bytes, cdOffset) !== 0x02014b50) {
+        throw new Error("not a valid zip: central directory entry signature mismatch");
+      }
+      const method = readUint16LE(bytes, cdOffset + 10);
+      const compressedSize = readUint32LE(bytes, cdOffset + 20);
+      const uncompressedSize = readUint32LE(bytes, cdOffset + 24);
+      const nameLen = readUint16LE(bytes, cdOffset + 28);
+      const extraLen = readUint16LE(bytes, cdOffset + 30);
+      const commentLen = readUint16LE(bytes, cdOffset + 32);
+      const localHeaderOffset = readUint32LE(bytes, cdOffset + 42);
+      const name = new TextDecoder("utf-8").decode(bytes.subarray(cdOffset + 46, cdOffset + 46 + nameLen));
+
+      if (!name.endsWith("/")) {
+        const lhNameLen = readUint16LE(bytes, localHeaderOffset + 26);
+        const lhExtraLen = readUint16LE(bytes, localHeaderOffset + 28);
+        const dataStart = localHeaderOffset + 30 + lhNameLen + lhExtraLen;
+        const compressed = bytes.subarray(dataStart, dataStart + compressedSize);
+        let data;
+        if (method === 0) {
+          data = compressed.slice();
+        } else if (method === 8) {
+          data = inflateRaw(compressed);
+        } else {
+          throw new Error(`zip entry ${name}: unsupported compression method ${method} (only stored/deflate supported)`);
+        }
+        if (data.length !== uncompressedSize) {
+          throw new Error(`zip entry ${name}: decompressed ${data.length} bytes, expected ${uncompressedSize}`);
+        }
+        entries[name] = data;
+      }
+      cdOffset += 46 + nameLen + extraLen + commentLen;
+    }
+    return entries;
+  }
+
+  return { inflateRaw, readZip };
+});
+"use strict";
+// Faithful JS port of bingomap/secs_log.py + bingomap/strate.py's already
+// real-data-validated parsing — see bingomap/CLAUDE.md for the long trail
+// of real-log/real-.strate cross-checks behind every non-obvious choice
+// here (wafer_xy needing no transform, the 8-way WaferStart BinList axis
+// auto-detection, the JobInfoFromAFC job-dispatch correlation). This file
+// re-derives nothing; it mirrors the Python module structure function-for-
+// function so the two stay easy to compare line by line.
+(function (root, factory) {
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = factory();
+  } else {
+    root.SecsCore = factory();
+  }
+})(typeof window !== "undefined" ? window : globalThis, function () {
+
+  function decodeSecsLog(bytes) {
+    if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+      return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+    }
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+      return new TextDecoder("utf-16be").decode(bytes.subarray(2));
+    }
+    const sample = bytes.subarray(0, 512);
+    let nulCount = 0;
+    for (let i = 0; i < sample.length; i++) if (sample[i] === 0) nulCount++;
+    if (nulCount > sample.length / 4) {
+      return new TextDecoder("utf-16le").decode(bytes);
+    }
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+
+  // Same two-stage approach as secs_log.py: a regex first carves out each
+  // <Transaction>...</Transaction> block from the raw log text (which is
+  // NOT a valid XML document — DEBUG/INFO trace lines interleave with the
+  // payloads), THEN each block is parsed as its own standalone XML
+  // fragment. The self-closing-tag alternative (`<Transaction .../>`)
+  // comes first in the pattern for the same reason documented in
+  // secs_log.py: a naive single-alternative pattern would otherwise treat
+  // a self-closing Request's `/>` as a plain `>` and swallow everything up
+  // to the NEXT transaction's closing tag.
+  const TRANSACTION_RE = /<Transaction\b[^>]*\/>|<Transaction\b[^>]*>[\s\S]*?<\/Transaction>/g;
+  const NAME_RE = /name="([^"]*)"/;
+  const TYPE_RE = /Type="([^"]*)"/;
+
+  function iterTransactions(text, DOMParserCtor) {
+    const parser = new DOMParserCtor();
+    const out = [];
+    let m;
+    TRANSACTION_RE.lastIndex = 0;
+    while ((m = TRANSACTION_RE.exec(text)) !== null) {
+      const raw = m[0];
+      const nameM = NAME_RE.exec(raw);
+      const typeM = TYPE_RE.exec(raw);
+      if (!nameM || !typeM) continue;
+      let doc;
+      try {
+        doc = parser.parseFromString(raw, "text/xml");
+      } catch (e) {
+        continue;
+      }
+      const errEl = doc.getElementsByTagName("parsererror")[0];
+      if (errEl) continue;
+      const elem = doc.documentElement;
+      if (!elem) continue;
+      out.push([nameM[1], typeM[1], elem]);
+    }
+    return out;
+  }
+
+  function directChild(elem, tag) {
+    for (const child of Array.from(elem.childNodes)) {
+      if (child.nodeType === 1 && child.tagName === tag) return child;
+    }
+    return null;
+  }
+
+  function directChildren(elem, tag) {
+    const out = [];
+    for (const child of Array.from(elem.childNodes)) {
+      if (child.nodeType === 1 && child.tagName === tag) out.push(child);
+    }
+    return out;
+  }
+
+  function text(elem, tag, dflt) {
+    if (dflt === undefined) dflt = "";
+    const child = directChild(elem, tag);
+    if (!child || child.textContent === null) return dflt;
+    const t = child.textContent;
+    return t === "" ? (child.childNodes.length ? t : dflt) : t.trim();
+  }
+
+  function intText(elem, tag, dflt) {
+    if (dflt === undefined) dflt = 0;
+    const t = text(elem, tag, "");
+    const n = parseInt(t, 10);
+    return Number.isNaN(n) ? dflt : n;
+  }
+
+  // ---- strate.py port ----------------------------------------------------
+  const HEADER_FIELDS = [
+    ["ASSY_LOT", "assy_lot"], ["MAPPING_LOT", "mapping_lot"], ["EQPID", "eqpid"], ["OPER", "oper"],
+    ["SUBSTRATE_ID", "substrate_id"], ["SUBSTRATE_ROW", "substrate_row"], ["SUBSTRATE_COLUMN", "substrate_column"],
+    ["SUBSTRATE_BLOCK", "substrate_block"], ["OUT_MGZ_SLOT_NO", "out_mgz_slot_no"],
+    ["TOTAL_BOND_DIE_QTY", "total_bond_die_qty"], ["GOOD_DIE", "good_die"], ["RUN_TIME", "run_time"],
+    ["NOTCH", "notch"], ["Ref", "ref"], ["T2_POINT", "t2_point"], ["T2_Flat", "t2_flat"],
+  ];
+  const INT_ATTRS = new Set(["substrate_row", "substrate_column", "substrate_block", "total_bond_die_qty", "good_die"]);
+  const DIE_INFO_BEG = "[DIE_INFO_BEG]";
+  const DIE_INFO_END = "[DIE_INFO_END]";
+  const DIE_INFO_OTHER_LAYER_BEG = "[DIE_INFO_OTHER_LAYER_BEG]";
+  const DIE_INFO_OTHER_LAYER_END = "[DIE_INFO_OTHER_LAYER_END]";
+
+  class StrateFormatError extends Error {}
+
+  function dieInfoToLine(d) {
+    return [d.index, d.wafer_ring, d.wafer_xy, d.sub_pos, d.bin, d.f6, d.f7, d.timestamp, d.f9].join(",");
+  }
+
+  function dieInfoFromLine(line) {
+    const parts = line.split(",");
+    if (parts.length !== 9) {
+      throw new StrateFormatError(`DIE_INFO line must have 9 comma-separated fields, got ${parts.length}: ${JSON.stringify(line)}`);
+    }
+    const [idx, wafer_ring, wafer_xy, sub_pos, bin_, f6, f7, ts, f9] = parts;
+    const index = parseInt(idx, 10);
+    if (Number.isNaN(index)) throw new StrateFormatError(`DIE_INFO index is not an integer: ${JSON.stringify(line)}`);
+    return { index, wafer_ring, wafer_xy, sub_pos, bin: bin_, f6, f7, timestamp: ts, f9 };
+  }
+
+  function strateToText(sf) {
+    const lines = [];
+    for (const [key, attr] of HEADER_FIELDS) lines.push(`${key}=${sf[attr]}`);
+    lines.push(DIE_INFO_BEG);
+    for (const d of sf.die_info) lines.push(dieInfoToLine(d));
+    lines.push(DIE_INFO_END);
+    if (sf.other_layer_die_info && sf.other_layer_die_info.length) {
+      lines.push(DIE_INFO_OTHER_LAYER_BEG);
+      for (const d of sf.other_layer_die_info) lines.push(dieInfoToLine(d));
+      lines.push(DIE_INFO_OTHER_LAYER_END);
+    }
+    lines.push("");
+    lines.push("");
+    return lines.map((l) => l + "\r\n").join("");
+  }
+
+  function strateParse(rawText) {
+    const lines = rawText.replace(/\r\n/g, "\n").split("\n");
+    const header = {};
+    let i = 0;
+    while (i < lines.length && lines[i] !== DIE_INFO_BEG) {
+      const line = lines[i];
+      if (line) {
+        if (!line.includes("=")) throw new StrateFormatError(`Malformed header line (no '='): ${JSON.stringify(line)}`);
+        const eq = line.indexOf("=");
+        header[line.slice(0, eq)] = line.slice(eq + 1);
+      }
+      i++;
+    }
+    if (i >= lines.length) throw new StrateFormatError(`Missing ${DIE_INFO_BEG} marker`);
+    i++;
+
+    const die_info = [];
+    while (i < lines.length && lines[i] !== DIE_INFO_END) {
+      die_info.push(dieInfoFromLine(lines[i]));
+      i++;
+    }
+    if (i >= lines.length) throw new StrateFormatError(`Missing ${DIE_INFO_END} marker`);
+    i++;
+
+    const other_layer_die_info = [];
+    if (i < lines.length && lines[i] === DIE_INFO_OTHER_LAYER_BEG) {
+      i++;
+      while (i < lines.length && lines[i] !== DIE_INFO_OTHER_LAYER_END) {
+        other_layer_die_info.push(dieInfoFromLine(lines[i]));
+        i++;
+      }
+      if (i >= lines.length) throw new StrateFormatError(`Missing ${DIE_INFO_OTHER_LAYER_END} marker`);
+    }
+
+    const missing = HEADER_FIELDS.filter(([key]) => !(key in header)).map(([key]) => key);
+    if (missing.length) throw new StrateFormatError(`Missing header field(s): ${missing.join(", ")}`);
+
+    const sf = { die_info, other_layer_die_info };
+    for (const [key, attr] of HEADER_FIELDS) {
+      let value = header[key];
+      if (INT_ATTRS.has(attr)) {
+        const n = parseInt(value, 10);
+        if (Number.isNaN(n)) throw new StrateFormatError(`${key} must be an integer, got ${JSON.stringify(value)}`);
+        value = n;
+      }
+      sf[attr] = value;
+    }
+    return sf;
+  }
+
+  // ---- secs_log.py port ---------------------------------------------------
+  function dieList(elem, tag) {
+    const parent = directChild(elem, tag);
+    if (!parent) return [];
+    const out = [];
+    for (const item of directChildren(parent, "Item")) {
+      const t = (item.textContent || "").trim();
+      if (t) out.push(dieInfoFromLine(t));
+    }
+    return out;
+  }
+
+  const JOB_INFO_TAGS = { assy_lot: "Assy_Lot", mapping_lot: "Mapping_Lot", oper: "Oper" };
+
+  function jobInfoFromElement(elem) {
+    const out = {};
+    for (const key in JOB_INFO_TAGS) out[key] = text(elem, JOB_INFO_TAGS[key], "");
+    return out;
+  }
+
+  function strateFileFromElement(elem, jobInfo) {
+    jobInfo = jobInfo || {};
+    return {
+      assy_lot: jobInfo.assy_lot || "",
+      mapping_lot: jobInfo.mapping_lot || "",
+      eqpid: text(elem, "EQPID"),
+      oper: jobInfo.oper || "",
+      substrate_id: text(elem, "SUBSTRATE_ID"),
+      substrate_row: intText(elem, "RowCount"),
+      substrate_column: intText(elem, "ColCount"),
+      substrate_block: intText(elem, "BlockCount"),
+      out_mgz_slot_no: text(elem, "OUT_MGZ_SLOT_NO"),
+      total_bond_die_qty: intText(elem, "TOTAL_BOND_DIE_QTY"),
+      good_die: intText(elem, "GOOD_DIE"),
+      run_time: text(elem, "RUN_TIME"),
+      notch: text(elem, "NotchMap"),
+      ref: text(elem, "Ref"),
+      t2_point: text(elem, "T2_POINT", "NA"),
+      t2_flat: text(elem, "T2_Flat", "NA"),
+      die_info: dieList(elem, "DIE_INFO"),
+      other_layer_die_info: dieList(elem, "DIE_INFO_OTHER_LAYER"),
+    };
+  }
+
+  function extractStrateFiles(logText, DOMParserCtor) {
+    const files = [];
+    let currentJob = {};
+    for (const [name, ttype, elem] of iterTransactions(logText, DOMParserCtor)) {
+      if (name === "JobInfoFromAFC" && ttype === "Request") {
+        currentJob = jobInfoFromElement(elem);
+      } else if (name === "StrateMap" && ttype === "Event") {
+        files.push(strateFileFromElement(elem, currentJob));
+      }
+    }
+    return files;
+  }
+
+  const WAFER_MAP_CANDIDATE_PARAMS = [
+    { swap: true, flip_x: false, flip_y: false },
+    { swap: true, flip_x: false, flip_y: true },
+    { swap: true, flip_x: true, flip_y: false },
+    { swap: true, flip_x: true, flip_y: true },
+    { swap: false, flip_x: false, flip_y: false },
+    { swap: false, flip_x: false, flip_y: true },
+    { swap: false, flip_x: true, flip_y: false },
+    { swap: false, flip_x: true, flip_y: true },
+  ];
+
+  function waferMapCandidate(colCount, rowCount, binlist, { swap, flip_x, flip_y }) {
+    const columns = swap ? rowCount : colCount;
+    const rows = swap ? colCount : rowCount;
+    const cells = new Map(); // "x,y" -> bin
+    for (let chunkIdx = 0; chunkIdx < rowCount; chunkIdx++) {
+      const chunk = binlist.substring(chunkIdx * colCount, (chunkIdx + 1) * colCount);
+      for (let charPos = 0; charPos < chunk.length; charPos++) {
+        const ch = chunk[charPos];
+        if (ch === " ") continue;
+        let x, y;
+        if (swap) { x = chunkIdx; y = charPos; } else { x = charPos; y = chunkIdx; }
+        if (flip_x) x = columns - 1 - x;
+        if (flip_y) y = rows - 1 - y;
+        cells.set(`${x},${y}`, ch);
+      }
+    }
+    return { columns, rows, cells };
+  }
+
+  function waferMapFromElement(elem, knownPositions) {
+    knownPositions = knownPositions || [];
+    const binListElem = directChild(elem, "BinList");
+    const binlist = binListElem ? (binListElem.textContent || "") : "";
+    if (!binListElem || !binlist) return null;
+    const colCount = intText(elem, "ColCount");
+    const rowCount = intText(elem, "RowCount");
+
+    let waferMap;
+    if (knownPositions.length) {
+      let bestMap = null;
+      let bestScore = -1;
+      for (const params of WAFER_MAP_CANDIDATE_PARAMS) {
+        const candidate = waferMapCandidate(colCount, rowCount, binlist, params);
+        let score = 0;
+        for (const [x, y, b] of knownPositions) {
+          if (candidate.cells.get(`${x},${y}`) === b) score++;
+        }
+        if (score > bestScore) { bestScore = score; bestMap = candidate; }
+      }
+      waferMap = bestMap;
+    } else {
+      waferMap = waferMapCandidate(colCount, rowCount, binlist, WAFER_MAP_CANDIDATE_PARAMS[0]);
+    }
+
+    return {
+      frame_id: text(elem, "FrameID"),
+      wafer_id: text(elem, "WaferID"),
+      wafer_map: waferMap,
+    };
+  }
+
+  function extractWaferMaps(logText, DOMParserCtor) {
+    const positionsByWafer = new Map();
+    for (const sf of extractStrateFiles(logText, DOMParserCtor)) {
+      for (const die of [...sf.die_info, ...sf.other_layer_die_info]) {
+        const sep = die.wafer_xy.indexOf(":");
+        if (sep < 0) continue;
+        const x = parseInt(die.wafer_xy.slice(0, sep), 10);
+        const y = parseInt(die.wafer_xy.slice(sep + 1), 10);
+        if (Number.isNaN(x) || Number.isNaN(y)) continue;
+        if (!positionsByWafer.has(die.wafer_ring)) positionsByWafer.set(die.wafer_ring, []);
+        positionsByWafer.get(die.wafer_ring).push([x, y, die.bin]);
+      }
+    }
+
+    const out = [];
+    for (const [name, ttype, elem] of iterTransactions(logText, DOMParserCtor)) {
+      if (name === "WaferStart" && ttype === "Event") {
+        const frameId = text(elem, "FrameID");
+        const wm = waferMapFromElement(elem, positionsByWafer.get(frameId) || []);
+        if (wm !== null) out.push(wm);
+      }
+    }
+    return out;
+  }
+
+  return {
+    decodeSecsLog,
+    iterTransactions,
+    extractStrateFiles,
+    extractWaferMaps,
+    strateToText,
+    strateParse,
+    dieInfoToLine,
+    dieInfoFromLine,
+    StrateFormatError,
+  };
+});
+// ---- 桌機版專用的「後端取代」膠水層 --------------------------------
+// 跟webapp/simple_bingo_viewer.py裡的_substrate_positions()/
+// _wafer_positions()/_wafer_map_summary()/_substrate_summary()/
+// api_build_new_substrate()逐一對應，欄位/邏輯一字不改地搬過來，只是
+// 從Python換成JS——這份桌機版沒有後端，所有「後端」工作都在使用者自己
+// 的瀏覽器裡跑，資料不會離開這台電腦。
+
+function substratePositions(sf) {
+  const positions = new Map();
+  for (const d of [...sf.die_info, ...sf.other_layer_die_info]) {
+    const [colStr, rowStr] = d.sub_pos.split(":");
+    const col = parseInt(colStr, 10), row = parseInt(rowStr, 10);
+    if (Number.isNaN(col) || Number.isNaN(row)) continue;
+    positions.set(`${col},${row}`, { col, row, bin: d.bin });
+  }
+  return Array.from(positions.values());
+}
+
+function waferPositions(sf) {
+  const positions = new Map();
+  for (const d of [...sf.die_info, ...sf.other_layer_die_info]) {
+    const [colStr, rowStr] = d.wafer_xy.split(":");
+    const col = parseInt(colStr, 10), row = parseInt(rowStr, 10);
+    if (Number.isNaN(col) || Number.isNaN(row)) continue;
+    positions.set(`${col},${row}`, { col, row, bin: d.bin });
+  }
+  return Array.from(positions.values());
+}
+
+function waferMapSummary(wm, index) {
+  const cells = [];
+  for (const [key, bin] of wm.wafer_map.cells) {
+    const [x, y] = key.split(",").map(Number);
+    cells.push({ col: x, row: y, bin });
+  }
+  return {
+    index, frame_id: wm.frame_id, wafer_id: wm.wafer_id,
+    columns: wm.wafer_map.columns, rows: wm.wafer_map.rows, cells,
+  };
+}
+
+function substrateSummary(sf, index) {
+  let lastTs = "";
+  for (const d of sf.die_info) if (d.timestamp > lastTs) lastTs = d.timestamp;
+  const waferRing = sf.die_info.length ? sf.die_info[0].wafer_ring : "";
+  const baseName = sf.substrate_id || `substrate_${index + 1}`;
+  const positions = substratePositions(sf);
+  const cols = positions.map((p) => p.col);
+  const rows = positions.map((p) => p.row);
+  const dataMaxCol = cols.length ? Math.max(...cols) : -1;
+  const dataMaxRow = rows.length ? Math.max(...rows) : -1;
+  const dataMinCol = cols.length ? Math.min(...cols) : 0;
+  const dataMinRow = rows.length ? Math.min(...rows) : 0;
+  return {
+    index, substrate_id: sf.substrate_id, wafer_ring: waferRing, eqpid: sf.eqpid,
+    num_dies: sf.die_info.length, num_other_layer_dies: sf.other_layer_die_info.length,
+    total_bond_die_qty: sf.total_bond_die_qty, good_die: sf.good_die,
+    min_col: Math.min(0, dataMinCol), max_col: Math.max(sf.substrate_column - 1, dataMaxCol),
+    min_row: Math.min(0, dataMinRow), max_row: Math.max(sf.substrate_row - 1, dataMaxRow),
+    positions, wafer_positions: waferPositions(sf),
+    filename: lastTs ? `${baseName}_${lastTs}.strate` : `${baseName}.strate`,
+    text: SecsCore.strateToText(sf),
+    _raw: sf, // keep the structured data around too (download needs it indirectly via .text)
+  };
+}
+
+function isZipBytes(bytes) {
+  return bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b; // "PK"
+}
+
+// 跟_collect_log_bytes()一樣：遞迴解壓縮，depth上限5層，只保留
+// .log/.txt/.zip副檔名的項目，資料夾項目(zip裡以"/"結尾的entry，
+// ZipReader.readZip()已經自己濾掉)不會出現在這裡。
+function collectLogBytes(bytes, out, depth) {
+  depth = depth || 0;
+  if (depth > 5) return;
+  if (!isZipBytes(bytes)) { out.push(bytes); return; }
+  let entries;
+  try {
+    entries = ZipReader.readZip(bytes);
+  } catch (e) {
+    out.push(bytes); // 開頭是PK但不是合法zip——當成原始bytes丟給decode，跟Python行為一致
+    return;
+  }
+  for (const name of Object.keys(entries)) {
+    const lower = name.toLowerCase();
+    if (!(lower.endsWith(".log") || lower.endsWith(".txt") || lower.endsWith(".zip"))) continue;
+    collectLogBytes(entries[name], out, depth + 1);
+  }
+}
+
+function decodeUploadedBytes(bytes) {
+  const rawLogs = [];
+  collectLogBytes(bytes, rawLogs);
+  return rawLogs.map((b) => SecsCore.decodeSecsLog(b));
+}
+
+// 跟_is_strate_text()一樣：現成的.strate檔案第一行固定是ASSY_LOT=...
+// (HEADER_FIELDS的第一個欄位)，SECS log不可能以這個開頭，直接用這個
+// 判斷要走哪一條解析路徑。
+function isStrateText(text) {
+  const firstLine = text.replace(/^﻿/, "").split("\n", 1)[0].trim();
+  return firstLine.startsWith("ASSY_LOT=");
+}
+
+// 跟api_extract()一樣：一個檔案(可能是zip、可能裡面還有好幾份log，也
+// 可能是現成的.strate檔案)解出來的所有StrateFile/WaferMap合併成一批
+// 回傳。2026/10/30新增：使用者手上有時候已經是現成的.strate檔案，不是
+// SECS log，跟後端api_extract()同一套判斷邏輯——先解壓縮/解碼成文字，
+// 每一份各自判斷是.strate格式還是SECS log，混著選也沒問題。
+async function extractOneFile(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let texts;
+  try {
+    texts = decodeUploadedBytes(bytes);
+  } catch (e) {
+    throw new Error(`${file.name}：${e.message}`);
+  }
+  if (!texts.length) throw new Error(`${file.name}：這份zip裡沒有找到任何.log/.txt/.strate檔案`);
+
+  let strateFiles = [];
+  let waferMaps = [];
+  const strateParseErrors = [];
+  for (const text of texts) {
+    if (isStrateText(text)) {
+      try {
+        strateFiles.push(SecsCore.strateParse(text));
+      } catch (e) {
+        strateParseErrors.push(e.message);
+      }
+      continue;
+    }
+    strateFiles = strateFiles.concat(SecsCore.extractStrateFiles(text, DOMParser));
+    waferMaps = waferMaps.concat(SecsCore.extractWaferMaps(text, DOMParser));
+  }
+  if (!strateFiles.length) {
+    let msg = `${file.name}：解壓縮後的log裡沒有找到StrateMap(基板)資料，也不是看得懂的.strate檔案格式`;
+    if (strateParseErrors.length) msg += `（${strateParseErrors[0]}）`;
+    throw new Error(msg);
+  }
+
+  return {
+    substrates: strateFiles.map((sf, i) => substrateSummary(sf, i)),
+    wafer_maps: waferMaps.map((wm, i) => waferMapSummary(wm, i)),
+  };
+}
+
+function formatTimestamp(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// 跟api_build_new_substrate()一樣：全新基板，可填目標是樣板基板宣告
+// 形狀(SUBSTRATE_COLUMN x SUBSTRATE_ROW)的全部位置(column-major排序)，
+// 不是扣掉樣板本身已經有的。拋出Error時訊息直接對應後端原本的錯誤
+// 文字，呼叫端(downloadNewSubstrate())用同一套try/catch處理。
+function buildNewSubstrate(templateSf, substrateId, waferRing, picks) {
+  const targets = [];
+  for (let col = 0; col < templateSf.substrate_column; col++) {
+    for (let row = 0; row < templateSf.substrate_row; row++) {
+      targets.push(`${col}:${row}`);
+    }
+  }
+  if (picks.length > targets.length) {
+    throw new Error(`選了${picks.length}顆，但這個形狀只有${targets.length}個位置`);
+  }
+
+  const now = new Date();
+  const dieInfo = picks.map((pick, i) => ({
+    index: i + 1,
+    wafer_ring: waferRing,
+    wafer_xy: `${pick.x}:${pick.y}`,
+    sub_pos: targets[i],
+    bin: String(pick.bin || "1"),
+    f6: "0", f7: "0",
+    timestamp: formatTimestamp(new Date(now.getTime() + i * 1000)),
+    f9: "1",
+  }));
+
+  const newSf = {
+    ...templateSf,
+    substrate_id: substrateId,
+    die_info: dieInfo,
+    other_layer_die_info: [],
+    total_bond_die_qty: dieInfo.length,
+    good_die: dieInfo.length,
+  };
+  return substrateSummary(newSf, -1);
+}
+// SECS LOG BINGO MAP 檢視器 — 簡化版獨立小工具的前端。
+// 2026/10/29改版：原本是「每枚基板各自一張卡片，上下排列」，現在改成
+// 「左邊一欄列出所有基板、點一枚，右邊固定分成wafer圖(左)/BINGO MAP(右)
+// 兩半」——選取狀態跟著目前選到的basename走，不用每次都重新整理整頁。
+//
+// 正向/反向：純粹是畫面排列(列的順序倒過來，欄不動——跟bingomap/CLAUDE.md
+// 記錄過的真實案例「Bingo Map Query報表自己的顯示轉換」同一種變換)，
+// 兩張圖(wafer圖、BINGO MAP圖)都套用同一個orientation狀態，這樣切換時
+// 兩張圖的「上下方向」會維持一致，不會變成各轉各的看不出對應關係。
+
+let lastSubstrates = [];
+let lastWaferMaps = [];
+let selectedIndex = -1;
+let orientation = "forward"; // "forward" | "reverse"
+let currentEmployeeId = "";
+
+// 2026/10/29新增：登入(工號)——不是帳密驗證，純粹是「每次使用都留下
+// 工號可追溯」，所以每次開頁面都會跳登入畫面，但用localStorage記住上次
+// 填過的工號當預設值(同一個人不用每次重打，真的換人用才要手動改)。
+const EMPLOYEE_ID_STORAGE_KEY = "sbv_last_employee_id";
+
+function showLoginOverlay() {
+  document.getElementById("login-overlay").style.display = "flex";
+  const input = document.getElementById("login-input");
+  try {
+    input.value = localStorage.getItem(EMPLOYEE_ID_STORAGE_KEY) || "";
+  } catch (err) {
+    // localStorage不可用(例如無痕視窗擋存取)——預設值留空，不影響登入本身
+  }
+  input.focus();
+  input.select();
+}
+
+function doLogin() {
+  const input = document.getElementById("login-input");
+  const id = input.value.trim();
+  const errorEl = document.getElementById("login-error");
+  if (!id) {
+    errorEl.textContent = "請輸入工號";
+    return;
+  }
+  currentEmployeeId = id;
+  try {
+    localStorage.setItem(EMPLOYEE_ID_STORAGE_KEY, id);
+  } catch (err) {
+    // 存不進去就算了，不影響這次使用，只是下次預設值不會自動帶出來
+  }
+  errorEl.textContent = "";
+  document.getElementById("current-employee-id").textContent = id;
+  document.getElementById("login-overlay").style.display = "none";
+}
+
+document.getElementById("btn-login").addEventListener("click", doLogin);
+document.getElementById("login-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") doLogin();
+});
+document.getElementById("btn-switch-user").addEventListener("click", showLoginOverlay);
+showLoginOverlay();
+
+// Bin color palette — same convention as app.js/strate_xml.js的BIN_COLORS
+// (這個專案一貫的做法：每個檔案各自維護一份，不是共用模組)，色碼來自
+// 反編譯WaferCoordinate.exe的clsWaferMap.cs的DrawBinRect()，不是自己配的。
+const BIN_COLORS = {
+  "1": "#13ff13", "2": "#0000cd", "3": "#ff8c00", "4": "#c60060",
+  "5": "#40e0d0", "6": "#838383", "7": "#ff59ff", "8": "#11ffff",
+  "9": "#848400",
+};
+const BIN_COLOR_FALLBACK = "#e0ffff";
+
+function binColor(bin) {
+  return BIN_COLORS[bin] !== undefined ? BIN_COLORS[bin] : BIN_COLOR_FALLBACK;
+}
+
+function renderBinLegend(containerId, bins) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const sorted = [...bins].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  el.innerHTML = sorted.map((b) => `<span><i style="background:${binColor(b)}"></i>Bin ${b}</span>`).join("");
+}
+
+// 2026/10/30桌機版：extractOneFile()改成在ui_glue.js裡定義——原本這裡
+// 是把檔案轉base64丟給Flask後端解析，桌機版沒有後端，改成直接在瀏覽器
+// 裡呼叫ZipReader/SecsCore完成同樣的工作(解壓縮→解碼→解析)，回傳格式
+// 跟原本後端回應的JSON結構一致，呼叫端(extractLog())完全不用改。
+// arrayBufferToBase64()也一併移除——沒有fetch了，不需要轉base64。
+
+// 2026/10/29新增：「選擇整個資料夾」——使用者反映分別好幾天的基板，各自
+// 來源wafer的WaferStart事件常常落在不同天的log檔案裡，一個個Ctrl/Shift
+// 手動多選很容易漏掉；改用`webkitdirectory`讓瀏覽器把整個資料夾(含子
+// 資料夾)的檔案一次丟進來，前端自己過濾只留看得懂的副檔名(資料夾裡
+// 常常還混著跟log無關的檔案，例如ini/縮圖快取，不能整批硬塞給後端)。
+// `pendingFiles`是「選一般多個檔案」跟「選整個資料夾」共用的那份清單——
+// 兩種選法互斥，後選的那次會蓋掉前一次的結果，不會疊加混在一起。
+// 2026/10/30新增`.strate`：使用者手上有時候已經是現成的.strate檔案
+// (不是SECS log)，後端`_is_strate_text()`看內容自動分辨要用哪種方式
+// 解析，前端這裡只負責「別把看起來無關的檔案也送進去」這一層過濾。
+const LOG_FILE_EXTENSIONS = [".log", ".txt", ".zip", ".strate"];
+function isLogLikeFile(file) {
+  const name = file.name.toLowerCase();
+  return LOG_FILE_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+let pendingFiles = [];
+
+document.getElementById("log-file").addEventListener("change", (e) => {
+  pendingFiles = [...e.target.files];
+  document.getElementById("folder-picked-label").textContent = "";
+});
+
+document.getElementById("btn-pick-folder").addEventListener("click", () => {
+  document.getElementById("log-folder").click();
+});
+
+document.getElementById("log-folder").addEventListener("change", (e) => {
+  const all = [...e.target.files];
+  pendingFiles = all.filter(isLogLikeFile);
+  document.getElementById("log-file").value = "";
+  const label = document.getElementById("folder-picked-label");
+  const skipped = all.length - pendingFiles.length;
+  label.textContent = `已選資料夾，找到 ${pendingFiles.length} 個log檔案` +
+    (skipped ? `（略過 ${skipped} 個非log檔案）` : "");
+});
+
+async function extractLog() {
+  const status = document.getElementById("status");
+  const loading = document.getElementById("loading-indicator");
+  const loadingText = document.getElementById("loading-text");
+  const btn = document.getElementById("btn-extract");
+  const files = pendingFiles;
+  if (!files.length) {
+    status.className = "error";
+    status.textContent = "請先選擇log檔案（可以是.zip，也可以一次選多個，或選整個資料夾）";
+    return;
+  }
+  status.className = "";
+  status.textContent = "";
+  // 2026/10/29新增：解析中讓🐸一直跳，確認畫面是活的（不是按了沒反應），
+  // 同時鎖住按鈕，避免使用者以為沒反應又多按一次造成同一批檔案重複解析。
+  loading.classList.add("active");
+  btn.disabled = true;
+
+  // 2026/10/29修正重大bug：「選整個資料夾」上傳499個檔案時，一碰到第一個
+  // 沒有StrateMap資料的檔案（資料夾裡混著跟STRATE無關的log，例如
+  // Trace*.log，後端對這種檔案一律回400）整批就直接中斷、前面已經解析
+  // 成功的檔案全部被丟掉，使用者完全看不到任何結果。改成逐一個別try/catch
+  // ——單一檔案失敗只記錄下來，不中斷其他檔案的解析；全部跑完之後，只要
+  // 有任何一個檔案成功就顯示結果，並且把「略過幾個檔案」的統計一起列出來，
+  // 不是靜默吞掉也不是整批報廢。
+  const results = [];
+  const failures = [];
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      loadingText.textContent = `解析中，請稍候...（第 ${i + 1}/${files.length} 個檔案：${file.name}）`;
+      try {
+        results.push(await extractOneFile(file));
+      } catch (err) {
+        failures.push({ name: file.name, message: err.message });
+      }
+    }
+  } finally {
+    loading.classList.remove("active");
+    btn.disabled = false;
+  }
+
+  if (!results.length) {
+    status.className = "error";
+    status.textContent = `選的 ${files.length} 個檔案都沒有解析出基板資料` +
+      (failures.length ? `（例如「${failures[0].name}」：${failures[0].message}）` : "");
+    document.getElementById("result-area").style.display = "none";
+    return;
+  }
+
+  lastSubstrates = results.flatMap((r) => r.substrates);
+  lastWaferMaps = results.flatMap((r) => r.wafer_maps || []);
+  status.className = failures.length ? "" : "ok";
+  status.textContent = `解析完成，找到 ${lastSubstrates.length} 枚基板（共 ${files.length} 個檔案，成功 ${results.length} 個` +
+    (failures.length ? `，略過 ${failures.length} 個沒有基板資料的檔案）` : `）`);
+  document.getElementById("result-area").style.display = "";
+  renderList();
+  selectSubstrate(0);
+}
+
+function renderList() {
+  const list = document.getElementById("substrate-list");
+  list.innerHTML = "";
+  lastSubstrates.forEach((s, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "sbv-list-item" + (i === selectedIndex ? " active" : "");
+    btn.innerHTML = `<b>${s.substrate_id || "(無編號)"}</b><span>DIE ${s.num_dies} 顆</span>`;
+    btn.addEventListener("click", () => selectSubstrate(i));
+    list.appendChild(btn);
+  });
+  // 2026/10/30新增：使用者反映「下載檔案要多一項全部下載」——清單一次
+  // 可能有20幾枚基板，一枚一枚點下載太累。按鈕文字跟著目前這批的枚數走，
+  // 清單是空的就整個隱藏(沒有可以下載的東西)。
+  const allBtn = document.getElementById("btn-download-all");
+  allBtn.style.display = lastSubstrates.length ? "" : "none";
+  allBtn.textContent = `全部下載（共 ${lastSubstrates.length} 枚，.zip）`;
+}
+
+function findWaferMapFor(substrate) {
+  return lastWaferMaps.find((wm) => wm.frame_id === substrate.wafer_ring) || null;
+}
+
+function displayRow(row, minRow, maxRow) {
+  return orientation === "reverse" ? maxRow - (row - minRow) : row;
+}
+
+function renderWaferPane(substrate) {
+  const container = document.getElementById("wafer-grid");
+  container.innerHTML = "";
+  const wm = findWaferMapFor(substrate);
+  if (!wm || !wm.cells.length) {
+    container.innerHTML = '<p class="sbv-empty">這份log裡沒有找到這枚基板來源wafer（' +
+      (substrate.wafer_ring || "無Wafer Ring") +
+      '）的WaferStart資料——通常是因為這片來源wafer是在<b>別份log</b>（不同時段/天）被掃描記錄的，' +
+      '不在目前這批上傳範圍裡。右邊這枚本身的BINGO MAP資料不受影響，仍然完整；' +
+      '如果想看這片wafer的圖，把相關那幾天的log一起多選上傳即可（不影響已經解析出來的其他基板）。</p>';
+    document.getElementById("wafer-bin-legend").innerHTML = "";
+    return;
+  }
+
+  const cellMap = new Map(wm.cells.map((c) => [`${c.col},${c.row}`, c.bin]));
+  renderBinLegend("wafer-bin-legend", new Set(wm.cells.map((c) => c.bin)));
+  const highlight = new Set(substrate.wafer_positions.map((p) => `${p.col},${p.row}`));
+
+  const minCol = Math.min(...wm.cells.map((c) => c.col));
+  const maxCol = Math.max(...wm.cells.map((c) => c.col));
+  const minRow = Math.min(...wm.cells.map((c) => c.row));
+  const maxRow = Math.max(...wm.cells.map((c) => c.row));
+
+  const rows = [];
+  for (let row = minRow; row <= maxRow; row++) rows.push(row);
+  rows.sort((a, b) => displayRow(a, minRow, maxRow) - displayRow(b, minRow, maxRow));
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "wafer-row";
+  const corner = document.createElement("div");
+  corner.className = "grid-axis-cell grid-axis-corner";
+  headerRow.appendChild(corner);
+  for (let col = maxCol; col >= minCol; col--) {
+    const label = document.createElement("div");
+    label.className = "grid-axis-cell";
+    label.textContent = col;
+    headerRow.appendChild(label);
+  }
+  container.appendChild(headerRow);
+
+  for (const row of rows) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "wafer-row";
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "grid-axis-cell";
+    rowLabel.textContent = row;
+    rowEl.appendChild(rowLabel);
+    for (let col = maxCol; col >= minCol; col--) {
+      const cell = document.createElement("div");
+      cell.className = "wafer-cell";
+      const bin = cellMap.get(`${col},${row}`);
+      if (bin !== undefined) {
+        cell.classList.add("bin-cell");
+        cell.style.setProperty("--bin-color", binColor(bin));
+      }
+      const key = `${col},${row}`;
+      if (highlight.has(key)) {
+        // .focus只加外框、不蓋掉底色(.referenced會用純色蓋掉格子)——這裡
+        // 要同時看到「這格本來是什麼bin」跟「這格屬不屬於目前選到的
+        // 基板」，兩個資訊都要留著，不能只顯示其中一個。
+        cell.classList.add("focus");
+      }
+      // 2026/10/29新增：只有「良品(bin=1)、還沒被這枚基板自己用掉」的
+      // 格子才能點選/框選，跟app.js的toggleStagePick()同一條規則(不能
+      // 手動塞一顆壞die進良品位置)。dataset存真正的col/row(不受正向/反向
+      // 顯示排序影響，跟.focus判斷用同一份座標)，drag-select事件處理器
+      // 直接讀這個，不用另外反推畫面排序。即使不能選也存col/row/bin——
+      // 點到不能選的格子時，click handler要能根據這些資料給出「為什麼
+      // 不能選」的具體提示，不能像一開始那樣完全沒反應(使用者誤以為是
+      // 功能壞掉)。
+      cell.dataset.col = col;
+      cell.dataset.row = row;
+      if (bin !== undefined) cell.dataset.bin = bin;
+      if (bin === "1" && !highlight.has(key)) {
+        cell.classList.add("pickable");
+        if (stagedPicks.some((p) => p.x === col && p.y === row)) {
+          cell.classList.add("staged");
+        }
+      }
+      cell.title = bin !== undefined ? `${col}:${row} — bin=${bin}` : `${col}:${row} — 無資料`;
+      rowEl.appendChild(cell);
+    }
+    container.appendChild(rowEl);
+  }
+}
+
+// ---- 2026/10/29新增、同日改版：手動建立全新基板 ------------------------
+// 第一版做成「補進目前選到的這枚基板自己的空白位置、合併回同一份檔案」，
+// 使用者看了畫面後回報「你是不是誤會我的意思」——要的是完全獨立、不綁定
+// 清單裡任何一枚基板的全新基板：自己輸入SUBSTRATE_ID，從wafer圖挑die
+// 填進一張完全空白的BINGO MAP，下載一份獨立全新的.strate檔案，不跟任何
+// 既有資料合併(用AskUserQuestion當面確認過這個方向)。
+//
+// stagedPicks在這一版裡本身就是「這枚全新基板的全部內容」，不是「暫存、
+// 等套用」——框選的當下直接即時重畫空白BINGO MAP預覽(newSubstrateTargets()
+// 純粹是座標排序的小函式，不是.strate格式序列化，複製一份在前端做預覽
+// 風險很低；真正送出下載時，後端還是會用StrateFile.parse()/to_text()
+// 重新產生一次正式格式，前端這份只是「看起來對不對」的即時預覽，不是
+// 最終依據)。
+let stagedPicks = []; // {x, y, bin}[]
+let waferDragStart = null;
+let pickStatusResetTimer = null;
+
+function togglePick(col, row, bin) {
+  const idx = stagedPicks.findIndex((p) => p.x === col && p.y === row);
+  if (idx >= 0) {
+    stagedPicks.splice(idx, 1);
+    return;
+  }
+  stagedPicks.push({ x: col, y: row, bin });
+}
+
+function stagePickIfNew(col, row, bin) {
+  if (stagedPicks.some((p) => p.x === col && p.y === row)) return;
+  stagedPicks.push({ x: col, y: row, bin });
+}
+
+function scanPickRectangle(start, end) {
+  const colLo = Math.min(start.col, end.col), colHi = Math.max(start.col, end.col);
+  const rowLo = Math.min(start.row, end.row), rowHi = Math.max(start.row, end.row);
+  document.querySelectorAll("#wafer-grid .wafer-cell.pickable").forEach((cell) => {
+    const col = Number(cell.dataset.col), row = Number(cell.dataset.row);
+    if (col >= colLo && col <= colHi && row >= rowLo && row <= rowHi) {
+      stagePickIfNew(col, row, cell.dataset.bin);
+    }
+  });
+}
+
+function updatePickControls() {
+  const status = document.getElementById("pick-status");
+  const downloadBtn = document.getElementById("btn-download-new");
+  const idInput = document.getElementById("new-substrate-id");
+  status.textContent = `已選 ${stagedPicks.length} 顆`;
+  downloadBtn.disabled = stagedPicks.length === 0 || !idInput.value.trim();
+}
+
+function refreshPickUI() {
+  updatePickControls();
+  if (selectedIndex >= 0) {
+    renderWaferPane(lastSubstrates[selectedIndex]);
+    renderNewSubstratePreview(lastSubstrates[selectedIndex]);
+  }
+}
+
+const waferGridEl = document.getElementById("wafer-grid");
+waferGridEl.addEventListener("mousedown", (e) => {
+  const cell = e.target.closest(".wafer-cell.pickable");
+  if (!cell) return;
+  waferDragStart = { col: Number(cell.dataset.col), row: Number(cell.dataset.row) };
+});
+waferGridEl.addEventListener("mouseup", (e) => {
+  const cell = e.target.closest(".wafer-cell.pickable");
+  if (!cell || !waferDragStart) {
+    waferDragStart = null;
+    return;
+  }
+  const end = { col: Number(cell.dataset.col), row: Number(cell.dataset.row) };
+  if (end.col === waferDragStart.col && end.row === waferDragStart.row) {
+    togglePick(end.col, end.row, cell.dataset.bin);
+  } else {
+    scanPickRectangle(waferDragStart, end);
+  }
+  waferDragStart = null;
+  refreshPickUI();
+});
+
+// 2026/10/29新增：點到不能選的格子(非良品、或已經被這枚基板自己用掉)
+// 原本完全沒有任何反應——使用者誤以為是「功能壞掉」，實際上是點錯格子。
+// 這裡用plain click(不是drag的mousedown/mouseup，避免跟上面那組重複
+// 觸發)補一句具體原因，短暫顯示在pick-status位置、1.8秒後自動還原成
+// 正常的「已選N顆」。
+waferGridEl.addEventListener("click", (e) => {
+  const cell = e.target.closest(".wafer-cell");
+  if (!cell || cell.classList.contains("pickable")) return;
+  const bin = cell.dataset.bin;
+  let reason;
+  if (bin === undefined) {
+    reason = "這個位置在wafer圖上沒有die資料，不能選。";
+  } else if (bin !== "1") {
+    reason = `這格是bin=${bin}(非良品)，不能選——只能選良品(bin=1)。`;
+  } else {
+    reason = "這格已經被目前這枚基板自己用掉了，不能重複選。";
+  }
+  const status = document.getElementById("pick-status");
+  status.textContent = reason;
+  clearTimeout(pickStatusResetTimer);
+  pickStatusResetTimer = setTimeout(updatePickControls, 1800);
+});
+
+document.getElementById("btn-clear-picks").addEventListener("click", () => {
+  stagedPicks = [];
+  refreshPickUI();
+});
+
+document.getElementById("new-substrate-id").addEventListener("input", updatePickControls);
+
+// 2026/10/30桌機版：原本這裡是POST樣板文字到後端的build_new_substrate()，
+// 桌機版沒有後端，改成直接呼叫ui_glue.js的buildNewSubstrate()——邏輯逐字
+// 對應後端的api_build_new_substrate()，錯誤訊息(例如選的顆數超過形狀
+// 總位置數)也沿用同一套文字，catch的處理方式不用改。
+function downloadNewSubstrate() {
+  const idInput = document.getElementById("new-substrate-id");
+  const substrateId = idInput.value.trim();
+  if (!stagedPicks.length || !substrateId || selectedIndex < 0) return;
+  const template = lastSubstrates[selectedIndex];
+  const status = document.getElementById("status");
+  const downloadBtn = document.getElementById("btn-download-new");
+  downloadBtn.disabled = true;
+  try {
+    const newSubstrate = buildNewSubstrate(template._raw, substrateId, template.wafer_ring, stagedPicks);
+    status.className = "ok";
+    status.textContent = `已建立新基板「${newSubstrate.substrate_id}」，開始下載。`;
+    downloadSubstrate(newSubstrate);
+  } catch (err) {
+    status.className = "error";
+    status.textContent = err.message;
+  } finally {
+    updatePickControls();
+  }
+}
+
+document.getElementById("btn-download-new").addEventListener("click", downloadNewSubstrate);
+
+// 全新基板的形狀借用「目前選到的這一枚」當樣板(同一片wafer上的基板通常
+// 同形狀)，用它的bounding box(min/max col/row)當範圍、column-major排序
+// (欄由小到大、每欄內列由小到大)——跟後端build_new_substrate()用同一種
+// 排序邏輯，保證前端這份即時預覽跟下載後的正式檔案排列順序一致。
+function newSubstrateTargets(substrate) {
+  const targets = [];
+  for (let col = substrate.min_col; col <= substrate.max_col; col++) {
+    for (let row = substrate.min_row; row <= substrate.max_row; row++) {
+      targets.push({ col, row });
+    }
+  }
+  return targets;
+}
+
+function renderNewSubstratePreview(substrate) {
+  const targets = newSubstrateTargets(substrate);
+  const positions = stagedPicks
+    .map((pick, i) => (targets[i] ? { col: targets[i].col, row: targets[i].row, bin: pick.bin } : null))
+    .filter(Boolean);
+  renderSubstrateGrid("substrate-grid-new", substrate, positions, "還沒選");
+}
+
+function renderSubstrateGrid(containerId, substrate, positions, emptyLabel) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  const { min_col, max_col, min_row, max_row } = substrate;
+  const posByRowCol = new Map();
+  for (const p of positions) posByRowCol.set(`${p.col},${p.row}`, p);
+
+  const rows = [];
+  for (let row = min_row; row <= max_row; row++) rows.push(row);
+  rows.sort((a, b) => displayRow(a, min_row, max_row) - displayRow(b, min_row, max_row));
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "wafer-row";
+  const corner = document.createElement("div");
+  corner.className = "grid-axis-cell substrate-axis-corner";
+  headerRow.appendChild(corner);
+  for (let col = min_col; col <= max_col; col++) {
+    const label = document.createElement("div");
+    label.className = "grid-axis-cell substrate-axis-cell";
+    label.textContent = col;
+    headerRow.appendChild(label);
+  }
+  container.appendChild(headerRow);
+
+  for (const row of rows) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "wafer-row";
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "grid-axis-cell substrate-axis-cell";
+    rowLabel.textContent = row;
+    rowEl.appendChild(rowLabel);
+    for (let col = min_col; col <= max_col; col++) {
+      const cell = document.createElement("div");
+      cell.className = "substrate-cell";
+      const pos = posByRowCol.get(`${col},${row}`);
+      if (pos) {
+        cell.classList.add("filled");
+        cell.title = `${col}:${row} — bin=${pos.bin}`;
+      } else {
+        cell.title = `${col}:${row} — ${emptyLabel}`;
+      }
+      rowEl.appendChild(cell);
+    }
+    container.appendChild(rowEl);
+  }
+}
+
+function renderBingoMapPane(substrate) {
+  renderSubstrateGrid("substrate-grid", substrate, substrate.positions, "無die");
+}
+
+// 2026/10/30桌機版：原本這裡下載前會先POST一筆記錄到後端的CSV(工號/
+// 時間/流水號/方向)——桌機版沒有伺服器、沒有地方可以寫這個檔案，這個
+// 稽核功能在這個版本裡**沒有**對應物，誠實拿掉，不是假裝還有記錄但
+// 其實什麼都沒寫。登入畫面保留工號輸入(養成習慣、畫面上顯示用)，但
+// 已經在#login-card裡的文字明講「不會把這個工號寫進任何紀錄檔」。
+function downloadSubstrate(substrate) {
+  const blob = new Blob([substrate.text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = substrate.filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ---- 2026/10/30新增：「全部下載」打包成一個.zip -------------------------
+// 這支工具一貫「不依賴外部CDN/函式庫」(見module docstring)，打包zip也
+// 不例外——自己寫一個只支援STORED(不壓縮)項目的最小ZIP產生器，不是真的
+// 要省壓縮率(.strate檔案都很小，壓不壓差異不大)，是換掉「額外帶一份
+// DEFLATE壓縮實作」的複雜度，STORED只需要CRC-32+照ZIP規格排版二進位
+// 欄位，不需要真的壓縮演算法。
+function crc32(bytes) {
+  let crc = ~0;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return ~crc >>> 0;
+}
+
+function buildZip(entries) {
+  // entries: [{name, data: Uint8Array}] — STORED-only zip per PKZIP APPNOTE
+  // §4.3: local file header(30B固定) + 檔名 + 資料，逐一項目重複；接著
+  // 一份central directory(每項46B固定+檔名)；最後end of central directory
+  // (22B固定)收尾。compressed size跟uncompressed size寫一樣的值(因為沒有
+  // 壓縮)，method固定填0(= stored)。
+  const encoder = new TextEncoder();
+  const localChunks = [];
+  const centralChunks = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBytes = encoder.encode(entry.name);
+    const data = entry.data;
+    const crc = crc32(data);
+
+    // 2026/10/30：第一版這裡的欄位位移抄錯了——照搬了central directory的
+    // 排版(sig/version made by/version needed/...)，但local file header
+    // 沒有「version made by」這個欄位，少了2 bytes，後面全部欄位(crc起)
+    // 都因此多偏移了2 bytes，寫出來的zip乍看能建出來、Playwright下載也
+    // 正常觸發，但Python的zipfile.testzip()一讀就報「File name in
+    // directory and header differ」——這種格式類bug光靠「看起來有跑」
+    // 完全抓不到，靠真正拿標準工具(Python zipfile)讀回來交叉驗證才抓到，
+    // 跟這個專案一貫「不能只看起來對」的原則一致。正確的local file
+    // header欄位位移：sig(0,4B) version(4,2B) flags(6,2B) method(8,2B)
+    // modtime(10,2B) moddate(12,2B) crc(14,4B) compsize(18,4B)
+    // uncompsize(22,4B) namelen(26,2B) extralen(28,2B)，總共30 bytes。
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true); // version needed to extract
+    local.setUint16(6, 0, true); // general purpose flag
+    local.setUint16(8, 0, true); // method = stored
+    local.setUint16(10, 0, true); // mod time
+    local.setUint16(12, 0x21, true); // mod date(任意合法值，這些.strate檔名裡本來就有時間戳記)
+    local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true); // compressed size
+    local.setUint32(22, data.length, true); // uncompressed size
+    local.setUint16(26, nameBytes.length, true);
+    // extra field length(位移30)留0，不用再寫
+
+    localChunks.push(new Uint8Array(local.buffer), nameBytes, data);
+
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(4, 20, true); // version made by
+    central.setUint16(6, 20, true); // version needed
+    central.setUint16(8, 0, true);
+    central.setUint16(10, 0, true);
+    central.setUint16(12, 0, true);
+    central.setUint16(14, 0x21, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, data.length, true);
+    central.setUint32(24, data.length, true);
+    central.setUint16(28, nameBytes.length, true);
+    central.setUint16(30, 0, true); // extra length
+    central.setUint16(32, 0, true); // comment length
+    central.setUint16(34, 0, true); // disk number start
+    central.setUint16(36, 0, true); // internal attrs
+    central.setUint32(38, 0, true); // external attrs
+    central.setUint32(42, offset, true); // local header offset
+
+    centralChunks.push(new Uint8Array(central.buffer), nameBytes);
+
+    offset += local.byteLength + nameBytes.length + data.length;
+  }
+
+  const centralStart = offset;
+  const centralSize = centralChunks.reduce((sum, c) => sum + c.length, 0);
+
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(4, 0, true);
+  end.setUint16(6, 0, true);
+  end.setUint16(8, entries.length, true); // entries on this disk
+  end.setUint16(10, entries.length, true); // entries total
+  end.setUint32(12, centralSize, true);
+  end.setUint32(16, centralStart, true);
+  end.setUint16(20, 0, true); // comment length
+
+  const allChunks = [...localChunks, ...centralChunks, new Uint8Array(end.buffer)];
+  const total = allChunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(total);
+  let pos = 0;
+  for (const chunk of allChunks) {
+    out.set(chunk, pos);
+    pos += chunk.length;
+  }
+  return out;
+}
+
+// 把全部.strate內容打包成一個zip觸發瀏覽器下載——正向/反向不影響內容
+// (純顯示層轉換，見module docstring)，直接用每枚substrate.text本來的
+// 內容，不用管目前畫面上切的是哪個方向。桌機版沒有下載稽核紀錄(理由
+// 同downloadSubstrate()的comment)，這裡不像原本那樣逐枚呼叫logDownload()。
+function downloadAllSubstrates() {
+  if (!lastSubstrates.length) return;
+  const encoder = new TextEncoder();
+  const usedNames = new Set();
+  const entries = lastSubstrates.map((s) => {
+    let name = s.filename || `${s.substrate_id || "substrate"}.strate`;
+    while (usedNames.has(name)) name = `_${name}`; // 極少見的檔名撞名，前面加底線避免互相覆蓋
+    usedNames.add(name);
+    return { name, data: encoder.encode(s.text) };
+  });
+
+  const zipBytes = buildZip(entries);
+  const blob = new Blob([zipBytes], { type: "application/zip" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const ts = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  a.download = `BINGO_MAP_全部基板_${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}${pad(ts.getHours())}${pad(ts.getMinutes())}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("btn-download-all").addEventListener("click", downloadAllSubstrates);
+
+// 2026/10/29新增：勾選後直接在畫面上看這一枚的.strate原始內容——跟
+// downloadSubstrate()下載拿到的substrate.text是同一份資料，不用真的存
+// 一次檔案才能核對裡面的欄位。checkbox狀態故意不隨切換基板重置(勾著就
+// 一直顯示)，這樣逐枚核對時不用每切一枚就重勾一次。
+function renderRawStrateBox(substrate) {
+  const box = document.getElementById("raw-strate-box");
+  const checked = document.getElementById("chk-raw-strate").checked;
+  if (checked && substrate) {
+    box.textContent = substrate.text;
+    box.style.display = "";
+  } else {
+    box.style.display = "none";
+  }
+}
+
+function selectSubstrate(i) {
+  if (!lastSubstrates.length) return;
+  // 切換基板時清掉「手動建立全新基板」的選取——wafer座標、樣板欄位都是
+  // 跟著「目前選到的這一枚」走的，換一枚之後舊的選取已經不適用，留著
+  // 只會讓人誤以為還能套用到新樣板上。流水號輸入框也一併清空，避免
+  // 不小心沿用上一枚的輸入值下載出錯誤的檔案。
+  stagedPicks = [];
+  document.getElementById("new-substrate-id").value = "";
+  selectedIndex = i;
+  const substrate = lastSubstrates[i];
+  renderList();
+
+  document.getElementById("detail-title").textContent = `流水號：${substrate.substrate_id || "(無編號)"}`;
+  document.getElementById("detail-info").textContent =
+    `Wafer Ring：${substrate.wafer_ring || "—"}　EQPID：${substrate.eqpid || "—"}　DIE數量：${substrate.num_dies}` +
+    (substrate.num_other_layer_dies ? `（另有疊層${substrate.num_other_layer_dies}顆）` : "");
+
+  const btn = document.getElementById("btn-download");
+  btn.style.display = "";
+  btn.textContent = `下載 ${substrate.filename}`;
+  btn.onclick = () => downloadSubstrate(substrate);
+
+  renderWaferPane(substrate);
+  renderBingoMapPane(substrate);
+  renderNewSubstratePreview(substrate);
+  renderRawStrateBox(substrate);
+  updatePickControls();
+}
+
+document.getElementById("chk-raw-strate").addEventListener("change", () => {
+  renderRawStrateBox(selectedIndex >= 0 ? lastSubstrates[selectedIndex] : null);
+});
+
+document.getElementById("btn-extract").addEventListener("click", extractLog);
+for (const el of document.querySelectorAll('input[name="orientation"]')) {
+  el.addEventListener("change", (e) => {
+    orientation = e.target.value;
+    if (selectedIndex >= 0) selectSubstrate(selectedIndex);
+  });
+}
+</script>
+</body>
+</html>

@@ -2089,3 +2089,51 @@ filename length全部多偏移了2 bytes。這種bug在Playwright裡「看起來
 不覺。修正後用`zipfile.testzip()`回傳`None`(代表沒有任何一個entry壞掉)、6個entries逐一讀出來
 跟`extract_strate_files()`直接解析同一份log得到的`StrateFile.to_text()`逐字比對，完全一致才
 確認真的修好。
+
+## 新增完全離線的單一HTML檔案「桌機版」：`webapp/static/secs_bingo_map_viewer_standalone.html`(2026/10/30)
+
+使用者看到同事既有的工具叫「STRATE_v92桌機版.html」，要求照同一種慣例做一份——雙擊或拖進瀏覽器
+就能用，不裝Python、不開伺服器、不接任何CDN，跟`webapp/simple_bingo_viewer.py`(Flask版，仍然
+保留、完全沒動)並存，給不方便架伺服器的場合用。
+
+**做法：把Python邏輯逐一翻譯成vanilla JS，不是重新推導**。這支HTML的`<script>`裡依序接了4段：
+
+1. **手刻的DEFLATE inflate + ZIP讀取器**——沒有後端可以用`zipfile`，也不能接CDN(pako/fflate)，
+   只能自己寫一份RFC1951 raw inflate(bit reader、固定/動態Huffman解碼)跟一個以central directory
+   為準的ZIP讀取器(central directory永遠是authoritative來源，不像local header在streaming寫入
+   時size可能是0)，只支援STORED跟DEFLATE(Python `zipfile`唯二會寫出來的壓縮方式)。驗證方式：拿
+   真實log fixture用Python `zipfile`分別壓成STORED跟DEFLATED兩種zip，解壓縮後跟原始bytes做
+   SHA256逐byte比對，兩種都通過；另外建一個真實的「資料夾zip包著.log.zip」巢狀結構，驗證遞迴
+   解壓縮(`collectLogBytes()`，跟`_collect_log_bytes()`同一套depth上限5層的邏輯)也能正確解開拿到
+   6枚基板——不是只測簡單case。
+2. **`bingomap/secs_log.py` + `bingomap/strate.py`的逐函式JS翻譯**——UTF-16LE/BE偵測、
+   `<Transaction>`區塊擷取(含self-closing tag的regex修正)、`JobInfoFromAFC`派工關聯(追蹤文件
+   順序上「最近一次看到的派工」)、`WaferStart`的8方向(swap×flip_x×flip_y)座標自動偵測、
+   `.strate`的`parse()`/`to_text()`序列化。驗證方式：對著`bingomap/tests/fixtures/`裡3份真實
+   log(`BAA0820260814_07_Z26306101253.log`1枚基板299顆die、`BAA0320260906_17.0_BB93AE_8L808002A1.log`
+   6枚基板含J8204486304顆die、`BAA0520261004_02.0_jobinfo.log`的JobInfoFromAFC關聯案例)分別重現
+   跟Python版一致的解析結果，另外對著1份真實`.strate`檔案(`2070_V36AWAQ_J8204486_20260906135238.strate`)
+   做`parse()`→`to_text()`逐byte round-trip，也重現了這份文件前面記錄過的97.5%(1425/1461)wafer
+   方向自動偵測命中率，數字完全對得上。
+3. **取代Flask後端的glue層**——`_substrate_positions()`/`_wafer_positions()`/`_wafer_map_summary()`/
+   `_substrate_summary()`/`api_build_new_substrate()`這幾個函式邏輯原封搬過來，只是從Python換成
+   JS，全部在使用者自己的瀏覽器裡跑，資料不會離開這台電腦。這裡也補上`_is_strate_text()`的JS版
+   (`isStrateText()`)，讓桌機版跟Flask版一樣能直接吃現成的`.strate`檔案，不是只能吃SECS log。
+4. **畫面渲染邏輯**——`webapp/static/simple_bingo_viewer.js`幾乎原封搬過來(清單/wafer圖/BINGO MAP
+   圖/手動建立全新基板/正向反向切換/全部下載打包zip/萬聖節青蛙載入動畫)，只有牽涉`fetch()`呼叫
+   後端的幾處改成呼叫上面1~3的本地函式：`extractOneFile()`改叫本地的ZipReader+SecsCore、
+   `downloadNewSubstrate()`改成直接呼叫`buildNewSubstrate()`不用等網路來回。
+
+**誠實拿掉的功能**：原本Flask版每次下載會POST一筆(工號/時間/流水號/方向)到後端CSV當稽核紀錄——
+桌機版沒有伺服器，沒有地方可以寫這個檔案，這個功能**沒有**對應物，直接拿掉，不是假裝還有記錄
+其實什麼都沒寫。登入畫面保留工號輸入框(維持「每次使用都留下工號」的習慣、畫面上顯示用)，但
+文字明講「這是純離線單機版，不會把這個工號寫進任何紀錄檔」。
+
+**端到端驗證**：用Playwright分別對著`file://`直接開啟跟`python3 -m http.server`靜態伺服兩種
+方式跑同一套測試(behaviour應該完全一樣，因為沒有任何後端依賴)——上傳單一log(驗證1枚基板299顆
+die)、上傳6基板log(驗證J8204486的304顆die、wafer圖正確畫出bin cell)、正向反向切換、下載單一
+基板並跟原始header逐欄位比對、「全部下載」打包的zip用Python `zipfile.testzip()`驗證完整性(回傳
+`None`)、直接上傳現成`.strate`檔案後重新下載跟原始fixture逐byte相同、手動建立全新基板(框選3顆
+die→輸入流水號→下載→確認`SUBSTRATE_ID`欄位正確)、巢狀資料夾zip(zip包著.log.zip)上傳能正確解開
+拿到6枚基板。全部通過，且兩種開啟方式(`file://`跟`http://`)行為一致，頁面全程沒有任何JS錯誤。
+最後執行`python3 -m pytest bingomap/ webapp/ -q`確認原本的Flask工具完全沒被動到(210個測試全過)。
