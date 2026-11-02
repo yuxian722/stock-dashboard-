@@ -284,16 +284,41 @@ def _wafer_positions(sf: StrateFile) -> list[dict]:
     pane wafer grid, which of that wafer's cells this one substrate
     actually drew from. Same col:row convention as the WaferStart wafer
     map below (see bingomap/secs_log.py's module docstring — no swap
-    needed, this project's real DB machine)."""
-    positions: dict[tuple[int, int], str] = {}
+    needed, this project's real DB machine).
+
+    2026/11/02使用者回報「橘色框會零散」(K2MRG0V4，真實log)，查出來real
+    data本身就會有一枚基板的die橫跨不只一片實體wafer(例如這枚87顆裡72顆
+    來自JC1557、15顆來自JD2B4A——可能是後段補打/repair才從第二片wafer挑
+    的，log裡清清楚楚兩種wafer_ring都有)。左邊畫面每次只顯示`wafer_ring`
+    (第一顆die所在那片)的wafer圖當底圖，但原本這裡回傳的positions沒帶
+    wafer_ring，前端疊加框時把全部87顆座標通通蓋到同一張圖上——另一片
+    wafer的15個座標對這張圖來說毫無意義，純粹巧合落在某個格子，看起來
+    就是「零散」。修法：每個position多帶一個wafer_ring欄位，前端畫框時
+    只疊加跟目前顯示的那片wafer同一個wafer_ring的座標，不是bug不存在，
+    是「疊錯片」的顯示問題。"""
+    positions: dict[tuple[int, int], tuple[str, str]] = {}
     for d in sf.die_info + sf.other_layer_die_info:
         col_str, _, row_str = d.wafer_xy.partition(":")
         try:
             col, row = int(col_str), int(row_str)
         except ValueError:
             continue
-        positions[(col, row)] = d.bin
-    return [{"col": c, "row": r, "bin": b} for (c, r), b in positions.items()]
+        positions[(col, row)] = (d.bin, d.wafer_ring)
+    return [
+        {"col": c, "row": r, "bin": b, "wafer_ring": wr}
+        for (c, r), (b, wr) in positions.items()
+    ]
+
+
+def _wafer_ring_breakdown(sf: StrateFile) -> list[dict]:
+    """How many of this substrate's dies came from each distinct source
+    wafer — usually just one entry, but see `_wafer_positions()` above for
+    why it can be more than one. Surfaced in the UI so the engineer can see
+    at a glance when a substrate's dies span multiple physical wafers."""
+    counts: dict[str, int] = {}
+    for d in sf.die_info + sf.other_layer_die_info:
+        counts[d.wafer_ring] = counts.get(d.wafer_ring, 0) + 1
+    return [{"wafer_ring": wr, "count": n} for wr, n in counts.items()]
 
 
 def _wafer_map_summary(wm, index: int) -> dict:
@@ -336,6 +361,7 @@ def _substrate_summary(sf: StrateFile, index: int) -> dict:
         "max_row": max(sf.substrate_row - 1, data_max_row),
         "positions": positions,
         "wafer_positions": _wafer_positions(sf),
+        "wafer_ring_breakdown": _wafer_ring_breakdown(sf),
         "filename": f"{base_name}_{last_ts}.strate" if last_ts else f"{base_name}.strate",
         "text": sf.to_text(),
     }

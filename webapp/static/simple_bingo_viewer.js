@@ -232,6 +232,7 @@ function displayRow(row, minRow, maxRow) {
 function renderWaferPane(substrate) {
   const container = document.getElementById("wafer-grid");
   container.innerHTML = "";
+  const noteEl = document.getElementById("wafer-ring-note");
   const wm = findWaferMapFor(substrate);
   if (!wm || !wm.cells.length) {
     container.innerHTML = '<p class="sbv-empty">這份log裡沒有找到這枚基板來源wafer（' +
@@ -240,12 +241,34 @@ function renderWaferPane(substrate) {
       '不在目前這批上傳範圍裡。右邊這枚本身的BINGO MAP資料不受影響，仍然完整；' +
       '如果想看這片wafer的圖，把相關那幾天的log一起多選上傳即可（不影響已經解析出來的其他基板）。</p>';
     document.getElementById("wafer-bin-legend").innerHTML = "";
+    if (noteEl) noteEl.style.display = "none";
     return;
   }
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.col},${c.row}`, c.bin]));
   renderBinLegend("wafer-bin-legend", new Set(wm.cells.map((c) => c.bin)));
-  const highlight = new Set(substrate.wafer_positions.map((p) => `${p.col},${p.row}`));
+  // 只疊加跟目前這張底圖同一片wafer(wm.frame_id)的座標——一枚基板的die
+  // 有可能橫跨不只一片實體wafer(例如後段補打/repair才從第二片wafer挑
+  // 幾顆)，疊到另一片wafer的底圖上只是巧合落點，沒有意義、只會讓框看起來
+  // 「零散」。詳見後端`_wafer_positions()`的說明。
+  const highlight = new Set(
+    substrate.wafer_positions
+      .filter((p) => (p.wafer_ring || substrate.wafer_ring) === wm.frame_id)
+      .map((p) => `${p.col},${p.row}`)
+  );
+
+  const breakdown = substrate.wafer_ring_breakdown || [];
+  if (noteEl) {
+    if (breakdown.length > 1) {
+      const parts = breakdown.map((b) => `${b.wafer_ring || "(無編號)"}(${b.count}顆)`).join("、");
+      noteEl.textContent =
+        `⚠️ 這枚基板的die來自不只一片wafer：${parts}。目前這張圖只顯示「${wm.frame_id}」這一片，` +
+        `其他片的用量不會畫在這張圖上(但都完整包含在右邊BINGO MAP跟下載的.strate檔案裡)。`;
+      noteEl.style.display = "";
+    } else {
+      noteEl.style.display = "none";
+    }
+  }
 
   const minCol = Math.min(...wm.cells.map((c) => c.col));
   const maxCol = Math.max(...wm.cells.map((c) => c.col));

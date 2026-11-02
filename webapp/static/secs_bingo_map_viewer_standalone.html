@@ -271,6 +271,7 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
           <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0.5rem">
             點選或拖曳框選綠色(良品)格子，選取的die會即時畫進下面「手動建立全新基板」那張空白圖；再點一次已選的格子可以取消。
           </p>
+          <p id="wafer-ring-note" class="hint" style="display:none;font-size:0.78rem;color:#b45309;margin:0 0 0.5rem"></p>
           <div class="lyr-wafer-wrap"><div id="wafer-grid" class="lyr-wafer-grid"></div></div>
         </div>
         <div class="sbv-pane">
@@ -1009,14 +1010,26 @@ function substratePositions(sf) {
 }
 
 function waferPositions(sf) {
+  // 2026/11/02：一枚基板的die有可能橫跨不只一片實體wafer(例如後段補打
+  // 才從第二片wafer挑幾顆)——每個position多帶wafer_ring，讓畫面只疊加跟
+  // 目前顯示的那片wafer同一個wafer_ring的座標，見Flask版`_wafer_positions()`
+  // 同一段說明。
   const positions = new Map();
   for (const d of [...sf.die_info, ...sf.other_layer_die_info]) {
     const [colStr, rowStr] = d.wafer_xy.split(":");
     const col = parseInt(colStr, 10), row = parseInt(rowStr, 10);
     if (Number.isNaN(col) || Number.isNaN(row)) continue;
-    positions.set(`${col},${row}`, { col, row, bin: d.bin });
+    positions.set(`${col},${row}`, { col, row, bin: d.bin, wafer_ring: d.wafer_ring });
   }
   return Array.from(positions.values());
+}
+
+function waferRingBreakdown(sf) {
+  const counts = new Map();
+  for (const d of [...sf.die_info, ...sf.other_layer_die_info]) {
+    counts.set(d.wafer_ring, (counts.get(d.wafer_ring) || 0) + 1);
+  }
+  return Array.from(counts.entries()).map(([wafer_ring, count]) => ({ wafer_ring, count }));
 }
 
 function waferMapSummary(wm, index) {
@@ -1050,6 +1063,7 @@ function substrateSummary(sf, index) {
     min_col: Math.min(0, dataMinCol), max_col: Math.max(sf.substrate_column - 1, dataMaxCol),
     min_row: Math.min(0, dataMinRow), max_row: Math.max(sf.substrate_row - 1, dataMaxRow),
     positions, wafer_positions: waferPositions(sf),
+    wafer_ring_breakdown: waferRingBreakdown(sf),
     filename: lastTs ? `${baseName}_${lastTs}.strate` : `${baseName}.strate`,
     text: SecsCore.strateToText(sf),
     _raw: sf, // keep the structured data around too (download needs it indirectly via .text)
@@ -1393,6 +1407,7 @@ function displayRow(row, minRow, maxRow) {
 function renderWaferPane(substrate) {
   const container = document.getElementById("wafer-grid");
   container.innerHTML = "";
+  const noteEl = document.getElementById("wafer-ring-note");
   const wm = findWaferMapFor(substrate);
   if (!wm || !wm.cells.length) {
     container.innerHTML = '<p class="sbv-empty">這份log裡沒有找到這枚基板來源wafer（' +
@@ -1401,12 +1416,31 @@ function renderWaferPane(substrate) {
       '不在目前這批上傳範圍裡。右邊這枚本身的BINGO MAP資料不受影響，仍然完整；' +
       '如果想看這片wafer的圖，把相關那幾天的log一起多選上傳即可（不影響已經解析出來的其他基板）。</p>';
     document.getElementById("wafer-bin-legend").innerHTML = "";
+    if (noteEl) noteEl.style.display = "none";
     return;
   }
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.col},${c.row}`, c.bin]));
   renderBinLegend("wafer-bin-legend", new Set(wm.cells.map((c) => c.bin)));
-  const highlight = new Set(substrate.wafer_positions.map((p) => `${p.col},${p.row}`));
+  // 只疊加跟目前這張底圖同一片wafer(wm.frame_id)的座標，見waferPositions()說明。
+  const highlight = new Set(
+    substrate.wafer_positions
+      .filter((p) => (p.wafer_ring || substrate.wafer_ring) === wm.frame_id)
+      .map((p) => `${p.col},${p.row}`)
+  );
+
+  const breakdown = substrate.wafer_ring_breakdown || [];
+  if (noteEl) {
+    if (breakdown.length > 1) {
+      const parts = breakdown.map((b) => `${b.wafer_ring || "(無編號)"}(${b.count}顆)`).join("、");
+      noteEl.textContent =
+        `⚠️ 這枚基板的die來自不只一片wafer：${parts}。目前這張圖只顯示「${wm.frame_id}」這一片，` +
+        `其他片的用量不會畫在這張圖上(但都完整包含在右邊BINGO MAP跟下載的.strate檔案裡)。`;
+      noteEl.style.display = "";
+    } else {
+      noteEl.style.display = "none";
+    }
+  }
 
   const minCol = Math.min(...wm.cells.map((c) => c.col));
   const maxCol = Math.max(...wm.cells.map((c) => c.col));
