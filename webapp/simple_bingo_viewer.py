@@ -437,6 +437,7 @@ def api_build_new_substrate():
     substrate_id = (data.get("substrate_id") or "").strip()
     wafer_ring = data.get("wafer_ring", "")
     picks = data.get("picks", [])
+    skip_positions = set(data.get("skip_positions") or [])
     if not template_text:
         return jsonify({"error": "缺少參考基板的資料(用來帶入批號/EQPID/形狀等欄位)"}), 400
     if not substrate_id:
@@ -452,10 +453,15 @@ def api_build_new_substrate():
     # (SUBSTRATE_COLUMN x SUBSTRATE_ROW)裡的每一個位置」，column-major
     # 排序(跟_build_die_info_list()/blank_generator.py同一種慣例)，不是
     # 「扣掉已經有的」。
+    # 2026/11/03新增「不上片」標記(跟app.js①補資料頁既有的skippedPositions
+    # 同一個概念、同一種"col:row"格式的key——這裡直接照搬，不是另外發明)：
+    # 使用者在空白BINGO MAP上先標記好「這幾格本來就不會上片」(物理上的
+    # 排除區)，填入順序直接跳過這些位置，不會占用picks。
     targets = [
         f"{col}:{row}"
         for col in range(template.substrate_column)
         for row in range(template.substrate_row)
+        if f"{col}:{row}" not in skip_positions
     ]
     if len(picks) > len(targets):
         return jsonify({"error": f"選了{len(picks)}顆，但這個形狀只有{len(targets)}個位置"}), 400

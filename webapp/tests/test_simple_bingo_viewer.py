@@ -228,6 +228,36 @@ def test_build_new_substrate_uses_template_shape_and_custom_id():
     assert reparsed.substrate_column == 28
 
 
+def test_build_new_substrate_skips_marked_positions():
+    """2026/11/03使用者要求：「bingomap要有可以點選哪顆不上片」——標記的
+    位置要從column-major填入順序整個排除，不是留空給picks用，後面的pick
+    要往後移去填下一個沒被標記的位置，不是維持原本index不變。"""
+    client = app.test_client()
+    log_base64 = base64.b64encode(FIXTURE.read_bytes()).decode("ascii")
+    extracted = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64}).get_json()
+    template = extracted["substrates"][0]
+
+    res = client.post(
+        "/api/simple_bingo/build_new_substrate",
+        json={
+            "template_text": template["text"],
+            "substrate_id": "SKIPTEST",
+            "wafer_ring": template["wafer_ring"],
+            "picks": [{"x": 50, "y": 60, "bin": "1"}, {"x": 51, "y": 61, "bin": "1"}],
+            # column-major order starts (0,0),(0,1),... — skip the very
+            # first target so the two picks should land on (0,1) and (0,2),
+            # not (0,0) and (0,1).
+            "skip_positions": ["0:0"],
+        },
+    )
+    assert res.status_code == 200
+    new_substrate = res.get_json()["substrate"]
+    by_pos = {(p["col"], p["row"]) for p in new_substrate["positions"]}
+    assert (0, 0) not in by_pos
+    assert (0, 1) in by_pos
+    assert (0, 2) in by_pos
+
+
 def test_build_new_substrate_rejects_more_picks_than_shape_allows():
     client = app.test_client()
     log_base64 = base64.b64encode(FIXTURE.read_bytes()).decode("ascii")

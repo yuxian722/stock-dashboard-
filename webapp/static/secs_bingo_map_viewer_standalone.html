@@ -96,6 +96,7 @@ button.secondary:hover{background:#334155}
 }
 .substrate-cell:hover{filter:brightness(.93)}
 .substrate-cell.filled{background:var(--blue);border-color:#0f4f9e}
+.substrate-cell.skipped{background:#fde047;border-color:#b7791f}
 .grid-axis-cell,.substrate-axis-cell{
   width:var(--wafer-cell-size,20px);height:var(--wafer-cell-size,20px);box-sizing:border-box;
   display:flex;align-items:center;justify-content:center;
@@ -272,8 +273,10 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
             <span><i style="outline:3px solid #f97316;outline-offset:-3px;background:#fff"></i>這一枚用到的格子</span>
             <span><i style="outline:3px dashed #2563eb;outline-offset:-3px;background:#fff"></i>待填入(已選取)</span>
           </div>
+          <div class="row" id="wafer-pickable-bins" style="gap:0.8rem;align-items:center;flex-wrap:wrap;font-size:0.82rem;margin:0.3rem 0"></div>
           <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0.5rem">
-            點選或拖曳框選綠色(良品)格子，選取的die會即時畫進下面「手動建立全新基板」那張空白圖；再點一次已選的格子可以取消。
+            點選或拖曳框選良品格子，選取的die會即時畫進下面「手動建立全新基板」那張空白圖；再點一次已選的格子可以取消。
+            預設只能選bin=1，想選其他bin(例如bin=2)的格子，先在上面勾選允許的bin。
           </p>
           <p id="wafer-ring-note" class="hint" style="display:none;font-size:0.78rem;color:#b45309;margin:0 0 0.5rem"></p>
           <div class="lyr-wafer-wrap"><div id="wafer-grid" class="lyr-wafer-grid"></div></div>
@@ -289,12 +292,23 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
           <h3 style="margin-top:1.2rem">手動建立全新基板(空白BINGO MAP)</h3>
           <div class="legend">
             <span><i style="background:#2563eb"></i>已選取的die</span>
+            <span><i style="background:#fde047;border:1px solid #b7791f"></i>不上片(跳過)</span>
             <span><i style="background:#fff;border:1px solid var(--line)"></i>還沒選</span>
           </div>
           <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0.5rem">
             完全獨立、不綁定左邊清單裡任何一枚基板——形狀(列數/欄數)跟批號/EQPID等欄位借用<b>目前選到的這一枚</b>當樣板，左邊wafer圖點選/框選的die會即時畫在<b>這張空白圖上</b>；輸入這枚基板真正的流水號後即可下載成一份全新、獨立的.strate檔案。
           </p>
           <div class="lyr-substrate-grid" id="substrate-grid-new"></div>
+          <div class="row" id="skip-controls" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-top:0.6rem;padding:0.6rem 0.9rem;background:#fffbea;border-radius:10px">
+            <span id="skip-status" class="small">已標記不上片 0 格</span>
+            <span class="row" style="gap:0.5rem">
+              <button type="button" class="secondary" id="btn-toggle-skip-mode">標記「不上片」模式：關閉</button>
+              <button type="button" class="secondary" id="btn-clear-skips">清除不上片標記</button>
+            </span>
+          </div>
+          <p id="skip-mode-hint" class="hint" style="display:none;font-size:0.78rem;color:#b45309;margin:0.4rem 0 0">
+            目前是「不上片」標記模式：點上面空白圖上任一還沒選die的格子＝標記/取消該格不上片(黃色＝跳過，之後選die填入時不會用到這個位置)；也可以拖曳框選一整片。
+          </p>
           <div class="row" id="pick-controls" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-top:0.6rem;padding:0.6rem 0.9rem;background:#eef6ff;border-radius:10px">
             <span id="pick-status" class="small">已選 0 顆</span>
             <button type="button" class="secondary" id="btn-clear-picks">清除選取</button>
@@ -1275,11 +1289,14 @@ function formatTimestamp(d) {
 // 形狀(SUBSTRATE_COLUMN x SUBSTRATE_ROW)的全部位置(column-major排序)，
 // 不是扣掉樣板本身已經有的。拋出Error時訊息直接對應後端原本的錯誤
 // 文字，呼叫端(downloadNewSubstrate())用同一套try/catch處理。
-function buildNewSubstrate(templateSf, substrateId, waferRing, picks) {
+function buildNewSubstrate(templateSf, substrateId, waferRing, picks, skipPositions) {
+  const skip = skipPositions || new Set();
   const targets = [];
   for (let col = 0; col < templateSf.substrate_column; col++) {
     for (let row = 0; row < templateSf.substrate_row; row++) {
-      targets.push(`${col}:${row}`);
+      const key = `${col}:${row}`;
+      if (skip.has(key)) continue;
+      targets.push(key);
     }
   }
   if (picks.length > targets.length) {
@@ -1536,6 +1553,7 @@ function renderWaferPane(substrate) {
 
   const cellMap = new Map(wm.cells.map((c) => [`${c.col},${c.row}`, c.bin]));
   renderBinLegend("wafer-bin-legend", new Set(wm.cells.map((c) => c.bin)));
+  renderPickableBinControls(new Set(wm.cells.map((c) => c.bin)));
   // 只疊加跟目前這張底圖同一片wafer(wm.frame_id)的座標，見waferPositions()說明。
   const highlight = new Set(
     substrate.wafer_positions
@@ -1611,7 +1629,7 @@ function renderWaferPane(substrate) {
       cell.dataset.col = col;
       cell.dataset.row = row;
       if (bin !== undefined) cell.dataset.bin = bin;
-      if (bin === "1" && !highlight.has(key)) {
+      if (pickableBins.has(bin) && !highlight.has(key)) {
         cell.classList.add("pickable");
         if (stagedPicks.some((p) => p.x === col && p.y === row)) {
           cell.classList.add("staged");
@@ -1640,6 +1658,35 @@ function renderWaferPane(substrate) {
 let stagedPicks = []; // {x, y, bin}[]
 let waferDragStart = null;
 let pickStatusResetTimer = null;
+// 2026/11/03新增：使用者反映「目前只能點選bin1，如果要點選bin2也要讓我
+// 可以點選」——預設只開放bin=1(維持原本行為不變)，使用者自己勾選才會
+// 多開放其他bin。刻意不跟著選到的基板切換而重置，見Flask JS版同一段說明。
+let pickableBins = new Set(["1"]);
+// 「不上片」標記，跟app.js①補資料頁既有的skippedPositions同一套概念照搬。
+let skippedTargets = new Set();
+let skipModeEnabled = false;
+
+function renderPickableBinControls(availableBins) {
+  const container = document.getElementById("wafer-pickable-bins");
+  if (!container) return;
+  const sorted = [...availableBins].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  container.innerHTML = "可選取：" + sorted
+    .map((b) => {
+      const checked = pickableBins.has(b) ? "checked" : "";
+      return `<label style="display:inline-flex;gap:0.3rem;align-items:center;margin:0">
+        <input type="checkbox" data-pickable-bin="${b}" ${checked}> Bin ${b}
+      </label>`;
+    })
+    .join("");
+  container.querySelectorAll("[data-pickable-bin]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const bin = input.dataset.pickableBin;
+      if (input.checked) pickableBins.add(bin);
+      else pickableBins.delete(bin);
+      if (selectedIndex >= 0) renderWaferPane(lastSubstrates[selectedIndex]);
+    });
+  });
+}
 
 function togglePick(col, row, bin) {
   const idx = stagedPicks.findIndex((p) => p.x === col && p.y === row);
@@ -1716,8 +1763,9 @@ waferGridEl.addEventListener("click", (e) => {
   let reason;
   if (bin === undefined) {
     reason = "這個位置在wafer圖上沒有die資料，不能選。";
-  } else if (bin !== "1") {
-    reason = `這格是bin=${bin}(非良品)，不能選——只能選良品(bin=1)。`;
+  } else if (!pickableBins.has(bin)) {
+    const allowed = [...pickableBins].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join("、");
+    reason = `這格是bin=${bin}，不在目前允許選取的bin(${allowed})內——想選這個bin，先在上面「可選取」勾選它。`;
   } else {
     reason = "這格已經被目前這枚基板自己用掉了，不能重複選。";
   }
@@ -1734,6 +1782,67 @@ document.getElementById("btn-clear-picks").addEventListener("click", () => {
 
 document.getElementById("new-substrate-id").addEventListener("input", updatePickControls);
 
+// ---- 2026/11/03新增：「不上片」標記 -------------------------------------
+function updateSkipControls() {
+  document.getElementById("skip-status").textContent = `已標記不上片 ${skippedTargets.size} 格`;
+}
+
+function skipRectangleBetween(start, end) {
+  const colLo = Math.min(start.col, end.col), colHi = Math.max(start.col, end.col);
+  const rowLo = Math.min(start.row, end.row), rowHi = Math.max(start.row, end.row);
+  document.querySelectorAll("#substrate-grid-new .substrate-cell").forEach((cell) => {
+    if (cell.classList.contains("filled")) return;
+    const col = Number(cell.dataset.col), row = Number(cell.dataset.row);
+    if (col >= colLo && col <= colHi && row >= rowLo && row <= rowHi) {
+      skippedTargets.add(`${col}:${row}`);
+    }
+  });
+}
+
+let skipDragStart = null;
+const substrateGridNewEl = document.getElementById("substrate-grid-new");
+substrateGridNewEl.addEventListener("mousedown", (e) => {
+  if (!skipModeEnabled) return;
+  const cell = e.target.closest(".substrate-cell");
+  if (!cell || cell.classList.contains("filled")) return;
+  skipDragStart = { col: Number(cell.dataset.col), row: Number(cell.dataset.row) };
+});
+substrateGridNewEl.addEventListener("mouseup", (e) => {
+  if (!skipModeEnabled || !skipDragStart) {
+    skipDragStart = null;
+    return;
+  }
+  const cell = e.target.closest(".substrate-cell");
+  if (!cell || cell.classList.contains("filled")) {
+    skipDragStart = null;
+    return;
+  }
+  const end = { col: Number(cell.dataset.col), row: Number(cell.dataset.row) };
+  if (end.col === skipDragStart.col && end.row === skipDragStart.row) {
+    const key = `${end.col}:${end.row}`;
+    if (skippedTargets.has(key)) skippedTargets.delete(key);
+    else skippedTargets.add(key);
+  } else {
+    skipRectangleBetween(skipDragStart, end);
+  }
+  skipDragStart = null;
+  updateSkipControls();
+  if (selectedIndex >= 0) renderNewSubstratePreview(lastSubstrates[selectedIndex]);
+});
+
+document.getElementById("btn-toggle-skip-mode").addEventListener("click", () => {
+  skipModeEnabled = !skipModeEnabled;
+  const btn = document.getElementById("btn-toggle-skip-mode");
+  btn.textContent = `標記「不上片」模式：${skipModeEnabled ? "開啟" : "關閉"}`;
+  document.getElementById("skip-mode-hint").style.display = skipModeEnabled ? "" : "none";
+});
+
+document.getElementById("btn-clear-skips").addEventListener("click", () => {
+  skippedTargets.clear();
+  updateSkipControls();
+  if (selectedIndex >= 0) renderNewSubstratePreview(lastSubstrates[selectedIndex]);
+});
+
 // 2026/10/30桌機版：原本這裡是POST樣板文字到後端的build_new_substrate()，
 // 桌機版沒有後端，改成直接呼叫ui_glue.js的buildNewSubstrate()——邏輯逐字
 // 對應後端的api_build_new_substrate()，錯誤訊息(例如選的顆數超過形狀
@@ -1747,7 +1856,7 @@ function downloadNewSubstrate() {
   const downloadBtn = document.getElementById("btn-download-new");
   downloadBtn.disabled = true;
   try {
-    const newSubstrate = buildNewSubstrate(template._raw, substrateId, template.wafer_ring, stagedPicks);
+    const newSubstrate = buildNewSubstrate(template._raw, substrateId, template.wafer_ring, stagedPicks, skippedTargets);
     status.className = "ok";
     status.textContent = `已建立新基板「${newSubstrate.substrate_id}」，開始下載。`;
     downloadSubstrate(newSubstrate);
@@ -1769,6 +1878,7 @@ function newSubstrateTargets(substrate) {
   const targets = [];
   for (let col = substrate.min_col; col <= substrate.max_col; col++) {
     for (let row = substrate.min_row; row <= substrate.max_row; row++) {
+      if (skippedTargets.has(`${col}:${row}`)) continue;
       targets.push({ col, row });
     }
   }
@@ -1780,10 +1890,10 @@ function renderNewSubstratePreview(substrate) {
   const positions = stagedPicks
     .map((pick, i) => (targets[i] ? { col: targets[i].col, row: targets[i].row, bin: pick.bin } : null))
     .filter(Boolean);
-  renderSubstrateGrid("substrate-grid-new", substrate, positions, "還沒選");
+  renderSubstrateGrid("substrate-grid-new", substrate, positions, "還沒選", skippedTargets);
 }
 
-function renderSubstrateGrid(containerId, substrate, positions, emptyLabel) {
+function renderSubstrateGrid(containerId, substrate, positions, emptyLabel, skipSet) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
   const { min_col, max_col, min_row, max_row } = substrate;
@@ -1817,10 +1927,15 @@ function renderSubstrateGrid(containerId, substrate, positions, emptyLabel) {
     for (let col = min_col; col <= max_col; col++) {
       const cell = document.createElement("div");
       cell.className = "substrate-cell";
+      cell.dataset.col = col;
+      cell.dataset.row = row;
       const pos = posByRowCol.get(`${col},${row}`);
       if (pos) {
         cell.classList.add("filled");
         cell.title = `${col}:${row} — bin=${pos.bin}`;
+      } else if (skipSet && skipSet.has(`${col}:${row}`)) {
+        cell.classList.add("skipped");
+        cell.title = `${col}:${row} — 已標記不上片`;
       } else {
         cell.title = `${col}:${row} — ${emptyLabel}`;
       }
@@ -2011,6 +2126,7 @@ function selectSubstrate(i) {
   // 只會讓人誤以為還能套用到新樣板上。流水號輸入框也一併清空，避免
   // 不小心沿用上一枚的輸入值下載出錯誤的檔案。
   stagedPicks = [];
+  skippedTargets.clear();
   document.getElementById("new-substrate-id").value = "";
   selectedIndex = i;
   const substrate = lastSubstrates[i];
@@ -2032,6 +2148,7 @@ function selectSubstrate(i) {
   renderNewSubstratePreview(substrate);
   renderRawStrateBox(substrate);
   updatePickControls();
+  updateSkipControls();
 }
 
 document.getElementById("chk-raw-strate").addEventListener("change", () => {

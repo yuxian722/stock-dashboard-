@@ -2284,3 +2284,30 @@ EAP主機側才知道的批號/站別/設備代號，機台自己的GUI不會、
 log.py`(7個測試)跟`webapp/tests/test_simple_bingo_viewer.py`新增的
 `test_extract_merges_gui_trace_log_across_files_and_flags_missing_job_info`都用這兩份真實
 裁切資料驗證去重+跨檔合併+`missing_job_info`旗標，不是用憑空捏造的測資。
+
+## 新增：wafer圖可選取bin1以外的bin、空白BINGO MAP可標記「不上片」(2026/11/03)
+
+使用者看完現場展示後提兩個需求：「目前只能點選bin1，如果要點選bin2也要讓我可以點選功能後框選」
+以及「bingomap要有可以點選哪顆不上片，目前無法跳過」——都是「手動建立全新基板」那個功能底下的
+細部需求。
+
+**可選取的bin不再寫死bin=1**：左邊wafer圖原本只有`bin === "1"`的格子會加`.pickable`，改成一組
+動態checkbox(`#wafer-pickable-bins`，跟著目前這片wafer圖的legend自動列出有哪些bin)，使用者自己
+勾選才會多開放其他bin可以點選/框選——預設仍然只有bin=1勾選(不改變既有行為)，這是故意的：不同bin
+代表的意義(良品/待確認/其他)要使用者自己判斷要不要用，不能隨便放寬。`pickableBins`這個Set刻意
+不跟著切換基板而重置，使用者調整過一次之後通常還是想要同一組規則。
+
+**空白BINGO MAP新增「不上片」標記**：發現`webapp/static/app.js`(①補資料頁)早就有一模一樣的
+概念(`skippedPositions`)跟完整UX(模式切換按鈕＋點選/拖曳框選＋黃色`.substrate-cell.skipped`樣式)
+——這次直接照搬同一套設計過來，不是另外發明：`skippedTargets`(Set，"col:row"字串key，跟app.js
+同格式)、`newSubstrateTargets()`在組column-major填入順序時直接排除這些位置(讓後面的pick自動往
+後移去填下一個沒被標記的位置，不是維持原本index)。前端即時預覽跟後端`build_new_substrate()`都要
+一致套用這個排除邏輯——新增`skip_positions`請求欄位，後端跟前端`newSubstrateTargets()`用完全
+同一種篩選方式，避免「預覽看起來對，下載下來卻不一樣」。
+
+Flask版(`simple_bingo_viewer.js`/`.html`)、桌機版單一HTML(`secs_bingo_map_viewer_standalone.html`)
+兩邊同步實作，UI文字、CSS(`.substrate-cell.skipped`黃色)、狀態管理邏輯都逐字對應。用Playwright
+實測：①bin1預設可選、勾選bin7後可選格子數從1121變1627(確實多開放了)；②標記第一個目標位置(0:0)
+不上片後，從wafer圖點一顆die，畫面上的空白預覽正確把這顆die畫在(0:1)而不是(0:0)，且(0:0)持續
+顯示「已標記不上片」——填入順序正確跳過。後端新增`test_build_new_substrate_skips_marked_positions`
+驗證同一件事：標記"0:0"後兩個pick正確落在(0,1)/(0,2)，不是(0,0)/(0,1)。

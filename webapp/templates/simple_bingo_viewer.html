@@ -285,8 +285,10 @@
             <span><i style="outline:3px solid #f97316;outline-offset:-3px;background:#fff"></i>這一枚用到的格子</span>
             <span><i style="outline:3px dashed #2563eb;outline-offset:-3px;background:#fff"></i>待填入(已選取)</span>
           </div>
+          <div class="row" id="wafer-pickable-bins" style="gap:0.8rem;align-items:center;flex-wrap:wrap;font-size:0.82rem;margin:0.3rem 0"></div>
           <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0.5rem">
-            點選或拖曳框選綠色(良品)格子，選取的die會即時畫進下面「手動建立全新基板」那張空白圖；再點一次已選的格子可以取消。
+            點選或拖曳框選良品格子，選取的die會即時畫進下面「手動建立全新基板」那張空白圖；再點一次已選的格子可以取消。
+            預設只能選bin=1，想選其他bin(例如bin=2)的格子，先在上面勾選允許的bin。
           </p>
           <p id="wafer-ring-note" class="hint" style="display:none;font-size:0.78rem;color:#b45309;margin:0 0 0.5rem"></p>
           <div class="lyr-wafer-wrap"><div id="wafer-grid" class="lyr-wafer-grid"></div></div>
@@ -302,12 +304,23 @@
           <h3 style="margin-top:1.2rem">手動建立全新基板(空白BINGO MAP)</h3>
           <div class="legend">
             <span><i style="background:#2563eb"></i>已選取的die</span>
+            <span><i style="background:#fde047;border:1px solid #b7791f"></i>不上片(跳過)</span>
             <span><i style="background:#fff;border:1px solid var(--line)"></i>還沒選</span>
           </div>
           <p class="hint" style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0.5rem">
             完全獨立、不綁定左邊清單裡任何一枚基板——形狀(列數/欄數)跟批號/EQPID等欄位借用<b>目前選到的這一枚</b>當樣板(同一片wafer上的基板通常同形狀)，左邊wafer圖點選/框選的die會即時畫在<b>這張空白圖上</b>；輸入這枚基板真正的流水號後即可下載成一份全新、獨立的.strate檔案。
           </p>
           <div class="lyr-substrate-grid" id="substrate-grid-new"></div>
+          <div class="row" id="skip-controls" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-top:0.6rem;padding:0.6rem 0.9rem;background:#fffbea;border-radius:10px">
+            <span id="skip-status" class="small">已標記不上片 0 格</span>
+            <span class="row" style="gap:0.5rem">
+              <button type="button" class="secondary" id="btn-toggle-skip-mode">標記「不上片」模式：關閉</button>
+              <button type="button" class="secondary" id="btn-clear-skips">清除不上片標記</button>
+            </span>
+          </div>
+          <p id="skip-mode-hint" class="hint" style="display:none;font-size:0.78rem;color:#b45309;margin:0.4rem 0 0">
+            目前是「不上片」標記模式：點上面空白圖上任一還沒選die的格子＝標記/取消該格不上片(黃色＝跳過，之後選die填入時不會用到這個位置)；也可以拖曳框選一整片。
+          </p>
           <div class="row" id="pick-controls" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-top:0.6rem;padding:0.6rem 0.9rem;background:#eef6ff;border-radius:10px">
             <span id="pick-status" class="small">已選 0 顆</span>
             <button type="button" class="secondary" id="btn-clear-picks">清除選取</button>
