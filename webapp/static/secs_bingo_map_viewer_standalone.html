@@ -1226,13 +1226,29 @@ function isStrateText(text) {
   return firstLine.startsWith("ASSY_LOT=");
 }
 
+// 2026/11/03發現：使用者實際用的設備端電腦瀏覽器版本較舊，沒有
+// `Blob.prototype.arrayBuffer()`(這個方法是後來才加進瀏覽器規範的)，
+// 選檔案後丟出`file.arrayBuffer is not a function`、整批直接解析失敗
+// (這份桌機版的其他語法如async/await、箭頭函式、class都正常跑得動，
+// 代表問題只出在這一個特定API，不是整個瀏覽器太舊)。改用
+// `FileReader.readAsArrayBuffer()`——支援年份老很多，相容性好非常多，
+// 效果完全一樣，只是用callback包成Promise。
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("讀取檔案失敗"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 // 跟api_extract()一樣：一個檔案(可能是zip、可能裡面還有好幾份log，也
 // 可能是現成的.strate檔案)解出來的所有StrateFile/WaferMap合併成一批
 // 回傳。2026/10/30新增：使用者手上有時候已經是現成的.strate檔案，不是
 // SECS log，跟後端api_extract()同一套判斷邏輯——先解壓縮/解碼成文字，
 // 每一份各自判斷是.strate格式還是SECS log，混著選也沒問題。
 async function extractOneFile(file) {
-  const buf = await file.arrayBuffer();
+  const buf = await readFileAsArrayBuffer(file);
   const bytes = new Uint8Array(buf);
   let texts;
   try {

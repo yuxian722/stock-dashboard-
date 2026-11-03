@@ -88,12 +88,26 @@ function arrayBufferToBase64(buf) {
   return btoa(binary);
 }
 
+// 2026/11/03發現：使用者實際用的設備端電腦瀏覽器版本較舊，沒有
+// `Blob.prototype.arrayBuffer()`(這個方法是後來才加進瀏覽器規範的)，
+// 選檔案後丟出`file.arrayBuffer is not a function`、整批直接解析失敗。
+// 改用`FileReader.readAsArrayBuffer()`——支援年份老很多，相容性好非常多，
+// 效果完全一樣，只是用callback包成Promise。
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("讀取檔案失敗"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 // 2026/10/29新增：一次可以選多個檔案(ctrl/shift多選)，每個檔案各自丟給
 // 後端解析(後端自己也會解壓縮.zip、甚至zip裡包zip)，結果合併成同一批——
 // 對應使用者實際的工作方式：log資料夾裡放的是一天一個的.log.zip，想看
 // 好幾天的話用這個，不用自己先手動合併檔案。
 async function extractOneFile(file) {
-  const buf = await file.arrayBuffer();
+  const buf = await readFileAsArrayBuffer(file);
   const log_base64 = arrayBufferToBase64(buf);
   const res = await fetch("/api/simple_bingo/extract", {
     method: "POST",
