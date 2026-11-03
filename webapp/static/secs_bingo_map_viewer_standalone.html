@@ -253,6 +253,10 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
         </div>
       </div>
       <p id="detail-info" class="small"></p>
+      <div id="missing-job-info-notice" class="notice" style="display:none;margin-top:0.5rem;color:#b45309;border-color:#f59e0b">
+        ⚠️ 這枚基板的資料來源是設備本機的GUI trace log，沒有批號(ASSY_LOT)／站別(OPER)／EQPID這幾項資訊
+        (這個資料來源本來就不會記錄這些，不是漏抓)，下載的.strate檔案這幾欄會是空白，記得自己確認、手動補上。
+      </div>
       <div class="notice" style="margin-top:0.5rem">
         正向／反向只改下面兩張圖怎麼排，<b>不影響「下載」拿到的.strate檔案內容</b>——拿實物比對，哪個方向對得上就切哪個。
       </div>
@@ -979,9 +983,107 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
     return out;
   }
 
+  // ---- gui_trace_log.py port ----------------------------------------------
+  // 2026/11/03新增：設備本機GUI trace log(`GUI/ecslog*.log`，不是SECS/AFC
+  // log)——見Python版bingomap/gui_trace_log.py的module docstring，這裡
+  // function-for-function照抄，不重新推導。
+  const TRACE_MARKER = "E142_TRANSFER_MAP";
+  const ENTRY_START_RE = /^(\d{2})-(\d{2})-(\d{4}) (\d{2}):(\d{2}):(\d{2}):(\d{3}):/gm;
+  const TRANSFER_RE = /SubstrateType="Strip" SubstrateId="([^"]*)".*?FromSubstrateType="Wafer" FromSubstrateId="([^"]*)".*?<T FX="(\d+)" FY="(\d+)" TX="(\d+)" TY="(\d+)"/s;
+
+  function isGuiTraceLogText(text) {
+    return text.includes(TRACE_MARKER);
+  }
+
+  // Python's html.unescape() in one regex pass (not a chain of sequential
+  // .replace() calls — that would risk decoding an entity that only came
+  // into existence from an EARLIER replace in the same call, double-
+  // decoding within what should be a single unescape() pass. This file
+  // calls it twice on purpose for the two real escape layers — see the
+  // Python docstring — so a single pass staying exactly single-pass here
+  // matters for that to behave the same as Python's html.unescape()).
+  function htmlUnescape(s) {
+    return s.replace(/&(amp|lt|gt|quot|#39|apos);/g, (m, name) => {
+      switch (name) {
+        case "amp": return "&";
+        case "lt": return "<";
+        case "gt": return ">";
+        case "quot": return '"';
+        case "#39": case "apos": return "'";
+        default: return m;
+      }
+    });
+  }
+
+  function* iterTransferEvents(text) {
+    const starts = [...text.matchAll(ENTRY_START_RE)];
+    for (let i = 0; i < starts.length; i++) {
+      const m = starts[i];
+      const entryEnd = i + 1 < starts.length ? starts[i + 1].index : text.length;
+      const entry = text.slice(m.index, entryEnd);
+      if (!entry.includes(TRACE_MARKER)) continue;
+      const decoded = htmlUnescape(htmlUnescape(entry));
+      const tm = TRANSFER_RE.exec(decoded);
+      if (!tm) continue;
+      const [, substrateId, waferRing, fx, fy, tx, ty] = tm;
+      const [, day, month, year, hh, mm, ss] = m;
+      const timestamp = `${year}${month}${day}${hh}${mm}${ss}`;
+      yield { timestamp, substrateId, waferRing, fx: Number(fx), fy: Number(fy), tx: Number(tx), ty: Number(ty) };
+    }
+  }
+
+  function extractStrateFilesFromGuiTrace(texts) {
+    const seen = new Set();
+    const bySubstrate = new Map();
+    for (const text of texts) {
+      if (!isGuiTraceLogText(text)) continue;
+      for (const ev of iterTransferEvents(text)) {
+        const key = `${ev.timestamp}|${ev.substrateId}|${ev.waferRing}|${ev.fx}|${ev.fy}|${ev.tx}|${ev.ty}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!bySubstrate.has(ev.substrateId)) bySubstrate.set(ev.substrateId, []);
+        bySubstrate.get(ev.substrateId).push(ev);
+      }
+    }
+
+    const out = [];
+    for (const [substrateId, events] of bySubstrate) {
+      events.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
+      const maxTx = Math.max(...events.map((e) => e.tx));
+      const maxTy = Math.max(...events.map((e) => e.ty));
+      const die_info = events.map((e, i) => ({
+        index: i + 1,
+        wafer_ring: e.waferRing,
+        wafer_xy: `${e.fx}:${e.fy}`,
+        sub_pos: `${e.tx}:${e.ty}`,
+        bin: "1",
+        f6: "0",
+        f7: "0",
+        timestamp: e.timestamp,
+        f9: "1",
+      }));
+      out.push({
+        assy_lot: "", mapping_lot: "", eqpid: "", oper: "",
+        substrate_id: substrateId,
+        substrate_row: maxTy + 1,
+        substrate_column: maxTx + 1,
+        substrate_block: 1,
+        out_mgz_slot_no: "",
+        total_bond_die_qty: die_info.length,
+        good_die: die_info.length,
+        run_time: "", notch: "", ref: "", t2_point: "NA", t2_flat: "NA",
+        die_info,
+        other_layer_die_info: [],
+      });
+    }
+    return out;
+  }
+
   return {
     decodeSecsLog,
     iterTransactions,
+    isGuiTraceLogText,
+    extractStrateFilesFromGuiTrace,
     extractStrateFiles,
     extractWaferMaps,
     strateToText,
@@ -1064,6 +1166,7 @@ function substrateSummary(sf, index) {
     min_row: Math.min(0, dataMinRow), max_row: Math.max(sf.substrate_row - 1, dataMaxRow),
     positions, wafer_positions: waferPositions(sf),
     wafer_ring_breakdown: waferRingBreakdown(sf),
+    missing_job_info: !(sf.assy_lot || sf.oper || sf.eqpid),
     filename: lastTs ? `${baseName}_${lastTs}.strate` : `${baseName}.strate`,
     text: SecsCore.strateToText(sf),
     _raw: sf, // keep the structured data around too (download needs it indirectly via .text)
@@ -1128,6 +1231,7 @@ async function extractOneFile(file) {
   let strateFiles = [];
   let waferMaps = [];
   const strateParseErrors = [];
+  const guiTraceTexts = [];
   for (const text of texts) {
     if (isStrateText(text)) {
       try {
@@ -1137,8 +1241,18 @@ async function extractOneFile(file) {
       }
       continue;
     }
+    if (SecsCore.isGuiTraceLogText(text)) {
+      // 2026/11/03新增：設備本機GUI trace log，不能像AFC log那樣逐檔各自
+      // 解析——一枚基板常常橫跨這批裡好幾個檔案，要先收集齊再整批合併，
+      // 見SecsCore.extractStrateFilesFromGuiTrace()/Python版module docstring。
+      guiTraceTexts.push(text);
+      continue;
+    }
     strateFiles = strateFiles.concat(SecsCore.extractStrateFiles(text, DOMParser));
     waferMaps = waferMaps.concat(SecsCore.extractWaferMaps(text, DOMParser));
+  }
+  if (guiTraceTexts.length) {
+    strateFiles = strateFiles.concat(SecsCore.extractStrateFilesFromGuiTrace(guiTraceTexts));
   }
   if (!strateFiles.length) {
     let msg = `${file.name}：解壓縮後的log裡沒有找到StrateMap(基板)資料，也不是看得懂的.strate檔案格式`;
@@ -1906,6 +2020,7 @@ function selectSubstrate(i) {
   document.getElementById("detail-info").textContent =
     `Wafer Ring：${substrate.wafer_ring || "—"}　EQPID：${substrate.eqpid || "—"}　DIE數量：${substrate.num_dies}` +
     (substrate.num_other_layer_dies ? `（另有疊層${substrate.num_other_layer_dies}顆）` : "");
+  document.getElementById("missing-job-info-notice").style.display = substrate.missing_job_info ? "" : "none";
 
   const btn = document.getElementById("btn-download");
   btn.style.display = "";

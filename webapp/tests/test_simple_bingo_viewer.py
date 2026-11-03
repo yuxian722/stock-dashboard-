@@ -317,3 +317,40 @@ def test_extract_rejects_a_malformed_strate_file_with_a_clear_message():
     res = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64})
     assert res.status_code == 400
     assert "strate" in res.get_json()["error"].lower() or "DIE_INFO" in res.get_json()["error"]
+
+
+GUI_TRACE_FIXTURE_1 = (
+    Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "gui_trace_ecslog_part1.log"
+)
+GUI_TRACE_FIXTURE_2 = (
+    Path(__file__).parent.parent.parent / "bingomap" / "tests" / "fixtures" / "gui_trace_ecslog_part2.log"
+)
+
+
+def test_extract_merges_gui_trace_log_across_files_and_flags_missing_job_info():
+    """2026/11/03：設備本機GUI trace log(不是SECS/AFC log，見
+    bingomap/gui_trace_log.py)——使用者整個資料夾選好幾個這種檔案時(常態，
+    每隔幾分鐘就換檔)要合併成同一枚基板，而且因為這個資料來源本來就沒有
+    批號/站別/EQPID，`missing_job_info`要是True讓前端能顯示提醒。"""
+    client = app.test_client()
+    folder_zip = _zip_bytes(
+        {
+            "GUI/ecslog_part1.log": GUI_TRACE_FIXTURE_1.read_bytes(),
+            "GUI/ecslog_part2.log": GUI_TRACE_FIXTURE_2.read_bytes(),
+        }
+    )
+    log_base64 = base64.b64encode(folder_zip).decode("ascii")
+
+    res = client.post("/api/simple_bingo/extract", json={"log_base64": log_base64})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert len(body["substrates"]) == 1
+    s = body["substrates"][0]
+    assert s["substrate_id"] == "Z26912130176"
+    assert s["num_dies"] == 3
+    assert s["missing_job_info"] is True
+    assert s["eqpid"] == ""
+
+    reparsed = sbv.StrateFile.parse(s["text"])
+    assert len(reparsed.die_info) == 3
+    assert all(d.bin == "1" for d in reparsed.die_info)

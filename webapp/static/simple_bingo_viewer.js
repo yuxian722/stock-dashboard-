@@ -765,6 +765,7 @@ function selectSubstrate(i) {
   document.getElementById("detail-info").textContent =
     `Wafer Ring：${substrate.wafer_ring || "—"}　EQPID：${substrate.eqpid || "—"}　DIE數量：${substrate.num_dies}` +
     (substrate.num_other_layer_dies ? `（另有疊層${substrate.num_other_layer_dies}顆）` : "");
+  document.getElementById("missing-job-info-notice").style.display = substrate.missing_job_info ? "" : "none";
 
   const btn = document.getElementById("btn-download");
   btn.style.display = "";

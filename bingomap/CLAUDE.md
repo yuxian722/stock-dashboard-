@@ -2213,3 +2213,74 @@ JS `simple_bingo_viewer.js`、桌機版`secs_bingo_map_viewer_standalone.html`)�
 抓到正確欄位寬度，這3顆原本也只是這塊連續區域邊緣的延伸，不影響「大致連續」的判讀)，但代表
 JC1557這片wafer的`WaferStart`/`BinList`方向判斷本身可能不夠準——還沒進一步查，必要時要使用者
 確認這片wafer的料況或換一份涵蓋更完整的log再比對。
+
+## 新增：直接解析設備本機GUI trace log(不是SECS/AFC log，`bingomap/gui_trace_log.py`)(2026/11/03)
+
+使用者原本選錯檔案(`bab011103.zip`)上傳到桌機版試，整批都報「找不到StrateMap資料」，問起來才
+講清楚他真正的需求：他手上原本都是EAP主機固定排程抓的SECS/AFC log(`secs_log.py`處理的那種)，
+這次他是直接從**設備本機**匯出一整包診斷包(裡面混了Alarm/Config/DBHost GEM log/Rcg/WINLOG斷電
+留存/machine_info等)，因為「這是機台內的最新的資料」——不用等EAP排程，設備自己剛發生的事馬上
+就在這包裡，拿來比對比EAP的批次抓取更即時。要我想辦法從這種包裡抓出一樣能產生BINGO MAP的資料。
+
+**查出真相**：這包裡`GUI/ecslog*.log`才是真正藏著die位置資料的檔案，但完全不是SECS/AFC log，是
+這台Diebonder**自己GUI程式**的內部tag變化追蹤log(`CObserver::OnValueChange`，監控`DIEBONDER.
+ECS2UI_CMD`這個COM tag)。每次「1 DIE BONDING END」，就會把SEMI E142標準(`urn:semi-org:xsd.
+E142-1.V1005.SubstrateMap`)的`TransferMap` XML序列化成字串寫進這行log——而且是**兩層XML跳脫**
+(log本身的XML:後面先跳脫一層，E142 XML字串裡的VIDValue又再跳脫一層，要`html.unescape()`兩次
+才拿得到真正的XML)，另外**log內容裡還夾了真的換行字元**(E142 XML自己的`<?xml?>`宣告後面就有一個
+真實`\n`)，所以不能像AFC log那樣單純按`\n`切行——要改成用每行開頭固定出現的時間戳記格式
+(`DD-MM-YYYY HH:MM:SS:mmm:`)當entry邊界，橫跨好幾個實體行的一筆事件才不會被切斷。
+
+單一事件結構(兩層unescape後)：
+```
+<MapData xmlns="urn:semi-org:xsd.E142-1.V1005.SubstrateMap"><SubstrateMaps>
+  <SubstrateMap SubstrateType="Strip" SubstrateId="Z26912130176" ...>
+    <Overlay MapName="WaferToStrip">
+      <TransferMap FromSubstrateType="Wafer" FromSubstrateId="JE9C1A">
+        <T FX="27" FY="15" TX="3" TY="0"/>
+      </TransferMap>
+    </Overlay>
+  </SubstrateMap>
+</SubstrateMaps></MapData>
+```
+`FromSubstrateId`+`FX:FY`對應`.strate`的`wafer_ring`+`wafer_xy`，目標`SubstrateId`+`TX:TY`對應
+`substrate_id`+`sub_pos`——不需要像WaferStart的BinList那樣另外猜8種方向，`<T>`本身就是唯一的
+真相來源，沒有獨立背景bin圖可以互相校正也不需要。bin固定填`"1"`：E142 TransferMap只會記錄「真的
+被搬走」的die。
+
+**兩個實測才發現、靠合成測資想不到的真實資料怪癖**：
+1. 同一顆die的這個事件常常被**好幾個不同的內部元件各自log一次**(真實資料裡看到`DBGEM`、
+   `MainStScr`、`TagServer`三個來源幾乎同一毫秒各寫一行、內容完全相同)——不去重的話589行事件
+   會被誤判成589顆die，實際只有199顆不重複位置。用`(timestamp,substrate_id,wafer_ring,fx,fy,
+   tx,ty)`七元組整組比對去重(不能只比`tx,ty`，萬一同一個位置真的補打過兩次、fx/fy換了，那是
+   兩顆不同的die要分開留著——實測真的遇到這種情況，同一個sub_pos在不同時間被貼了兩次)。
+2. 這種log檔案每隔幾分鐘就自動換檔(檔名裡的時間是「這個檔案開始寫」的時間，不是事件時間)，
+   一枚strip的生產常常橫跨不只一個檔案——不能像`extract_strate_files()`那樣每個檔案各自獨立
+   解析，要把這批上傳裡**所有**trace log檔案的事件先收集齊、再按`SubstrateId`分組合併。所以
+   `extract_strate_files_from_gui_trace()`吃的是`list[str]`(整批texts)，跟`extract_strate_
+   files(text)`簽名不一樣；`api_extract()`/桌機版`extractOneFile()`都在迴圈裡先把這種來源的
+   texts分流收集起來，等看完這批所有檔案才整批丟進去合併，不是逐檔案立刻呼叫。
+
+**已知限制、尚未處理**：這個合併只在「同一次`extractOneFile()`呼叫」(也就是同一個上傳的zip/
+同一個*頂層*File物件)範圍內有效。如果使用者不是先把整個GUI資料夾壓成一個zip再上傳、而是直接
+Ctrl+Shift多選好幾個散的`GUI/ecslog*.log`檔案(各自是獨立的頂層File)，現有架構(Flask版/桌機版
+都一樣)是每個頂層檔案各自呼叫一次`extractOneFile`/各自一次API request，彼此之間不會合併——同一
+枚基板有可能被拆成好幾個殘缺片段出現在清單裡。還沒有解決這個，因為要修要動到「頂層多檔合併」這
+層架構，牽連到AFC log路徑原本就驗證過的「單一檔案失敗不影響其他檔案」resilient行為，這次先不碰；
+使用者目前的真實用法(把整個診斷資料夾/GUI資料夾壓成一個zip再上傳)不會觸發這個限制。
+
+**資料來源本身缺的東西**：這個事件流完全沒有`ASSY_LOT`/`MAPPING_LOT`/`OPER`/`EQPID`——這些是
+EAP主機側才知道的批號/站別/設備代號，機台自己的GUI不會、也不需要知道，`StrateFile`這幾個欄位
+一定是空字串。新增`missing_job_info`旗標(Flask版`_substrate_summary()`/桌機版`substrateSummary()`
+都算一樣的邏輯：`not (assy_lot or oper or eqpid)`)，前端偵測到就在基板詳細頁上方顯示黃色提醒，
+不是漏資料，是提醒使用者下載前自己手動確認/補上。
+
+**驗證方式**：真實檔案`bab011103.zip`(12MB，使用者機台本機匯出的完整診斷包)拿去兩邊(Flask版、
+桌機版單一HTML)各測一次：都解析出同樣5枚基板(`Z26912130176`/`Z26912130216`/`R3610104`/
+`K2MRG037`/`K2MRG047`，數量完全一致)，BINGO MAP格子數也一致(199/216顆各自因為發現2顆/1顆真實
+重複貼過的sub_pos被正確collapse成同一格，不是bug，是`_substrate_positions()`既有邏輯)。另外
+在`bingomap/tests/fixtures/gui_trace_ecslog_part1.log`/`_part2.log`放了兩份從使用者真實檔案
+裁切下來的小段落(刻意橫跨兩個檔案、刻意保留原始的3重複事件)，`bingomap/tests/test_gui_trace_
+log.py`(7個測試)跟`webapp/tests/test_simple_bingo_viewer.py`新增的
+`test_extract_merges_gui_trace_log_across_files_and_flags_missing_job_info`都用這兩份真實
+裁切資料驗證去重+跨檔合併+`missing_job_info`旗標，不是用憑空捏造的測資。

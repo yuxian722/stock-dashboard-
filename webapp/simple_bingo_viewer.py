@@ -200,6 +200,10 @@ app = Flask(
 
 from bingomap.secs_log import decode_secs_log, extract_strate_files, extract_wafer_maps  # noqa: E402
 from bingomap.strate import DieInfo, StrateFile, StrateFormatError  # noqa: E402
+from bingomap.gui_trace_log import (  # noqa: E402
+    extract_strate_files_from_gui_trace,
+    is_gui_trace_log_text,
+)
 
 
 def _is_zip(raw: bytes) -> bool:
@@ -362,6 +366,11 @@ def _substrate_summary(sf: StrateFile, index: int) -> dict:
         "positions": positions,
         "wafer_positions": _wafer_positions(sf),
         "wafer_ring_breakdown": _wafer_ring_breakdown(sf),
+        # 2026/11/03新增：設備GUI trace log來源的基板，ASSY_LOT/OPER/
+        # EQPID這三個欄位一定是空的(這個資料來源本來就不知道這些，見
+        # gui_trace_log.py module docstring)——前端用這個旗標顯示提醒，
+        # 讓使用者知道下載前可能要自己補上，不是解析漏資料。
+        "missing_job_info": not (sf.assy_lot or sf.oper or sf.eqpid),
         "filename": f"{base_name}_{last_ts}.strate" if last_ts else f"{base_name}.strate",
         "text": sf.to_text(),
     }
@@ -508,6 +517,7 @@ def api_extract():
     strate_files: list[StrateFile] = []
     wafer_maps = []
     strate_parse_errors: list[str] = []
+    gui_trace_texts: list[str] = []
     for text in texts:
         if _is_strate_text(text):
             try:
@@ -515,8 +525,20 @@ def api_extract():
             except StrateFormatError as exc:
                 strate_parse_errors.append(str(exc))
             continue
+        if is_gui_trace_log_text(text):
+            # 2026/11/03新增：設備本機的GUI trace log(`GUI/ecslog*.log`，
+            # 不是SECS/AFC log)——這種log一枚基板的資料常常橫跨好幾個
+            # 檔案(每隔幾分鐘就換檔)，不能像下面AFC那樣逐檔各自解析，
+            # 要先收集起來，等這批所有檔案都看過一輪才整批丟進
+            # `extract_strate_files_from_gui_trace()`合併，見那個函式的
+            # module docstring。
+            gui_trace_texts.append(text)
+            continue
         strate_files.extend(extract_strate_files(text))
         wafer_maps.extend(extract_wafer_maps(text))
+
+    if gui_trace_texts:
+        strate_files.extend(extract_strate_files_from_gui_trace(gui_trace_texts))
 
     if not strate_files:
         error_msg = "解壓縮後的log裡沒有找到StrateMap(基板)資料，也不是看得懂的.strate檔案格式"
