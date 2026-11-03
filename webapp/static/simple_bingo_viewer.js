@@ -235,11 +235,22 @@ function renderWaferPane(substrate) {
   const noteEl = document.getElementById("wafer-ring-note");
   const wm = findWaferMapFor(substrate);
   if (!wm || !wm.cells.length) {
-    container.innerHTML = '<p class="sbv-empty">這份log裡沒有找到這枚基板來源wafer（' +
-      (substrate.wafer_ring || "無Wafer Ring") +
-      '）的WaferStart資料——通常是因為這片來源wafer是在<b>別份log</b>（不同時段/天）被掃描記錄的，' +
-      '不在目前這批上傳範圍裡。右邊這枚本身的BINGO MAP資料不受影響，仍然完整；' +
-      '如果想看這片wafer的圖，把相關那幾天的log一起多選上傳即可（不影響已經解析出來的其他基板）。</p>';
+    // 2026/11/03：GUI trace log來源的基板(missing_job_info)，這張圖本來
+    // 就不可能有——那種log只記錄「哪顆die從wafer哪裡搬到strip哪裡」這個
+    // 動作，完全不含WaferStart(整片wafer的bin分布)資料，不是因為剛好在
+    // 別份log裡、多上傳幾份就找得到；原本「多選幾天log一起上傳」那句對
+    // SECS/AFC log來源才成立，混用會誤導使用者去找一份根本不存在的檔案。
+    container.innerHTML = substrate.missing_job_info
+      ? '<p class="sbv-empty">這枚基板的資料來源是設備本機的<b>GUI trace log</b>，這種log只記錄' +
+        '「die從wafer搬到strip」這個動作本身，<b>不包含整片wafer的bin分布資料</b>(WaferStart)——' +
+        '這個資訊只有EAP主機端的SECS/AFC log才有，不是漏抓，也不會因為多上傳幾份GUI trace log而出現。' +
+        '右邊這枚本身的BINGO MAP資料不受影響，仍然完整；如果手上剛好也有這片wafer(' +
+        (substrate.wafer_ring || "無Wafer Ring") + ')對應的SECS/AFC log，兩種檔案一起多選上傳即可補上。</p>'
+      : '<p class="sbv-empty">這份log裡沒有找到這枚基板來源wafer（' +
+        (substrate.wafer_ring || "無Wafer Ring") +
+        '）的WaferStart資料——通常是因為這片來源wafer是在<b>別份log</b>（不同時段/天）被掃描記錄的，' +
+        '不在目前這批上傳範圍裡。右邊這枚本身的BINGO MAP資料不受影響，仍然完整；' +
+        '如果想看這片wafer的圖，把相關那幾天的log一起多選上傳即可（不影響已經解析出來的其他基板）。</p>';
     document.getElementById("wafer-bin-legend").innerHTML = "";
     if (noteEl) noteEl.style.display = "none";
     return;
