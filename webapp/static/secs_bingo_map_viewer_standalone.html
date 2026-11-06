@@ -328,6 +328,98 @@ p.small,.small{font-size:0.78rem;color:var(--muted)}
 
 </div>
 <script>
+// 2026/11/06：從使用者提供的另一套現有工具(同事開發的.exe，拿strings
+// 反組譯看它內嵌HTML的<script>)學到的防呆——那套工具用feature-detect
+// 的方式(`if (!global.TextDecoder) global.TextDecoder = LegacyTextDecoder`)
+// 幫TextDecoder/TextEncoder補polyfill，只在真的缺這個API的設備端電腦上
+// 才會啟用，不影響其他正常電腦。我們這裡遇到的file.arrayBuffer()缺失
+// 已經改用FileReader修好(跟那套工具的做法一致)，這次比照同一套防呆邏輯
+// 補上TextDecoder/TextEncoder，因為這兩個API在decodeSecsLog()/ZipReader/
+// 下載用的zip產生器裡到處都在用，一旦缺了會直接整個解析不了，比
+// arrayBuffer缺失更致命。必須放在最前面(ZipReader/SecsCore等都會用到)，
+// 只在真的缺少時才啟用，不改變任何現有行為。
+(function (global) {
+  "use strict";
+  if (!global.TextDecoder) {
+    function legacyDecodeUtf8(bytes) {
+      var out = "";
+      var i = 0;
+      while (i < bytes.length) {
+        var b0 = bytes[i++];
+        if (b0 < 0x80) {
+          out += String.fromCharCode(b0);
+        } else if ((b0 & 0xe0) === 0xc0 && i < bytes.length) {
+          var b1 = bytes[i++];
+          out += String.fromCharCode(((b0 & 0x1f) << 6) | (b1 & 0x3f));
+        } else if ((b0 & 0xf0) === 0xe0 && i + 1 < bytes.length) {
+          var c1 = bytes[i++], c2 = bytes[i++];
+          out += String.fromCharCode(((b0 & 0x0f) << 12) | ((c1 & 0x3f) << 6) | (c2 & 0x3f));
+        } else if ((b0 & 0xf8) === 0xf0 && i + 2 < bytes.length) {
+          var d1 = bytes[i++], d2 = bytes[i++], d3 = bytes[i++];
+          var cp = ((b0 & 0x07) << 18) | ((d1 & 0x3f) << 12) | ((d2 & 0x3f) << 6) | (d3 & 0x3f);
+          cp -= 0x10000;
+          out += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
+        } else {
+          out += String.fromCharCode(0xfffd);
+        }
+      }
+      return out;
+    }
+    function legacyDecodeUtf16(bytes, bigEndian) {
+      var out = "";
+      var len = bytes.length - (bytes.length % 2);
+      for (var i = 0; i < len; i += 2) {
+        var code = bigEndian ? (bytes[i] << 8) | bytes[i + 1] : (bytes[i + 1] << 8) | bytes[i];
+        out += String.fromCharCode(code);
+      }
+      return out;
+    }
+    function LegacyTextDecoder(label) {
+      this.encoding = String(label || "utf-8").toLowerCase();
+    }
+    LegacyTextDecoder.prototype.decode = function (input) {
+      var bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+      if (this.encoding === "utf-16le" || this.encoding === "utf-16") return legacyDecodeUtf16(bytes, false);
+      if (this.encoding === "utf-16be") return legacyDecodeUtf16(bytes, true);
+      return legacyDecodeUtf8(bytes);
+    };
+    global.TextDecoder = LegacyTextDecoder;
+  }
+
+  if (!global.TextEncoder) {
+    function LegacyTextEncoder() {}
+    LegacyTextEncoder.prototype.encode = function (str) {
+      var bytes = [];
+      for (var i = 0; i < str.length; i++) {
+        var code = str.charCodeAt(i);
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
+          var low = str.charCodeAt(i + 1);
+          if (low >= 0xdc00 && low <= 0xdfff) {
+            code = (code - 0xd800) * 0x400 + (low - 0xdc00) + 0x10000;
+            i++;
+          }
+        }
+        if (code < 0x80) {
+          bytes.push(code);
+        } else if (code < 0x800) {
+          bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+        } else if (code < 0x10000) {
+          bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+        } else {
+          bytes.push(
+            0xf0 | (code >> 18),
+            0x80 | ((code >> 12) & 0x3f),
+            0x80 | ((code >> 6) & 0x3f),
+            0x80 | (code & 0x3f)
+          );
+        }
+      }
+      return new Uint8Array(bytes);
+    };
+    global.TextEncoder = LegacyTextEncoder;
+  }
+})(typeof window !== "undefined" ? window : globalThis);
+
 // SECS LOG BINGO MAP 檢視器（桌機版）— 完全離線單一HTML檔案。
 // 2026/10/30新增：使用者看到同事的「STRATE_v92桌機版.html」之後要求
 // 做成同一種慣例——雙擊或拖進瀏覽器就能用，不裝Python、不開伺服器、

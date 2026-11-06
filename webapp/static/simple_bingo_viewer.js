@@ -1,3 +1,48 @@
+// 2026/11/06：從使用者提供的另一套現有工具(同事開發的.exe，拿strings
+// 反組譯看它內嵌HTML的<script>)學到的防呆——那套工具用feature-detect
+// 的方式(`if (!global.TextDecoder) global.TextDecoder = LegacyTextDecoder`)
+// 幫TextDecoder/TextEncoder補polyfill，只在真的缺這個API的設備端電腦上
+// 才會啟用，不影響其他正常電腦。我們這裡遇到的file.arrayBuffer()缺失
+// 已經改用FileReader修好(跟那套工具的做法一致)，這次比照同一套防呆邏輯
+// 補上TextEncoder(這支檔案只用到TextEncoder，用在「下載全部」的zip產生
+// 器裡——缺了會直接整個產生不了，比arrayBuffer缺失更致命)。只在真的缺少
+// 時才啟用，不改變任何現有行為。
+(function (global) {
+  "use strict";
+  if (!global.TextEncoder) {
+    function LegacyTextEncoder() {}
+    LegacyTextEncoder.prototype.encode = function (str) {
+      var bytes = [];
+      for (var i = 0; i < str.length; i++) {
+        var code = str.charCodeAt(i);
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
+          var low = str.charCodeAt(i + 1);
+          if (low >= 0xdc00 && low <= 0xdfff) {
+            code = (code - 0xd800) * 0x400 + (low - 0xdc00) + 0x10000;
+            i++;
+          }
+        }
+        if (code < 0x80) {
+          bytes.push(code);
+        } else if (code < 0x800) {
+          bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+        } else if (code < 0x10000) {
+          bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+        } else {
+          bytes.push(
+            0xf0 | (code >> 18),
+            0x80 | ((code >> 12) & 0x3f),
+            0x80 | ((code >> 6) & 0x3f),
+            0x80 | (code & 0x3f)
+          );
+        }
+      }
+      return new Uint8Array(bytes);
+    };
+    global.TextEncoder = LegacyTextEncoder;
+  }
+})(typeof window !== "undefined" ? window : globalThis);
+
 // SECS LOG BINGO MAP 檢視器 — 簡化版獨立小工具的前端。
 // 2026/10/29改版：原本是「每枚基板各自一張卡片，上下排列」，現在改成
 // 「左邊一欄列出所有基板、點一枚，右邊固定分成wafer圖(左)/BINGO MAP(右)

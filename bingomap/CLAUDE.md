@@ -2311,3 +2311,43 @@ Flask版(`simple_bingo_viewer.js`/`.html`)、桌機版單一HTML(`secs_bingo_map
 不上片後，從wafer圖點一顆die，畫面上的空白預覽正確把這顆die畫在(0:1)而不是(0:0)，且(0:0)持續
 顯示「已標記不上片」——填入順序正確跳過。後端新增`test_build_new_substrate_skips_marked_positions`
 驗證同一件事：標記"0:0"後兩個pick正確落在(0,1)/(0,2)，不是(0,0)/(0,1)。
+
+## 分析同事另一套.exe工具，補上TextDecoder/TextEncoder相容性防呆(2026/11/06)
+
+使用者傳了一個同事開發、「可以開啟AFC/SECS檔案、我們開發的軟體都開不起來」的.exe，要我查原因。
+`file`指令看出是PE32 .NET(Mono/.Net assembly)執行檔；拿`strings`掃過整個binary(裡面整包嵌了
+一份HTML+JS當作GUI，猜是WinForms的`System.Windows.Forms.WebBrowser`控制項在跑，不是真的瀏覽器
+開外部檔案)，撈到幾個關鍵片段：
+
+1. 明確寫著的註解：`/* IE11 / legacy browser compatibility layer. No network connection required. */`
+2. 自己刻的`CompatMap`/`CompatSet`(手寫陣列+index，不是用原生`Map`/`Set`)，但只用在少數幾個關鍵
+   路徑(PickDie/die index的查找)，其他地方仍然用原生`Map`/`Set`、`let`/`const`、箭頭函式、
+   `async function`——不是整包都寫成ES5，是「平常用現代語法，只在特定風險點手動補後路」。
+3. **最關鍵的一段**：
+   ```js
+   if (!global.TextDecoder) global.TextDecoder = LegacyTextDecoder;
+   if (!global.Promise) global.Promise = LegacyPromise;
+   ```
+   用feature-detect(`if (!global.X)`)的方式，只在真的缺某個API時才用手寫的polyfill頂替，不缺
+   就完全不介入——跟我們稍早(2026/11/03)修`file.arrayBuffer is not a function`時獨立想到的
+   「改用`FileReader.readAsArrayBuffer()`」做法，剛好完全對得上：這套同事的工具也是**完全不用
+   `Blob.arrayBuffer()`**，一律用`FileReader`(`strings`裡`FileReader`/`readAsArrayBuffer`都有
+   對應數量的命中)。這代表我們的修法方向是對的、而且是業界(至少同一間公司別的開發團隊)已經實測
+   過的做法，不是瞎猜。
+
+**結論**：使用者設備端的那幾台電腦，瀏覽器環境明顯比一般桌機舊很多——舊到連`Blob.arrayBuffer()`
+(2019年才加進規範)都可能沒有，`TextDecoder`/`TextEncoder`(雖然比較老、2014年就有，但也不能完全
+排除某些被鎖定多年沒更新的工業電腦真的連這個都缺)也有風險。`decodeSecsLog()`/`ZipReader`/下載用
+的zip產生器(`buildZip()`)到處都直接`new TextDecoder(...)`/`new TextEncoder()`，一旦缺這兩個API
+完全無法運作，比`arrayBuffer`缺失更致命——照抄同事那套工具的`if (!global.TextDecoder) ...`
+feature-detect手法，在兩個JS檔案最前面都補上等價的`LegacyTextDecoder`/`LegacyTextEncoder`
+(UTF-8多位元組解碼、UTF-16LE/BE解碼、UTF-16代理對編碼都手刻)，**只在真的缺少該API時才會啟用**，
+對目前能跑的機器完全沒有副作用。
+
+**驗證方式**：寫了一個Node腳本拿“中文測試”、emoji(代理對)、純ASCII等字串比對手刻polyfill
+的UTF-8/UTF-16LE編解碼結果跟Node原生`TextDecoder`/`TextEncoder`，逐byte/逐字元完全一致。
+再用Playwright的`page.add_init_script()`在頁面載入**之前**先把`window.TextDecoder`/
+`TextEncoder`整個刪掉(模擬真的缺少該API的設備端瀏覽器)，重新跑一次既有的real-fixture測試
+(SECS log解析、BINGO MAP格子數、.strate直接上傳、download-all zip)，確認`window.TextDecoder`
+真的被換成我們的polyfill(不是原本那個被跳過)，而且解析結果(36格、流水號J8204486等)跟平常用
+原生API時完全一致，沒有任何資料損壞或行為差異。
